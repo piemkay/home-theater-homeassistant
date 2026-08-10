@@ -1,0 +1,1244 @@
+/**
+ * Kino – custom Lovelace card.
+ *
+ * Single file, no build step: the integration serves it and registers it as a
+ * Lovelace resource, so HACS installs one thing and the card is just there.
+ *
+ * All library data comes over the Home Assistant WebSocket API — the card
+ * never talks to Jellyfin and never sees a Jellyfin credential (FR-42a).
+ * Artwork is fetched through /api/kino/artwork/... with the user's own HA
+ * token.
+ */
+
+const CARD_VERSION = "0.1.0";
+
+/* ------------------------------------------------------------------ *
+ * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
+ * ------------------------------------------------------------------ */
+
+export const helpers = {
+  /** Seconds -> `1:23:45` / `4:05`. */
+  formatTime(seconds) {
+    if (seconds == null || Number.isNaN(seconds)) return "0:00";
+    const total = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+  },
+
+  /** Remaining seconds -> a German ETA the second user can act on. */
+  formatEta(seconds) {
+    if (seconds == null || seconds <= 0) return "";
+    if (seconds < 60) return "noch weniger als 1 Min.";
+    const minutes = Math.round(seconds / 60);
+    return `noch ca. ${minutes} Min.`;
+  },
+
+  /** dB value -> display string, or "Stumm" when muted. */
+  formatVolume(db, muted) {
+    if (muted) return "Stumm";
+    if (db == null || Number.isNaN(db)) return "—";
+    return `${Number(db).toFixed(1)} dB`;
+  },
+
+  /** The meta line under a poster: `2016 · 106 Min · ★7.2`. */
+  metaLine(item) {
+    const bits = [];
+    if (item.year) bits.push(String(item.year));
+    if (item.runtime) bits.push(`${item.runtime} Min`);
+    if (item.rating) bits.push(`★${Number(item.rating).toFixed(1)}`);
+    return bits.join(" · ");
+  },
+
+  /** Play button label: resume position or a plain start. */
+  playLabel(item) {
+    if (item && item.continueWatching && item.resumeSeconds) {
+      return `Fortsetzen bei ${helpers.formatTime(item.resumeSeconds)}`;
+    }
+    return "Wiedergabe starten";
+  },
+
+  /** Count of filters the user has actually applied. */
+  activeFilterCount(filters) {
+    const yearActive =
+      (filters.yearFrom != null || filters.yearTo != null) &&
+      !(filters.yearFrom == null && filters.yearTo == null);
+    return (
+      filters.tags.length +
+      filters.genres.length +
+      filters.countries.length +
+      (yearActive ? 1 : 0)
+    );
+  },
+
+  /** Translate the card's tag chips into WebSocket query flags. */
+  queryFromFilters(filters, category, search, sort, offset = 0, limit = 60) {
+    return {
+      type: "kino/library/search",
+      category,
+      search: search || null,
+      genres: filters.genres,
+      countries: filters.countries,
+      year_from: filters.yearFrom,
+      year_to: filters.yearTo,
+      only_4k: filters.tags.includes("4K"),
+      only_hd: filters.tags.includes("HD"),
+      only_unwatched: filters.tags.includes("Nicht gesehen"),
+      only_resumable: filters.tags.includes("Weitersehen"),
+      sort,
+      offset,
+      limit,
+    };
+  },
+
+  /** Colour token for a per-device health value. */
+  deviceColor(health) {
+    switch (health) {
+      case "ready":
+        return "var(--kino-teal)";
+      case "starting":
+      case "stopping":
+        return "var(--kino-gold)";
+      case "degraded":
+      case "error":
+      case "unreachable":
+        return "var(--kino-red)";
+      default:
+        return "var(--kino-text3)";
+    }
+  },
+
+  /** Which body the card should render for an activity. */
+  bodyFor(activity) {
+    if (!activity) return "aus";
+    if (activity.key === "aus" || activity.controlClass === "off") return "aus";
+    if (activity.media) return "library";
+    if (activity.controlClass === "mixed") return "musik";
+    return "handoff";
+  },
+};
+
+/* ------------------------------------------------------------------ *
+ * Styles — the mockup's tokens, adapted to Home Assistant's theming.  *
+ * ------------------------------------------------------------------ */
+
+const STYLES = `
+:host {
+  --kino-bg: var(--ha-card-background, var(--card-background-color, oklch(0.15 0.015 265)));
+  --kino-surface: oklch(0.205 0.016 265);
+  --kino-surface2: oklch(0.25 0.017 265);
+  --kino-border: oklch(1 0 0 / 0.08);
+  --kino-text: oklch(0.97 0.005 265);
+  --kino-text2: oklch(0.72 0.01 265);
+  --kino-text3: oklch(0.5 0.01 265);
+  --kino-gold: oklch(0.78 0.15 75);
+  --kino-goldText: oklch(0.18 0.03 75);
+  --kino-teal: oklch(0.72 0.12 190);
+  --kino-red: oklch(0.65 0.19 25);
+  display: block;
+}
+@media (prefers-color-scheme: light) {
+  :host {
+    --kino-surface: oklch(0.96 0.004 265);
+    --kino-surface2: oklch(0.92 0.006 265);
+    --kino-border: oklch(0 0 0 / 0.1);
+    --kino-text: oklch(0.22 0.01 265);
+    --kino-text2: oklch(0.42 0.01 265);
+    --kino-text3: oklch(0.58 0.01 265);
+    --kino-goldText: oklch(0.18 0.03 75);
+  }
+}
+.wrap {
+  position: relative;
+  font-family: Manrope, var(--primary-font-family, system-ui), sans-serif;
+  background: var(--kino-bg);
+  color: var(--kino-text);
+  border-radius: var(--ha-card-border-radius, 12px);
+  overflow: hidden;
+  min-height: 240px;
+}
+@keyframes kino-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes kino-sheet-in { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+.hscroll::-webkit-scrollbar { display: none; }
+.hscroll { scrollbar-width: none; }
+
+header {
+  padding: 14px 20px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.brand { font-weight: 800; font-size: 15px; letter-spacing: 1.5px; }
+.statuswrap { display: flex; align-items: center; gap: 10px; }
+.status { display: flex; align-items: center; gap: 7px; }
+.dot { width: 8px; height: 8px; border-radius: 5px; }
+.dot.pulsing { animation: kino-pulse 1.2s ease-in-out infinite; }
+.status span { font-size: 12px; color: var(--kino-text2); font-weight: 600; }
+.iconbtn {
+  width: 36px; height: 36px; border-radius: 18px; border: none;
+  background: var(--kino-surface2); color: var(--kino-text);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0; flex-shrink: 0;
+}
+.body { padding: 0 20px 20px; }
+.section { margin-bottom: 18px; }
+h3 { margin: 0 0 10px; font-size: 15px; font-weight: 800; }
+h2 { margin: 0; font-size: 19px; font-weight: 800; }
+p { margin: 0; line-height: 1.5; }
+a.link { font-size: 12px; font-weight: 700; cursor: pointer; color: var(--kino-gold); }
+
+button { font-family: inherit; }
+.tile, .chipbtn, .pill, .primary, .ghost {
+  border: none; cursor: pointer; font-weight: 700;
+  font-family: inherit; color: var(--kino-text2);
+  background: var(--kino-surface2);
+}
+.tilegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tile { padding: 16px; border-radius: 14px; text-align: left; font-size: 13px; min-height: 48px; }
+.tile[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
+.chipbtn { padding: 10px 14px; border-radius: 20px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kino-text); min-height: 40px; }
+.pill { height: 36px; padding: 0 13px; border-radius: 18px; font-size: 12px; flex-shrink: 0; }
+.pill[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
+.primary { padding: 15px; border-radius: 14px; background: var(--kino-gold); color: var(--kino-goldText); font-size: 14px; font-weight: 800; width: 100%; min-height: 48px; }
+.ghost { padding: 12px; border-radius: 12px; border: 1px solid var(--kino-border); background: transparent; font-size: 13px; }
+
+.devicechips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.devicechip {
+  padding: 7px 10px; border-radius: 14px; background: var(--kino-surface);
+  border: 1px solid var(--kino-border); display: flex; align-items: center; gap: 6px;
+}
+.devicechip span:last-child { font-size: 11px; color: var(--kino-text2); font-weight: 600; }
+
+.banner {
+  margin-bottom: 12px; padding: 14px; border-radius: 14px;
+  background: oklch(0.65 0.19 25 / 0.14);
+  border: 1px solid oklch(0.65 0.19 25 / 0.4);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.banner strong { font-size: 13px; }
+.banner p { font-size: 12px; color: var(--kino-text2); }
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; }
+
+.progress { margin-bottom: 14px; padding: 16px; border-radius: 16px; background: var(--kino-surface); border: 1px solid var(--kino-border); }
+.progress .head { display: flex; justify-content: space-between; align-items: baseline; }
+.progress .head b { font-size: 14px; }
+.progress .head span { font-size: 11px; color: var(--kino-text3); }
+.bar { height: 6px; border-radius: 3px; background: var(--kino-surface2); overflow: hidden; margin: 10px 0; }
+.bar > div { height: 100%; background: var(--kino-gold); border-radius: 3px; transition: width .4s ease; }
+.progress .hint { font-size: 11px; color: var(--kino-text3); }
+
+.posterrow { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 2px; }
+.poster { flex-shrink: 0; width: 120px; cursor: pointer; }
+.postergrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.postergrid .poster { width: auto; }
+.art {
+  position: relative; aspect-ratio: 2/3; border-radius: 10px; overflow: hidden;
+  background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 8px, var(--kino-surface) 8px, var(--kino-surface) 16px);
+}
+.art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art .badge { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 9px; font-weight: 800; padding: 2px 5px; border-radius: 4px; }
+.art .warn { position: absolute; top: 6px; right: 6px; background: var(--kino-red); color: #fff; font-size: 9px; font-weight: 800; padding: 2px 5px; border-radius: 4px; }
+.art .resume { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0,0,0,.4); }
+.art .resume > div { height: 100%; background: var(--kino-gold); }
+.poster .title { font-size: 12px; font-weight: 700; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poster .meta { font-size: 11px; color: var(--kino-text3); }
+
+input[type="text"], select {
+  width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--kino-border); background: var(--kino-surface);
+  color: var(--kino-text); font-size: 13px; font-family: inherit; font-weight: 600;
+  min-height: 44px;
+}
+.label { font-size: 11px; color: var(--kino-text3); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+
+.sheet {
+  position: absolute; inset: 0; background: var(--kino-bg); z-index: 25;
+  display: flex; flex-direction: column; overflow-y: auto;
+  animation: kino-sheet-in .2s ease-out; padding: 16px 20px 24px; box-sizing: border-box;
+}
+.backdrop { width: 100%; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden; background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 10px, var(--kino-surface) 10px, var(--kino-surface) 20px); }
+.backdrop img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dialog { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 28px; box-sizing: border-box; }
+.dialog > div { width: 100%; background: var(--kino-surface); border: 1px solid var(--kino-border); border-radius: 18px; padding: 22px; }
+
+footer { padding: 10px 16px 14px; border-top: 1px solid var(--kino-border); background: var(--kino-surface); }
+.footrow { display: flex; align-items: center; gap: 10px; }
+.volrow { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.volval { font-size: 11px; color: var(--kino-text2); width: 62px; text-align: center; font-variant-numeric: tabular-nums; }
+.round { width: 36px; height: 36px; border-radius: 18px; border: none; background: var(--kino-surface2); color: var(--kino-text2); font-size: 15px; cursor: pointer; }
+
+.empty { text-align: center; padding: 40px 12px; color: var(--kino-text2); }
+.empty .sub { font-size: 12px; color: var(--kino-text3); margin-top: 6px; }
+.error { color: var(--kino-red); font-size: 13px; }
+
+/* Tablet: the same card, denser (FR-71). */
+@media (min-width: 640px) {
+  .tilegrid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .postergrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .body { padding: 0 24px 24px; }
+}
+@media (min-width: 900px) {
+  .postergrid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+}
+`;
+
+/* ------------------------------------------------------------------ *
+ * The card                                                            *
+ * ------------------------------------------------------------------ */
+
+const POWER_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+  <circle cx="12" cy="13" r="8"></circle><line x1="12" y1="2" x2="12" y2="12"></line></svg>`;
+
+const SORT_OPTIONS = [
+  ["added", "Neu hinzugefügt"],
+  ["title", "Titel"],
+  ["year", "Jahr"],
+  ["rating", "Bewertung"],
+];
+
+const TAGS = ["4K", "HD", "Weitersehen", "Nicht gesehen"];
+
+/**
+ * Home Assistant always provides HTMLElement; Node does not. Deriving from a
+ * stand-in when it is absent keeps this file importable by the test runner,
+ * so the card's logic is testable without a browser or a DOM shim.
+ */
+const CardBase = typeof HTMLElement !== "undefined" ? HTMLElement : class {};
+
+class KinoCard extends CardBase {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._hass = null;
+    this._config = {};
+    this._kino = null;
+    this._error = null;
+    this._unsub = null;
+
+    this._view = {
+      main: "home",
+      category: "movies",
+      query: "",
+      sort: "added",
+      filters: { tags: [], genres: [], countries: [], yearFrom: null, yearTo: null },
+      filterSheet: false,
+      detailId: null,
+      detail: null,
+      playingOpen: false,
+      powerConfirm: false,
+      activityMenu: false,
+      musikSource: "spotify",
+      refreshing: false,
+    };
+    this._library = { items: [], total: 0, loading: false, error: null };
+    this._resume = [];
+    this._facets = { genres: [], countries: [] };
+    this._searchTimer = null;
+  }
+
+  static getStubConfig() {
+    return {};
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+  }
+
+  getCardSize() {
+    return 12;
+  }
+
+  set hass(hass) {
+    const first = this._hass === null;
+    this._hass = hass;
+    if (first) {
+      this._refreshState();
+      this._loadFacets();
+    }
+  }
+
+  connectedCallback() {
+    this._render();
+    if (this._hass) this._refreshState();
+    // The engine pushes through the coordinator, which updates the entities;
+    // polling the compact state object keeps the card in step without needing
+    // a bespoke subscription.
+    this._timer = setInterval(() => this._refreshState(), 2000);
+  }
+
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer);
+    if (this._searchTimer) clearTimeout(this._searchTimer);
+  }
+
+  /* -- data ---------------------------------------------------------- */
+
+  async _ws(message) {
+    if (!this._hass) throw new Error("Home Assistant ist nicht verbunden");
+    return this._hass.callWS(message);
+  }
+
+  async _refreshState() {
+    if (!this._hass) return;
+    try {
+      const next = await this._ws({ type: "kino/state" });
+      const changed = JSON.stringify(next) !== JSON.stringify(this._kino);
+      this._kino = next;
+      this._error = null;
+      if (changed) this._render();
+    } catch (err) {
+      this._error = err.message || "Kino ist nicht erreichbar";
+      this._render();
+    }
+  }
+
+  async _loadFacets() {
+    try {
+      this._facets = await this._ws({ type: "kino/library/facets" });
+    } catch (err) {
+      this._facets = { genres: [], countries: [] };
+    }
+  }
+
+  async _loadLibrary() {
+    this._library.loading = true;
+    this._library.error = null;
+    this._render();
+    try {
+      const message = helpers.queryFromFilters(
+        this._view.filters,
+        this._view.category,
+        this._view.query,
+        this._view.sort
+      );
+      const page = await this._ws(message);
+      this._library = {
+        items: page.items,
+        total: page.total,
+        loading: false,
+        error: null,
+      };
+    } catch (err) {
+      // Never a blank grid — say what happened and offer the retry (FR-45).
+      this._library = {
+        items: [],
+        total: 0,
+        loading: false,
+        error: err.message || "Die Bibliothek ist nicht erreichbar.",
+      };
+    }
+    this._render();
+  }
+
+  async _loadResume() {
+    try {
+      const result = await this._ws({ type: "kino/library/resume", limit: 12 });
+      this._resume = result.items || [];
+    } catch (err) {
+      this._resume = [];
+    }
+    this._render();
+  }
+
+  /* -- actions ------------------------------------------------------- */
+
+  async _activate(key) {
+    this._view.activityMenu = false;
+    this._view.powerConfirm = false;
+    this._render();
+    try {
+      await this._ws({ type: "kino/activate", activity: key });
+    } catch (err) {
+      this._error = err.message;
+    }
+    await this._refreshState();
+  }
+
+  async _restoreDevice(device) {
+    try {
+      await this._ws({ type: "kino/restore_device", device });
+    } catch (err) {
+      this._error = err.message;
+    }
+    await this._refreshState();
+  }
+
+  async _dismissDrift(device) {
+    await this._ws({ type: "kino/dismiss_drift", device }).catch(() => {});
+    await this._refreshState();
+  }
+
+  async _forceRefresh() {
+    if (this._view.refreshing) return;
+    this._view.refreshing = true;
+    this._render();
+    try {
+      await this._ws({ type: "kino/library/refresh" });
+      await this._loadLibrary();
+    } catch (err) {
+      this._library.error = err.message;
+    }
+    this._view.refreshing = false;
+    this._render();
+  }
+
+  _callService(domain, service, data) {
+    return this._hass.callService(domain, service, data);
+  }
+
+  _entity(suffix) {
+    if (!this._hass) return null;
+    const wanted = `_${suffix}`;
+    return (
+      Object.keys(this._hass.states).find(
+        (id) => id.startsWith("kino") || id.includes(`kino${wanted}`)
+      ) || null
+    );
+  }
+
+  _findEntity(domain, key) {
+    if (!this._hass) return null;
+    const states = this._hass.states;
+    return (
+      Object.keys(states).find(
+        (id) =>
+          id.startsWith(`${domain}.`) &&
+          id.includes("kino") &&
+          id.includes(key)
+      ) || null
+    );
+  }
+
+  get _volumeEntity() {
+    return this._findEntity("number", "lautst") || this._findEntity("number", "volume");
+  }
+
+  get _playerEntity() {
+    return this._findEntity("media_player", "kino");
+  }
+
+  async _stepVolume(direction) {
+    const player = this._playerEntity;
+    if (!player) return;
+    await this._callService(
+      "media_player",
+      direction > 0 ? "volume_up" : "volume_down",
+      { entity_id: player }
+    );
+  }
+
+  async _toggleMute() {
+    const player = this._playerEntity;
+    if (!player) return;
+    const state = this._hass.states[player];
+    await this._callService("media_player", "volume_mute", {
+      entity_id: player,
+      is_volume_muted: !(state && state.attributes.is_volume_muted),
+    });
+  }
+
+  async _transport(service) {
+    const player = this._playerEntity;
+    if (!player) return;
+    await this._callService("media_player", service, { entity_id: player });
+  }
+
+  /* -- rendering ----------------------------------------------------- */
+
+  _activityByKey(key) {
+    if (!this._kino) return null;
+    return this._kino.activities.find((a) => a.key === key) || null;
+  }
+
+  get _currentActivity() {
+    if (!this._kino) return null;
+    return this._activityByKey(this._kino.targetActivity || this._kino.activity);
+  }
+
+  _render() {
+    if (!this.shadowRoot) return;
+    const root = this.shadowRoot;
+    if (!this._styleEl) {
+      this._styleEl = document.createElement("style");
+      this._styleEl.textContent = STYLES;
+      root.appendChild(this._styleEl);
+      this._container = document.createElement("div");
+      this._container.className = "wrap";
+      root.appendChild(this._container);
+      this._container.addEventListener("click", (e) => this._onClick(e));
+      this._container.addEventListener("change", (e) => this._onChange(e));
+      this._container.addEventListener("input", (e) => this._onInput(e));
+    }
+
+    if (!this._kino) {
+      this._container.innerHTML = `
+        <div class="empty">
+          <p>${this._error ? this._esc(this._error) : "Kino wird geladen…"}</p>
+          ${this._error ? '<p class="sub">Ist die Kino-Integration eingerichtet?</p>' : ""}
+        </div>`;
+      return;
+    }
+
+    const scrollTop = this._container.querySelector(".scroller")?.scrollTop || 0;
+    this._container.innerHTML = [
+      this._renderHeader(),
+      '<div class="scroller">',
+      this._renderActivitySelector(),
+      this._renderDeviceChips(),
+      this._renderDriftBanner(),
+      this._renderProgress(),
+      `<div class="body">${this._renderBody()}</div>`,
+      "</div>",
+      this._renderFooter(),
+      this._view.detailId ? this._renderDetailSheet() : "",
+      this._view.playingOpen ? this._renderPlayingSheet() : "",
+      this._view.filterSheet ? this._renderFilterSheet() : "",
+      this._view.powerConfirm ? this._renderPowerConfirm() : "",
+    ].join("");
+    const scroller = this._container.querySelector(".scroller");
+    if (scroller) scroller.scrollTop = scrollTop;
+  }
+
+  _esc(value) {
+    return String(value == null ? "" : value).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+    );
+  }
+
+  _renderHeader() {
+    const k = this._kino;
+    const transitioning = !!k.progress;
+    const color = transitioning
+      ? "var(--kino-gold)"
+      : k.degraded || k.state === "error"
+        ? "var(--kino-red)"
+        : k.state === "off"
+          ? "var(--kino-text3)"
+          : "var(--kino-teal)";
+    return `
+      <header>
+        <span class="brand">KINO</span>
+        <div class="statuswrap">
+          <div class="status">
+            <span class="dot${transitioning ? " pulsing" : ""}" style="background:${color}"></span>
+            <span>${this._esc(k.statusText)}</span>
+          </div>
+          <button class="iconbtn" data-act="ask-power-off" title="Kino ausschalten"
+            style="color:${k.state === "off" ? "var(--kino-text3)" : "var(--kino-text)"}">
+            ${POWER_ICON}
+          </button>
+        </div>
+      </header>`;
+  }
+
+  _renderActivitySelector() {
+    const k = this._kino;
+    const current = this._currentActivity;
+    const isOff = k.activity === k.offActivity && !k.progress;
+    const showGrid = isOff || (this._view.activityMenu && !k.progress);
+    const tiles = k.activities
+      .filter((a) => a.key !== k.offActivity)
+      .map(
+        (a) => `<button class="tile" data-act="activate" data-key="${a.key}"
+          aria-pressed="${current && current.key === a.key}">${this._esc(a.name)}</button>`
+      )
+      .join("");
+    const compact = !isOff
+      ? `<button class="chipbtn" data-act="toggle-menu">
+           <span>${this._esc(
+             k.progress && current ? `Wechsel zu ${current.name}…` : current ? current.name : "—"
+           )}</span>
+           <span style="font-size:10px;color:var(--kino-text3)">${this._view.activityMenu ? "▴" : "▾"}</span>
+         </button>`
+      : "";
+    return `<div style="padding:0 20px 12px">
+      ${compact}
+      ${showGrid ? `<div class="tilegrid" style="margin-top:${compact ? 10 : 0}px">${tiles}</div>` : ""}
+    </div>`;
+  }
+
+  _renderDeviceChips() {
+    const k = this._kino;
+    const current = this._currentActivity;
+    if (!current || !current.devices.length) return "";
+    const byKey = Object.fromEntries(k.devices.map((d) => [d.key, d]));
+    const chips = current.devices
+      .map((key) => {
+        const device = byKey[key] || { name: key, health: "unknown" };
+        const pulsing = device.health === "starting" || device.health === "stopping";
+        return `<div class="devicechip">
+          <span class="dot${pulsing ? " pulsing" : ""}" style="width:7px;height:7px;background:${helpers.deviceColor(device.health)}"></span>
+          <span>${this._esc(device.name)}</span>
+        </div>`;
+      })
+      .join("");
+    return `<div class="devicechips" style="padding:0 20px">${chips}</div>`;
+  }
+
+  _renderDriftBanner() {
+    const drift = (this._kino.drift || []).filter((d) => d.classification !== "benign");
+    if (!drift.length) return "";
+    const finding = drift[0];
+    return `<div style="padding:0 20px"><div class="banner">
+      <strong>${this._esc(finding.detail)}</strong>
+      <p>Die Aktivität bleibt aktiv — es wird nichts automatisch zurückgesetzt.</p>
+      <div class="row">
+        ${
+          finding.restorable
+            ? `<button class="primary" style="padding:10px;font-size:12px" data-act="restore" data-key="${finding.device}">Wiederherstellen</button>`
+            : ""
+        }
+        <button class="ghost" data-act="dismiss-drift" data-key="${finding.device}">Ignorieren</button>
+      </div>
+    </div></div>`;
+  }
+
+  _renderProgress() {
+    const p = this._kino.progress;
+    if (!p) return "";
+    const current = this._currentActivity;
+    const toOff = this._kino.targetActivity === this._kino.offActivity;
+    return `<div style="padding:0 20px"><div class="progress">
+      <div class="head">
+        <b>${this._esc(toOff ? "Kino wird ausgeschaltet" : `Wechsel zu ${current ? current.name : "…"}`)}</b>
+        <span>${this._esc(helpers.formatEta(p.etaSeconds))}</span>
+      </div>
+      <div class="bar"><div style="width:${p.percent}%"></div></div>
+      <span class="hint">${this._esc(p.bottleneck || "Geräte werden vorbereitet…")}</span>
+    </div></div>`;
+  }
+
+  _renderBody() {
+    if (this._view.main === "library") return this._renderLibrary();
+    const k = this._kino;
+    const current = this._currentActivity;
+    if (k.progress) return "";
+
+    switch (helpers.bodyFor(current)) {
+      case "aus":
+        return `<div class="empty" style="padding-top:40px">
+          <p>Kino ist ausgeschaltet</p>
+          <p class="sub">Aktivität oben wählen, um zu starten</p>
+        </div>`;
+      case "library":
+        return this._renderLibraryHome();
+      case "musik":
+        return this._renderMusik();
+      default:
+        return `<div class="empty">
+          <p>${this._esc(current.handoffText || "Weiter auf der Fernbedienung des Geräts.")}</p>
+        </div>`;
+    }
+  }
+
+  _renderLibraryHome() {
+    const resumeRow = this._resume.length
+      ? `<div class="section">
+           <h3>Weitersehen</h3>
+           <div class="posterrow hscroll">${this._resume.map((t) => this._poster(t, true)).join("")}</div>
+         </div>`
+      : "";
+    return `
+      <div class="section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <h3 style="margin:0">Filme &amp; Serien</h3>
+          <a class="link" data-act="open-library" data-key="movies">Erkunden</a>
+        </div>
+        <p style="font-size:12px;color:var(--kino-text2);margin-bottom:12px">
+          Durchsuchen, filtern und sortieren — die Bibliothek ist auch bei ausgeschaltetem Kino verfügbar.
+        </p>
+        <div class="row">
+          <button class="tile" style="text-align:center" data-act="open-library" data-key="movies">Filme</button>
+          <button class="tile" style="text-align:center" data-act="open-library" data-key="shows">Serien</button>
+        </div>
+      </div>
+      ${resumeRow}`;
+  }
+
+  _renderMusik() {
+    const src = this._view.musikSource;
+    return `
+      <div class="row" style="margin-bottom:14px">
+        <button class="pill" style="flex:1;height:40px" data-act="musik-source" data-key="spotify" aria-pressed="${src === "spotify"}">Spotify</button>
+        <button class="pill" style="flex:1;height:40px" data-act="musik-source" data-key="tidal" aria-pressed="${src === "tidal"}">Tidal</button>
+      </div>
+      <div style="padding:18px;border-radius:16px;background:var(--kino-surface);border:1px solid var(--kino-border)">
+        ${
+          src === "spotify"
+            ? `<div class="label">Spotify Connect · Zidoo</div>
+               <p style="font-size:13px;color:var(--kino-text2)">Der Zidoo ist als Wiedergabeziel vorbereitet. Titelwahl über die Spotify-Integration.</p>`
+            : `<p style="font-size:13px;color:var(--kino-text2);text-align:center">Weiter in der Tidal-App auf deinem Handy — der Zidoo ist als Wiedergabeziel vorbereitet.</p>`
+        }
+      </div>`;
+  }
+
+  _poster(item, showResume) {
+    const art = item.playable !== false || true;
+    const src = `/api/kino/artwork/${encodeURIComponent(item.id)}/Primary`;
+    return `<div class="poster" data-act="open-detail" data-key="${this._esc(item.id)}">
+      <div class="art">
+        <img loading="lazy" src="${src}" alt="" onerror="this.style.display='none'">
+        ${item.res4k ? '<span class="badge">4K</span>' : ""}
+        ${item.playable === false ? '<span class="warn" title="Nicht abspielbar">!</span>' : ""}
+        ${
+          showResume && item.continueWatching
+            ? `<div class="resume"><div style="width:${item.continueWatching}%"></div></div>`
+            : ""
+        }
+      </div>
+      <div class="title">${this._esc(item.title)}</div>
+      <div class="meta">${this._esc(helpers.metaLine(item))}</div>
+    </div>`;
+  }
+
+  _renderLibrary() {
+    const lib = this._library;
+    const filters = this._view.filters;
+    const count = helpers.activeFilterCount(filters);
+    const chips = [
+      ...filters.tags.map((t) => ["tag", t]),
+      ...filters.genres.map((g) => ["genre", g]),
+      ...filters.countries.map((c) => ["country", c]),
+    ]
+      .map(
+        ([kind, value]) =>
+          `<button class="pill" style="height:30px;font-size:11px;background:transparent;border:1px solid var(--kino-border)"
+             data-act="remove-filter" data-kind="${kind}" data-key="${this._esc(value)}">${this._esc(value)} ✕</button>`
+      )
+      .join("");
+
+    let grid;
+    if (lib.loading) {
+      grid = '<p class="empty">Wird geladen…</p>';
+    } else if (lib.error) {
+      grid = `<div class="empty">
+        <p class="error">${this._esc(lib.error)}</p>
+        <p class="sub">Die Festplatten der NAS schlafen vielleicht noch.</p>
+        <button class="primary" style="margin-top:14px;max-width:260px" data-act="force-refresh">
+          ${this._view.refreshing ? "Wird aktualisiert…" : "Erneut versuchen"}
+        </button>
+      </div>`;
+    } else if (!lib.items.length) {
+      grid = `<div class="empty"><p>${
+        this._view.category === "shows"
+          ? "Noch keine Serien in der Bibliothek."
+          : "Keine Treffer"
+      }</p></div>`;
+    } else {
+      grid = `<div class="postergrid">${lib.items.map((t) => this._poster(t, true)).join("")}</div>`;
+    }
+
+    return `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <a class="link" data-act="back-home">‹ Zurück</a>
+        <h2 style="flex:1">Bibliothek · ${this._view.category === "shows" ? "Serien" : "Filme"}</h2>
+        <a class="link" style="color:var(--kino-text2)" data-act="force-refresh">${
+          this._view.refreshing ? "Wird aktualisiert…" : "Aktualisieren"
+        }</a>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <button class="pill" style="flex:1;height:40px" data-act="category" data-key="movies" aria-pressed="${this._view.category === "movies"}">Filme</button>
+        <button class="pill" style="flex:1;height:40px" data-act="category" data-key="shows" aria-pressed="${this._view.category === "shows"}">Serien</button>
+      </div>
+      <input type="text" data-field="query" placeholder="Titel suchen…" value="${this._esc(this._view.query)}" style="margin-bottom:12px">
+      <div class="row" style="margin-bottom:10px">
+        <button class="pill" style="flex:0 0 auto;height:40px" data-act="open-filters" aria-pressed="${count > 0}">
+          ${count ? `Filter · ${count}` : "Filter"}
+        </button>
+        <select data-field="sort" style="flex:1">
+          ${SORT_OPTIONS.map(
+            ([value, label]) =>
+              `<option value="${value}"${this._view.sort === value ? " selected" : ""}>${label}</option>`
+          ).join("")}
+        </select>
+      </div>
+      ${chips ? `<div class="posterrow hscroll" style="margin-bottom:10px">${chips}</div>` : ""}
+      <div style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">${lib.total} Titel</div>
+      ${grid}`;
+  }
+
+  _renderFilterSheet() {
+    const f = this._view.filters;
+    const group = (title, values, kind, selected) =>
+      values.length
+        ? `<div class="label">${title}</div>
+           <div class="posterrow hscroll" style="flex-wrap:wrap;margin-bottom:20px">
+             ${values
+               .map(
+                 (v) =>
+                   `<button class="pill" data-act="toggle-filter" data-kind="${kind}" data-key="${this._esc(v)}"
+                      aria-pressed="${selected.includes(v)}">${this._esc(v)}</button>`
+               )
+               .join("")}
+           </div>`
+        : "";
+    return `<div class="sheet" style="z-index:35">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+        <a class="link" data-act="close-filters">‹ Zurück</a>
+        <h2 style="flex:1">Filter</h2>
+        <a class="link" style="color:var(--kino-text2)" data-act="reset-filters">Zurücksetzen</a>
+      </div>
+      ${group("Format &amp; Status", TAGS, "tag", f.tags)}
+      ${group("Genre", this._facets.genres || [], "genre", f.genres)}
+      ${group("Land", this._facets.countries || [], "country", f.countries)}
+      <button class="primary" data-act="close-filters">${this._library.total} Titel anzeigen</button>
+    </div>`;
+  }
+
+  _renderDetailSheet() {
+    const item = this._view.detail;
+    if (!item) return '<div class="sheet"><p class="empty">Wird geladen…</p></div>';
+    const backdrop = `/api/kino/artwork/${encodeURIComponent(item.id)}/Backdrop`;
+    return `<div class="sheet">
+      <a class="link" data-act="close-detail">‹ Zurück</a>
+      <div class="backdrop" style="margin-top:12px">
+        <img src="${backdrop}" alt="" onerror="this.style.display='none'">
+      </div>
+      <h2 style="margin:14px 0 4px;font-size:20px">${this._esc(item.title)}</h2>
+      <div style="font-size:12px;color:var(--kino-text2)">${this._esc(helpers.metaLine(item))}</div>
+      ${
+        item.videoFormat
+          ? `<div style="font-size:11px;color:var(--kino-text3);font-family:ui-monospace,monospace;margin-top:8px">${this._esc(
+              [item.videoFormat, item.audioFormat].filter(Boolean).join(" · ")
+            )}</div>`
+          : ""
+      }
+      ${
+        item.tagline
+          ? `<p style="font-size:13px;color:var(--kino-text2);font-style:italic;margin:14px 0">${this._esc(item.tagline)}</p>`
+          : ""
+      }
+      ${
+        item.playable === false
+          ? `<p class="error" style="margin:14px 0">${this._esc(item.unplayableReason || "Dieser Titel ist nicht abspielbar.")}</p>`
+          : `<button class="primary" style="margin-top:18px" data-act="play" data-key="${this._esc(item.id)}">${this._esc(helpers.playLabel(item))}</button>
+             ${
+               item.continueWatching
+                 ? `<button class="ghost" style="width:100%;margin-top:8px" data-act="play-from-start" data-key="${this._esc(item.id)}">Von Anfang abspielen</button>`
+                 : ""
+             }`
+      }
+    </div>`;
+  }
+
+  _renderPlayingSheet() {
+    const player = this._playerEntity;
+    const state = player ? this._hass.states[player] : null;
+    if (!state) return "";
+    const attrs = state.attributes;
+    const duration = attrs.media_duration || 0;
+    const position = attrs.media_position || 0;
+    const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
+    return `<div class="sheet" style="z-index:30">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <a class="link" data-act="collapse-playing">⌄ Minimieren</a>
+        <a class="link" style="color:var(--kino-text3)" data-act="transport" data-key="media_stop">Wiedergabe beenden</a>
+      </div>
+      <div class="backdrop"></div>
+      <h3 style="margin:14px 0 0">${this._esc(attrs.media_title || "Wiedergabe")}</h3>
+      <div class="bar" style="margin:16px 0 6px"><div style="width:${pct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-bottom:20px">
+        <span>${helpers.formatTime(position)}</span><span>${helpers.formatTime(duration)}</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:22px">
+        <button class="round" data-act="transport" data-key="media_previous_track">⏮</button>
+        <button class="round" style="width:52px;height:52px;border-radius:26px;background:var(--kino-gold);color:var(--kino-goldText)"
+          data-act="transport" data-key="${state.state === "playing" ? "media_pause" : "media_play"}">
+          ${state.state === "playing" ? "⏸" : "▶"}
+        </button>
+        <button class="round" data-act="transport" data-key="media_next_track">⏭</button>
+      </div>
+      ${this._renderTrackSelects()}
+    </div>`;
+  }
+
+  _renderTrackSelects() {
+    const audio = this._findEntity("select", "tonspur");
+    const subtitle = this._findEntity("select", "untertitel");
+    const block = (entityId, label) => {
+      if (!entityId) return "";
+      const state = this._hass.states[entityId];
+      if (!state) return "";
+      const options = state.attributes.options || [];
+      return `<div style="margin-bottom:12px">
+        <div class="label">${label}</div>
+        <select data-field="entity-select" data-key="${entityId}">
+          ${options
+            .map(
+              (o) =>
+                `<option value="${this._esc(o)}"${state.state === o ? " selected" : ""}>${this._esc(o)}</option>`
+            )
+            .join("")}
+        </select>
+      </div>`;
+    };
+    return block(audio, "Tonspur") + block(subtitle, "Untertitel");
+  }
+
+  _renderPowerConfirm() {
+    return `<div class="dialog"><div>
+      <h3 style="margin:0 0 8px;font-size:16px">Kino ausschalten?</h3>
+      <p style="margin:0 0 18px;font-size:13px;color:var(--kino-text2)">
+        Alle Geräte werden heruntergefahren und das Licht wird wiederhergestellt.
+      </p>
+      <div class="row">
+        <button class="ghost" data-act="cancel-power-off">Abbrechen</button>
+        <button class="primary" style="padding:12px;font-size:13px" data-act="confirm-power-off">Ausschalten</button>
+      </div>
+    </div></div>`;
+  }
+
+  _renderFooter() {
+    const k = this._kino;
+    if (k.state === "off" || this._view.detailId || this._view.playingOpen) return "";
+    const player = this._playerEntity;
+    const state = player ? this._hass.states[player] : null;
+    const playing = state && ["playing", "paused"].includes(state.state);
+    const volumeEntity = this._volumeEntity;
+    const db = volumeEntity ? this._hass.states[volumeEntity]?.state : null;
+    const muted = state && state.attributes.is_volume_muted;
+
+    const volume = `
+      <div class="volrow">
+        <button class="pill" data-act="mute" aria-pressed="${!!muted}">Stumm</button>
+        <button class="round" data-act="vol" data-key="down">–</button>
+        <span class="volval">${this._esc(helpers.formatVolume(db, muted))}</span>
+        <button class="round" data-act="vol" data-key="up">+</button>
+      </div>`;
+
+    if (!playing) {
+      const current = this._currentActivity;
+      return `<footer>
+        <div class="footrow">
+          <div style="flex:1;font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            ${this._esc(current ? current.name : "")}
+          </div>
+        </div>
+        ${volume}
+      </footer>`;
+    }
+
+    const attrs = state.attributes;
+    const duration = attrs.media_duration || 0;
+    const position = attrs.media_position || 0;
+    const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
+    return `<footer>
+      <div class="footrow">
+        <div style="flex:1;overflow:hidden;cursor:pointer" data-act="expand-playing">
+          <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${this._esc(attrs.media_title || "Wiedergabe")}
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+            <span style="font-size:10px;color:var(--kino-text3)">${helpers.formatTime(position)}</span>
+            <div class="bar" style="flex:1;height:3px;margin:0"><div style="width:${pct}%"></div></div>
+            <span style="font-size:10px;color:var(--kino-text3)">${helpers.formatTime(duration)}</span>
+          </div>
+        </div>
+        <button class="round" style="background:var(--kino-gold);color:var(--kino-goldText)"
+          data-act="transport" data-key="${state.state === "playing" ? "media_pause" : "media_play"}">
+          ${state.state === "playing" ? "⏸" : "▶"}
+        </button>
+      </div>
+      ${volume}
+    </footer>`;
+  }
+
+  /* -- events -------------------------------------------------------- */
+
+  async _onClick(event) {
+    const target = event.target.closest("[data-act]");
+    if (!target) return;
+    const act = target.dataset.act;
+    const key = target.dataset.key;
+    const kind = target.dataset.kind;
+    const view = this._view;
+
+    switch (act) {
+      case "activate":
+        await this._activate(key);
+        break;
+      case "toggle-menu":
+        view.activityMenu = !view.activityMenu;
+        this._render();
+        break;
+      case "ask-power-off":
+        view.powerConfirm = true;
+        this._render();
+        break;
+      case "cancel-power-off":
+        view.powerConfirm = false;
+        this._render();
+        break;
+      case "confirm-power-off":
+        await this._activate(this._kino.offActivity);
+        break;
+      case "restore":
+        await this._restoreDevice(key);
+        break;
+      case "dismiss-drift":
+        await this._dismissDrift(key);
+        break;
+      case "open-library":
+        view.main = "library";
+        view.category = key || "movies";
+        this._render();
+        await this._loadLibrary();
+        break;
+      case "category":
+        view.category = key;
+        this._render();
+        await this._loadLibrary();
+        break;
+      case "back-home":
+        view.main = "home";
+        this._render();
+        break;
+      case "open-filters":
+        view.filterSheet = true;
+        this._render();
+        break;
+      case "close-filters":
+        view.filterSheet = false;
+        this._render();
+        await this._loadLibrary();
+        break;
+      case "reset-filters":
+        view.filters = { tags: [], genres: [], countries: [], yearFrom: null, yearTo: null };
+        this._render();
+        break;
+      case "toggle-filter":
+      case "remove-filter": {
+        const bucket = { tag: "tags", genre: "genres", country: "countries" }[kind];
+        const list = view.filters[bucket];
+        view.filters[bucket] = list.includes(key)
+          ? list.filter((v) => v !== key)
+          : [...list, key];
+        this._render();
+        if (act === "remove-filter") await this._loadLibrary();
+        break;
+      }
+      case "force-refresh":
+        await this._forceRefresh();
+        break;
+      case "open-detail":
+        view.detailId = key;
+        view.detail = null;
+        this._render();
+        try {
+          view.detail = await this._ws({ type: "kino/library/item", item_id: key });
+        } catch (err) {
+          view.detail = null;
+          this._error = err.message;
+        }
+        this._render();
+        break;
+      case "close-detail":
+        view.detailId = null;
+        view.detail = null;
+        this._render();
+        break;
+      case "play":
+      case "play-from-start":
+        await this._play(key, act === "play-from-start");
+        break;
+      case "expand-playing":
+        view.playingOpen = true;
+        this._render();
+        break;
+      case "collapse-playing":
+        view.playingOpen = false;
+        this._render();
+        break;
+      case "transport":
+        await this._transport(key);
+        break;
+      case "vol":
+        await this._stepVolume(key === "up" ? 1 : -1);
+        break;
+      case "mute":
+        await this._toggleMute();
+        break;
+      case "musik-source":
+        view.musikSource = key;
+        this._render();
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
+   * FR-55: picking a title while Film is not running starts the activity and
+   * then plays — one user action, with progress shown throughout.
+   */
+  async _play(itemId, fromStart) {
+    const k = this._kino;
+    const filmActivity = k.activities.find((a) => a.media);
+    this._view.detailId = null;
+    this._view.detail = null;
+    if (filmActivity && k.activity !== filmActivity.key) {
+      await this._activate(filmActivity.key);
+    }
+    const player = this._playerEntity;
+    if (!player) return;
+    await this._callService("media_player", "play_media", {
+      entity_id: player,
+      media_content_id: itemId,
+      media_content_type: "movie",
+      extra: { resume: !fromStart },
+    }).catch((err) => {
+      this._error = err.message;
+    });
+    this._view.playingOpen = true;
+    this._render();
+  }
+
+  _onChange(event) {
+    const field = event.target.dataset.field;
+    if (field === "sort") {
+      this._view.sort = event.target.value;
+      this._loadLibrary();
+    } else if (field === "entity-select") {
+      this._callService("select", "select_option", {
+        entity_id: event.target.dataset.key,
+        option: event.target.value,
+      });
+    }
+  }
+
+  _onInput(event) {
+    if (event.target.dataset.field !== "query") return;
+    this._view.query = event.target.value;
+    // Incremental results as the user types, without a request per keystroke.
+    if (this._searchTimer) clearTimeout(this._searchTimer);
+    this._searchTimer = setTimeout(() => this._loadLibrary(), 250);
+  }
+}
+
+if (typeof customElements !== "undefined" && !customElements.get("kino-card")) {
+  customElements.define("kino-card", KinoCard);
+}
+
+if (typeof window !== "undefined") {
+  window.customCards = window.customCards || [];
+  if (!window.customCards.some((c) => c.type === "kino-card")) {
+    window.customCards.push({
+      type: "kino-card",
+      name: "Kino",
+      description:
+        "Heimkino-Steuerung: Aktivitäten, Status, Bibliothek, Wiedergabe und Lautstärke.",
+      preview: true,
+    });
+  }
+  console.info(
+    `%c KINO-CARD %c ${CARD_VERSION} `,
+    "background:#c8952c;color:#111;font-weight:700",
+    ""
+  );
+}
+
+export { KinoCard };

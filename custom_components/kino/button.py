@@ -27,7 +27,7 @@ async def async_setup_entry(
 
 
 class KinoRetryButton(KinoEntity, ButtonEntity):
-    """ "Nochmal versuchen" — re-runs the activity the user actually wanted."""
+    """Retry — re-runs the activity the user actually wanted."""
 
     _attr_translation_key = "retry"
     _attr_icon = "mdi:refresh"
@@ -46,7 +46,7 @@ class KinoRetryButton(KinoEntity, ButtonEntity):
 
 
 class KinoAllOffButton(KinoEntity, ButtonEntity):
-    """ "Alles ausschalten" — always available, even from an error state."""
+    """Turn everything off — always available, even from an error state."""
 
     _attr_translation_key = "all_off"
     _attr_icon = "mdi:power"

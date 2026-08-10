@@ -157,7 +157,7 @@ class MediaBackend(Protocol):
         """Full detail for one entry."""
 
     async def resume(self, limit: int = 12) -> Sequence[MediaItem]:
-        """ "Weitersehen", sourced from the catalogue (FR-49a)."""
+        """Return the resume list, sourced from the catalogue (FR-49a)."""
 
     async def facets(self) -> Facets:
         """Available filter values."""

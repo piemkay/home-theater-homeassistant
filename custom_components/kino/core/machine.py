@@ -279,7 +279,7 @@ class ActivityEngine:
                 await self._task
             except asyncio.CancelledError:
                 pass
-            except Exception:
+            except Exception:  # noqa: BLE001 - the retarget must not inherit it
                 # The abandoned transition's failure is not this one's
                 # problem, but it should still show up in the log.
                 _LOGGER.debug(
