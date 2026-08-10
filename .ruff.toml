@@ -1,0 +1,81 @@
+# Ruff configuration for the Kino integration.
+#
+# Based on Home Assistant's own conventions rather than a generic strict
+# preset: HA custom components require relative imports, entity property
+# overrides do not carry docstrings, and `custom_components/kino/core` targets
+# Python 3.10 so it can be unit-tested outside a Home Assistant runtime.
+
+target-version = "py312"
+line-length = 88
+
+[lint]
+select = ["ALL"]
+
+ignore = [
+    "CPY001",  # No per-file copyright headers in this project
+    "TID252",  # HA custom components must use relative imports
+    "D102",    # Entity property overrides inherit their docstrings
+    "D105",    # Magic methods are self-describing
+    "D107",    # __init__ is documented on the class
+    "D203",    # Conflicts with D211
+    "D213",    # Conflicts with D212
+    "TRY003",  # Long, specific error messages are the point here (FR-92)
+    "EM101",   # ... and they read better inline than via a variable
+    "EM102",
+    "TC001",   # Runtime-evaluated annotations keep dataclasses working
+    "TC002",
+    "TC003",
+    "UP042",   # `str, Enum` keeps core/ importable on Python 3.10
+    "COM812",  # Conflicts with the formatter
+    "ISC001",  # Conflicts with the formatter
+    "FBT001",  # Boolean flags are idiomatic in the driver/report APIs
+    "FBT002",
+    "PLR0913", # Wide keyword-only constructors are deliberate
+    "ANN401",  # `Any` is correct at the Home Assistant boundary
+    "RUF001",  # German typography uses en dashes deliberately
+    "RUF003",
+    "N818",    # `ConfigErrors` / `TransitionAborted` read better as-is
+    "PLR2004", # HTTP status codes and tolerances read fine inline
+    "PLR0911", # State classifiers are flat on purpose, not nested
+    "S105",    # `CONF_TOKEN = "token"` is a config key, not a secret
+    "S106",
+    "ASYNC109", # A client-level timeout parameter is the right API here
+]
+
+[lint.per-file-ignores]
+# `async_setup_entry` is a Home Assistant platform hook: fixed signature,
+# self-describing, and `hass` is genuinely unused in most platforms.
+"custom_components/kino/{binary_sensor,button,media_player,number,select,sensor}.py" = [
+    "ARG001",
+    "D103",
+]
+# WebSocket handlers have a fixed (hass, connection, msg) signature.
+"custom_components/kino/websocket_api.py" = ["ANN001", "D103"]
+"custom_components/kino/http.py" = ["ARG002"]
+"tests/*" = [
+    "ANN",
+    "E402",   # conftest installs import shims before importing the package
+    "E501",
+    "PT018",
+    "PYI034",
+    "RUF002",     # Test signatures are self-evident
+    "ARG",     # pytest fixtures arrive as unused-looking arguments
+    "D",       # Docstrings are optional on individual test cases
+    "S101",    # assert is the point
+    "SLF001",  # Tests may reach into internals
+    "PLC0415", # Local imports keep some tests self-contained
+    "PLR2004", # Magic numbers are the expected values
+    "INP001",
+]
+"custom_components/kino/config_store.py" = [
+    "E501",    # The embedded default YAML document is formatted for humans
+]
+
+[lint.pydocstyle]
+convention = "pep257"
+
+[lint.flake8-type-checking]
+runtime-evaluated-base-classes = [
+    "homeassistant.helpers.entity.Entity",
+    "custom_components.kino.entity.KinoEntity",
+]

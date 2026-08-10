@@ -1,0 +1,53 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Kino einrichten",
+        "description": "Die Aktivitätssteuerung funktioniert auch ohne Jellyfin. Für Bibliothek, Suche und \"Weitersehen\" bitte die Jellyfin-Adresse angeben.",
+        "data": {
+          "jellyfin_url": "Jellyfin-Adresse",
+          "verify_ssl": "SSL-Zertifikat prüfen"
+        }
+      },
+      "quick_connect": {
+        "title": "Jellyfin verbinden",
+        "description": "Bitte in Jellyfin unter Einstellungen → QuickConnect den Code **{code}** bestätigen und danach hier auf \"Absenden\" tippen. So wird kein Passwort übertragen."
+      }
+    },
+    "error": {
+      "cannot_connect": "Jellyfin ist unter dieser Adresse nicht erreichbar.",
+      "not_authorized": "Der Code wurde noch nicht bestätigt. Bitte in Jellyfin bestätigen und erneut versuchen."
+    },
+    "abort": {
+      "already_configured": "Kino ist bereits eingerichtet.",
+      "quick_connect_unavailable": "QuickConnect ist auf diesem Jellyfin-Server nicht aktiviert. Bitte in Jellyfin unter Einstellungen → QuickConnect aktivieren."
+    }
+  },
+  "entity": {
+    "select": {
+      "activity": { "name": "Aktivität" },
+      "audio_track": { "name": "Tonspur" },
+      "subtitle_track": { "name": "Untertitel" }
+    },
+    "sensor": {
+      "status": { "name": "Status" },
+      "progress": { "name": "Fortschritt" },
+      "device_status": { "name": "{device}" }
+    },
+    "binary_sensor": {
+      "error": { "name": "Fehler" },
+      "degraded": { "name": "Degradiert" }
+    },
+    "button": {
+      "retry": { "name": "Nochmal versuchen" },
+      "all_off": { "name": "Alles ausschalten" },
+      "refresh_library": { "name": "Bibliothek aktualisieren" }
+    },
+    "number": {
+      "volume": { "name": "Lautstärke" }
+    },
+    "media_player": {
+      "kino": { "name": "Kino" }
+    }
+  }
+}

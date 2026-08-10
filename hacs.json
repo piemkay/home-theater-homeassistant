@@ -1,0 +1,7 @@
+{
+  "name": "Kino",
+  "content_in_root": false,
+  "render_readme": true,
+  "homeassistant": "2025.6.0",
+  "hacs": "2.0.0"
+}

@@ -1,4 +1,5 @@
-"""Core domain model for the Kino activity engine.
+"""
+Core domain model for the Kino activity engine.
 
 This module is deliberately free of any Home Assistant import so the whole
 engine can be unit-tested without hardware and without a Home Assistant
@@ -7,9 +8,10 @@ runtime (NFR-6).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any
 
 # --------------------------------------------------------------------------
 # Enumerations
@@ -24,7 +26,8 @@ class PowerTarget(str, Enum):
 
 
 class Power(str, Enum):
-    """Observed power state of a device.
+    """
+    Observed power state of a device.
 
     ``TRANSITIONING`` covers both directions; drivers that can tell the
     difference report it through :attr:`DeviceObservation.phase` instead.
@@ -200,7 +203,8 @@ class DeviceObservation:
         return self.power is Power.OFF
 
     def setting_matches(self, key: str, wanted: Any) -> bool:
-        """Return True when the device demonstrably already has ``wanted``.
+        """
+        Return True when the device demonstrably already has ``wanted``.
 
         Unknown or unverified values never match — an unverifiable setting
         must be re-applied rather than assumed correct.

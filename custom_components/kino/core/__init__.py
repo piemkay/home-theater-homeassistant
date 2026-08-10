@@ -1,4 +1,5 @@
-"""Hardware- and Home-Assistant-free core of the Kino activity engine.
+"""
+Hardware- and Home-Assistant-free core of the Kino activity engine.
 
 Nothing in this package may import ``homeassistant``. That is what lets the
 planner, executor, state machine and config schema be unit-tested without a

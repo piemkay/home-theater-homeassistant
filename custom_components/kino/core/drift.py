@@ -1,4 +1,5 @@
-"""Out-of-band state change detection and classification (FR-36 .. FR-39a).
+"""
+Out-of-band state change detection and classification (FR-36 .. FR-39a).
 
 The rule this module exists to enforce: the integration reconciles, it does
 not enforce. When a person switches a device off with its own remote, we
@@ -7,8 +8,8 @@ follow them and say so — we never quietly switch it back on (FR-38).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 from .model import (
     ActivityDef,
@@ -35,7 +36,8 @@ class DriftFinding:
 
 
 class DriftDetector:
-    """Debounced drift detection over a stream of observations (FR-39a).
+    """
+    Debounced drift detection over a stream of observations (FR-39a).
 
     A finding is only reported once the same deviation has been seen for
     ``debounce_seconds``; a device's own transient states therefore cannot
@@ -63,7 +65,7 @@ class DriftDetector:
         self._confirmed.pop(device, None)
         self._dismissed.discard(device)
 
-    def evaluate(
+    def evaluate(  # noqa: C901 - one flat pass over the FR-37 table
         self,
         *,
         activity: ActivityDef,
@@ -165,8 +167,7 @@ def _classify(
             device=spec.key,
             classification=DriftClass.DELIBERATE,
             detail=(
-                f"{spec.name} wurde vermutlich per eigener Fernbedienung "
-                "ausgeschaltet"
+                f"{spec.name} wurde vermutlich per eigener Fernbedienung ausgeschaltet"
             ),
             restorable=True,
         )

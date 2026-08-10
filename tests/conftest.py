@@ -1,4 +1,5 @@
-"""Shared fixtures: a fake device rig that behaves like the real room.
+"""
+Shared fixtures: a fake device rig that behaves like the real room.
 
 The fakes model the awkward parts on purpose — the projector's slow cooldown
 and its `ready`-means-two-things quirk, the Trinnov's source list arriving
@@ -9,23 +10,46 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import types
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_ROOT))
 
-from custom_components.kino.core.model import (  # noqa: E402
+
+def _stub_package(name: str, path: Path) -> None:
+    """Register a namespace-only stand-in for a package.
+
+    ``custom_components/kino/__init__.py`` is a Home Assistant entry point and
+    imports ``homeassistant`` at module scope. Importing anything beneath it —
+    including the deliberately HA-free ``core`` package — would drag that in.
+    Pre-registering the parents as bare namespace modules means Python never
+    executes their ``__init__``, so ``core``, ``devices`` and ``media`` stay
+    importable on a plain Python install with no Home Assistant present.
+    """
+    module = types.ModuleType(name)
+    module.__path__ = [str(path)]  # type: ignore[attr-defined]
+    sys.modules.setdefault(name, module)
+
+
+_stub_package("custom_components", _ROOT / "custom_components")
+_stub_package("custom_components.kino", _ROOT / "custom_components" / "kino")
+
+from custom_components.kino.core.model import (
     DeviceObservation,
     DeviceSpec,
     Power,
 )
-from custom_components.kino.core.schema import validate  # noqa: E402
+from custom_components.kino.core.schema import validate
 
 
 class FakeClock:
-    """A virtual clock, so timing behaviour is exact instead of merely fast.
+    """
+    A virtual clock, so timing behaviour is exact instead of merely fast.
 
     Sleepers register a wake-up time and block. :meth:`run` drives the real
     event loop until nothing can make progress, then jumps virtual time to the
@@ -35,7 +59,7 @@ class FakeClock:
 
     def __init__(self) -> None:
         self.now = 0.0
-        self._waiters: list[tuple[float, "asyncio.Future[None]"]] = []
+        self._waiters: list[tuple[float, asyncio.Future[None]]] = []
 
     def time(self) -> float:
         return self.now

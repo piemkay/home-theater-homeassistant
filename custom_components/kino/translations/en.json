@@ -1,0 +1,79 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Kino",
+        "description": "Activity control works without Jellyfin. For the library, search and \"continue watching\", enter the Jellyfin address.",
+        "data": {
+          "jellyfin_url": "Jellyfin address",
+          "verify_ssl": "Verify SSL certificate"
+        }
+      },
+      "quick_connect": {
+        "title": "Connect Jellyfin",
+        "description": "Approve code **{code}** in Jellyfin under Settings → QuickConnect, then press Submit here. No password is transmitted."
+      }
+    },
+    "error": {
+      "cannot_connect": "Jellyfin is not reachable at this address.",
+      "not_authorized": "The code has not been approved yet. Approve it in Jellyfin and try again."
+    },
+    "abort": {
+      "already_configured": "Kino is already set up.",
+      "quick_connect_unavailable": "QuickConnect is not enabled on this Jellyfin server."
+    }
+  },
+  "entity": {
+    "select": {
+      "activity": {
+        "name": "Activity"
+      },
+      "audio_track": {
+        "name": "Audio track"
+      },
+      "subtitle_track": {
+        "name": "Subtitles"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "progress": {
+        "name": "Progress"
+      },
+      "device_status": {
+        "name": "{device}"
+      }
+    },
+    "binary_sensor": {
+      "error": {
+        "name": "Error"
+      },
+      "degraded": {
+        "name": "Degraded"
+      }
+    },
+    "button": {
+      "retry": {
+        "name": "Retry"
+      },
+      "all_off": {
+        "name": "Turn everything off"
+      },
+      "refresh_library": {
+        "name": "Refresh library"
+      }
+    },
+    "number": {
+      "volume": {
+        "name": "Volume"
+      }
+    },
+    "media_player": {
+      "kino": {
+        "name": "Kino"
+      }
+    }
+  }
+}

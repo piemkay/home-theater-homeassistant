@@ -1,4 +1,5 @@
-"""Differential transition planner (FR-10 .. FR-14).
+"""
+Differential transition planner (FR-10 .. FR-14).
 
 Given what the room *is* (observations straight off the devices) and what an
 activity *wants*, produce the smallest set of operations that closes the gap.
@@ -8,7 +9,8 @@ A cold start is not a special case: it is the delta from "everything off"
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from .model import (
     ActionKind,
@@ -22,16 +24,12 @@ from .model import (
 )
 
 
-def _wanted_settings(
-    activity: ActivityDef, device_key: str
-) -> Mapping[str, Any]:
+def _wanted_settings(activity: ActivityDef, device_key: str) -> Mapping[str, Any]:
     req = activity.devices.get(device_key)
     return dict(req.settings) if req else {}
 
 
-def _is_required(
-    activity: ActivityDef, spec: DeviceSpec, device_key: str
-) -> bool:
+def _is_required(activity: ActivityDef, spec: DeviceSpec, device_key: str) -> bool:
     req = activity.devices.get(device_key)
     if req is not None and req.required is not None:
         return req.required
@@ -63,7 +61,8 @@ def plan_transition(
     target: ActivityDef,
     current_activity: str | None = None,
 ) -> TransitionPlan:
-    """Compute the delta between the observed room and ``target``.
+    """
+    Compute the delta between the observed room and ``target``.
 
     Devices absent from ``observations`` are treated as unknown, which forces
     a start when the activity needs them and no action when it does not.
@@ -156,7 +155,8 @@ def infer_active_activity(
     activities: Mapping[str, ActivityDef],
     off_activity: str,
 ) -> tuple[str, list[str]]:
-    """Derive the active activity from observed state alone (FR-31).
+    """
+    Derive the active activity from observed state alone (FR-31).
 
     Returns the best-matching activity key and the list of devices that
     deviate from it. The off activity wins only when nothing is powered, so a
@@ -191,13 +191,9 @@ def infer_active_activity(
         for device_key in matched:
             spec = devices[device_key]
             obs = observations[device_key]
-            drift = _drifted_settings(
-                obs, _wanted_settings(activity, device_key), spec
-            )
+            drift = _drifted_settings(obs, _wanted_settings(activity, device_key), spec)
             # Unverifiable settings cannot argue against a match.
-            hard_drift = {
-                k for k in drift if k not in spec.unverifiable_settings
-            }
+            hard_drift = {k for k in drift if k not in spec.unverifiable_settings}
             if hard_drift:
                 setting_misses.append(device_key)
         score -= 0.05 * len(setting_misses)

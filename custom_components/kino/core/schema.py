@@ -1,4 +1,5 @@
-"""Formal schema and validation for the Kino config document (FR-91, FR-92).
+"""
+Formal schema and validation for the Kino config document (FR-91, FR-92).
 
 The schema is the contract. The admin panel, when it arrives, is only an
 editor over exactly this document (FR-94), so validation lives here rather
@@ -10,7 +11,8 @@ loudly and specifically instead of silently falling back (A17).
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from .model import (
     ActivityDef,
@@ -23,9 +25,7 @@ from .model import (
 
 SCHEMA_VERSION = 1
 
-KNOWN_DRIVERS = frozenset(
-    {"barco", "trinnov", "zidoo", "madvr", "generic", "light_scene"}
-)
+KNOWN_DRIVERS = frozenset({"barco", "trinnov", "zidoo", "madvr", "generic"})
 
 _DEVICE_KEYS = frozenset(
     {
@@ -110,9 +110,7 @@ def _as_float(
     return out
 
 
-def _as_str_list(
-    value: Any, path: str, errors: list[ConfigError]
-) -> tuple[str, ...]:
+def _as_str_list(value: Any, path: str, errors: list[ConfigError]) -> tuple[str, ...]:
     if value is None:
         return ()
     if isinstance(value, str):
@@ -122,12 +120,12 @@ def _as_str_list(
         return ()
     out = []
     for index, item in enumerate(value):
-        if not isinstance(item, str):
+        if isinstance(item, str):
+            out.append(item)
+        else:
             errors.append(
                 ConfigError(f"{path}[{index}]", f"erwartet Text, gefunden {item!r}")
             )
-            continue
-        out.append(item)
     return tuple(out)
 
 
@@ -137,21 +135,15 @@ def _unknown_keys(
     path: str,
     errors: list[ConfigError],
 ) -> None:
-    for key in mapping:
-        if key not in allowed:
-            errors.append(
-                ConfigError(
-                    f"{path}.{key}",
-                    "unbekanntes Feld (erlaubt: "
-                    + ", ".join(sorted(allowed))
-                    + ")",
-                )
-            )
+    allowed_text = ", ".join(sorted(allowed))
+    errors.extend(
+        ConfigError(f"{path}.{key}", f"unbekanntes Feld (erlaubt: {allowed_text})")
+        for key in mapping
+        if key not in allowed
+    )
 
 
-def _parse_device(
-    key: str, raw: Any, errors: list[ConfigError]
-) -> DeviceSpec | None:
+def _parse_device(key: str, raw: Any, errors: list[ConfigError]) -> DeviceSpec | None:
     path = f"devices.{key}"
     if not isinstance(raw, Mapping):
         errors.append(ConfigError(path, "erwartet ein Objekt"))
@@ -221,7 +213,7 @@ def _parse_device(
         required=True if required_value is None else required_value,
         is_media=False if is_media_value is None else is_media_value,
         options=dict(options),
-        **{k: v for k, v in numeric.items()},
+        **numeric,
     )
 
 
@@ -340,8 +332,9 @@ def _parse_activity(
     )
 
 
-def validate(document: Any) -> KinoConfig:
-    """Validate a raw config document and return the typed configuration.
+def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
+    """
+    Validate a raw config document and return the typed configuration.
 
     Raises :class:`ConfigErrors` listing every problem found, so a broken file
     reports all of its faults at once instead of one per reload.
@@ -469,8 +462,7 @@ def validate(document: Any) -> KinoConfig:
 
     shutdown_scene = settings.get("shutdown_light_scene")
     if shutdown_scene is not None and (
-        not isinstance(shutdown_scene, str)
-        or not shutdown_scene.startswith("scene.")
+        not isinstance(shutdown_scene, str) or not shutdown_scene.startswith("scene.")
     ):
         errors.append(
             ConfigError(
@@ -483,13 +475,10 @@ def validate(document: Any) -> KinoConfig:
     # A device no activity ever mentions is dead weight and almost certainly a
     # typo; flag it rather than let it sit there doing nothing (FR-115).
     mentioned = {d for a in activities.values() for d in a.devices}
-    for key in sorted(set(devices) - mentioned):
-        errors.append(
-            ConfigError(
-                f"devices.{key}",
-                "wird von keiner Aktivität verwendet",
-            )
-        )
+    errors.extend(
+        ConfigError(f"devices.{key}", "wird von keiner Aktivität verwendet")
+        for key in sorted(set(devices) - mentioned)
+    )
 
     if errors:
         raise ConfigErrors(errors)
@@ -520,7 +509,7 @@ def _detect_cycles(
         if state.get(key) == 2:
             return
         if state.get(key) == 1:
-            cycle = " -> ".join(stack[stack.index(key) :] + [key])
+            cycle = " -> ".join([*stack[stack.index(key) :], key])
             if cycle not in reported:
                 reported.add(cycle)
                 errors.append(
@@ -533,7 +522,7 @@ def _detect_cycles(
         state[key] = 1
         for dependency in devices[key].depends_on:
             if dependency in devices:
-                visit(dependency, stack + [key])
+                visit(dependency, [*stack, key])
         state[key] = 2
 
     for key in devices:

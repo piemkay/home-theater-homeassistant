@@ -1,0 +1,53 @@
+reload:
+  name: Konfiguration neu laden
+  description: >-
+    Liest kino.yaml neu ein und übernimmt Geräte und Aktivitäten ohne
+    Neustart von Home Assistant.
+
+activate:
+  name: Aktivität starten
+  description: >-
+    Wechselt auf eine Aktivität. Läuft bereits ein Wechsel, wird das Ziel
+    geändert statt einen zweiten Wechsel anzuhängen.
+  fields:
+    activity:
+      name: Aktivität
+      description: Schlüssel der Aktivität, z. B. film, netflix, musik, steam, aus.
+      required: true
+      example: film
+      selector:
+        text:
+
+dry_run:
+  name: Übergang simulieren
+  description: >-
+    Berechnet den Unterschied zwischen dem beobachteten Zustand und einer
+    Aktivität, ohne etwas auszuführen.
+  fields:
+    activity:
+      name: Aktivität
+      description: Zielaktivität.
+      required: true
+      example: netflix
+      selector:
+        text:
+
+restore_device:
+  name: Gerät wiederherstellen
+  description: >-
+    Bringt ein einzelnes Gerät wieder in den Zustand, den die aktive
+    Aktivität erwartet.
+  fields:
+    device:
+      name: Gerät
+      description: Schlüssel des Geräts, z. B. barco, trinnov, madvr, zidoo.
+      required: true
+      example: barco
+      selector:
+        text:
+
+refresh_library:
+  name: Bibliothek aktualisieren
+  description: >-
+    Startet einen Neuabgleich der Jellyfin-Bibliothek. Hilft, wenn die
+    NAS-Platten geschlafen haben und der erste Zugriff fehlgeschlagen ist.

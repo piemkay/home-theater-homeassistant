@@ -1,4 +1,5 @@
-"""Concurrent, dependency-aware execution of a transition plan.
+"""
+Concurrent, dependency-aware execution of a transition plan.
 
 Design rules this file implements:
 
@@ -17,13 +18,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 from .estimator import DurationEstimator
 from .model import (
     ActionKind,
-    ActivityDef,
     DeviceAction,
     DeviceHealth,
     DeviceObservation,
@@ -58,7 +59,7 @@ class DeviceDriver(Protocol):
         """Stop playing media cleanly, if this device plays any."""
 
     def is_ready(self, observation: DeviceObservation) -> bool:
-        """True when the device can be configured and used."""
+        """Return True when the device can be configured and used."""
 
 
 class TransitionAborted(Exception):
@@ -170,24 +171,22 @@ class TransitionExecutor:
         self._time = time_fn or asyncio.get_event_loop().time
         self._sleep = sleep_fn or asyncio.sleep
 
-    async def execute(
+    async def execute(  # noqa: C901 - linear: set up, run, collect, report
         self,
         plan: TransitionPlan,
         *,
-        target: ActivityDef,
         on_progress: ProgressCallback | None = None,
     ) -> TransitionResult:
         """Execute ``plan``; return once every required device has settled."""
         started = self._time()
         steps = self._build_steps(plan)
-        by_device = {step.action.device: step for step in steps}
         ready_events: dict[str, asyncio.Event] = {
             step.action.device: asyncio.Event() for step in steps
         }
 
         # Devices that stay untouched are ready from the start, so anything
         # depending on them is not gated behind work that will never run.
-        for device, driver in self._drivers.items():
+        for device in self._drivers:
             if device not in ready_events:
                 ready_events[device] = asyncio.Event()
                 ready_events[device].set()
@@ -206,9 +205,7 @@ class TransitionExecutor:
         runnable = [s for s in steps if s.action.kind is not ActionKind.KEEP]
         runnable.sort(key=lambda s: s.estimate, reverse=True)
 
-        reporter = asyncio.ensure_future(
-            self._report_loop(plan, steps, on_progress)
-        )
+        reporter = asyncio.ensure_future(self._report_loop(plan, steps, on_progress))
         tasks = [
             asyncio.ensure_future(self._run_step(step, ready_events))
             for step in runnable
@@ -223,9 +220,7 @@ class TransitionExecutor:
                 elif isinstance(outcome, BaseException) and not isinstance(
                     outcome, TransitionAborted
                 ):
-                    _LOGGER.exception(
-                        "Unerwarteter Fehler im Übergang", exc_info=outcome
-                    )
+                    _LOGGER.error("Unerwarteter Fehler im Übergang", exc_info=outcome)
                     if failure is None:
                         failure = TransitionAborted("?", str(outcome))
         except asyncio.CancelledError:
@@ -288,7 +283,7 @@ class TransitionExecutor:
             step.finished_at = self._time()
             ready_events[action.device].set()
             raise
-        except Exception as err:  # noqa: BLE001 - surfaced, never swallowed
+        except Exception as err:
             step.health = DeviceHealth.ERROR
             step.error = str(err)
             step.finished_at = self._time()
@@ -336,9 +331,7 @@ class TransitionExecutor:
             await driver.apply(dict(step.action.settings))
         step.health = DeviceHealth.READY
 
-    async def _do_reconfigure(
-        self, driver: DeviceDriver, step: StepState
-    ) -> None:
+    async def _do_reconfigure(self, driver: DeviceDriver, step: StepState) -> None:
         step.health = DeviceHealth.STARTING
         await driver.apply(dict(step.action.settings))
         step.health = DeviceHealth.READY
@@ -365,9 +358,7 @@ class TransitionExecutor:
             # One unreachable device must not block the others, but an
             # unverified shutdown is still an error the user gets to see.
             step.health = DeviceHealth.ERROR
-            step.error = (
-                f"{spec.name} hat das Ausschalten nicht bestätigt"
-            )
+            step.error = f"{spec.name} hat das Ausschalten nicht bestätigt"
             raise TransitionAborted(spec.key, step.error) from err
         step.health = DeviceHealth.OFF
 
@@ -389,8 +380,7 @@ class TransitionExecutor:
                 return observation
             if self._time() >= deadline:
                 raise TimeoutError(
-                    f"{driver.spec.name} {what} nicht innerhalb von "
-                    f"{int(timeout)}s"
+                    f"{driver.spec.name} {what} nicht innerhalb von {int(timeout)}s"
                 )
             await self._sleep(self._poll)
 
@@ -462,7 +452,8 @@ class TransitionExecutor:
         weights = [max(step.estimate, 0.1) for step in steps]
         total = sum(weights) or 1.0
         done = sum(
-            weight * step.fraction(now) for weight, step in zip(weights, steps)
+            weight * step.fraction(now)
+            for weight, step in zip(weights, steps, strict=True)
         )
 
         bottleneck_step: StepState | None = None
@@ -489,7 +480,9 @@ class TransitionExecutor:
             eta_seconds=0.0 if finished else remaining,
             bottleneck=None if finished else _bottleneck_text(name, bottleneck_step),
             bottleneck_device=(
-                None if finished or not bottleneck_step else bottleneck_step.action.device
+                None
+                if finished or not bottleneck_step
+                else bottleneck_step.action.device
             ),
             device_health={s.action.device: s.health for s in steps},
             finished=finished,

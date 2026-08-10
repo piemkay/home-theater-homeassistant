@@ -1,4 +1,5 @@
-"""Learned duration model (FR-24, FR-82, FR-123).
+"""
+Learned duration model (FR-24, FR-82, FR-123).
 
 The ETA shown to the person in the room comes from what the devices have
 actually done before, not from a hardcoded guess. Estimates are a decaying
@@ -8,8 +9,9 @@ averaged into irrelevance, and a single freak run cannot dominate.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
 
 #: Weight of the newest sample. 0.3 converges in a handful of runs while
 #: still smoothing out one-off network stalls.
@@ -38,8 +40,12 @@ class DurationSample:
             self.seconds = (1.0 - _ALPHA) * self.seconds + _ALPHA * value
         self.samples += 1
         self.last_seconds = value
-        self.min_seconds = value if self.min_seconds is None else min(self.min_seconds, value)
-        self.max_seconds = value if self.max_seconds is None else max(self.max_seconds, value)
+        self.min_seconds = (
+            value if self.min_seconds is None else min(self.min_seconds, value)
+        )
+        self.max_seconds = (
+            value if self.max_seconds is None else max(self.max_seconds, value)
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -104,7 +110,10 @@ class DurationEstimator:
         return weight * sample.seconds + (1.0 - weight) * default
 
     def estimate_plan(self, durations: Mapping[str, float]) -> float:
-        """A transition takes as long as its slowest device (FR-22).
+        """
+        Return the critical-path duration of a whole plan (FR-22).
+
+        A transition takes as long as its slowest device (FR-22).
 
         Devices run concurrently, so the critical path — not the sum — is the
         honest number to show.

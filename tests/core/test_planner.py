@@ -27,9 +27,7 @@ def _film_running(config):
     """Everything the Film activity needs, already correct."""
     return {
         "barco": _obs("barco", Power.ON, {"profile": "HDR 260 HDMI"}),
-        "trinnov": _obs(
-            "trinnov", Power.ON, {"source": "zidoo", "volume": -30.0}
-        ),
+        "trinnov": _obs("trinnov", Power.ON, {"source": "zidoo", "volume": -30.0}),
         "madvr": _obs("madvr", Power.ON),
         "zidoo": _obs("zidoo", Power.ON),
         "shield": _obs("shield", Power.OFF),

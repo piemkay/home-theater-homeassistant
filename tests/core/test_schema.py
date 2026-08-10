@@ -68,9 +68,7 @@ def test_typo_in_field_name_is_not_silently_accepted(config_doc):
     with pytest.raises(ConfigErrors) as excinfo:
         validate(config_doc)
 
-    assert any(
-        e.path == "devices.trinnov.startup_timout" for e in excinfo.value.errors
-    )
+    assert any(e.path == "devices.trinnov.startup_timout" for e in excinfo.value.errors)
 
 
 def test_off_activity_may_not_power_anything_on(config_doc):
@@ -114,9 +112,7 @@ def test_invalid_entity_id_is_rejected(config_doc):
     with pytest.raises(ConfigErrors) as excinfo:
         validate(config_doc)
 
-    assert any(
-        e.path == "devices.madvr.entities.power" for e in excinfo.value.errors
-    )
+    assert any(e.path == "devices.madvr.entities.power" for e in excinfo.value.errors)
 
 
 def test_light_scene_must_be_a_scene_entity(config_doc):
@@ -125,9 +121,7 @@ def test_light_scene_must_be_a_scene_entity(config_doc):
     with pytest.raises(ConfigErrors) as excinfo:
         validate(config_doc)
 
-    assert any(
-        e.path == "activities.film.light_scene" for e in excinfo.value.errors
-    )
+    assert any(e.path == "activities.film.light_scene" for e in excinfo.value.errors)
 
 
 def test_volume_bounds_must_be_ordered(config_doc):
@@ -149,3 +143,25 @@ def test_all_errors_are_reported_in_one_pass(config_doc):
         validate(config_doc)
 
     assert len(excinfo.value.errors) >= 3
+
+
+def test_shipped_default_document_is_valid():
+    """
+    The starter config we write on first setup must load cleanly.
+
+    YAML 1.1 turns bare `off` into False, which would silently mangle
+    `control_class: off` — this test is what catches that.
+    """
+    import yaml
+
+    from custom_components.kino.config_store import DEFAULT_DOCUMENT
+
+    config = validate(yaml.safe_load(DEFAULT_DOCUMENT))
+
+    assert config.off_activity == "aus"
+    assert config.activities["aus"].control_class is ControlClass.OFF
+    assert config.activities["film"].devices["barco"].settings == {
+        "profile": "HDR 260 HDMI"
+    }
+    assert config.activities["musik"].requires("barco") is False
+    assert config.devices["shield"].required is False

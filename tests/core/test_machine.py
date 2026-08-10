@@ -45,9 +45,7 @@ async def test_cold_start_reaches_on(config, drivers, clock):
     assert snapshot.status_text() == "Bereit"
 
 
-async def test_state_is_derived_from_devices_after_a_restart(
-    config, drivers, clock
-):
+async def test_state_is_derived_from_devices_after_a_restart(config, drivers, clock):
     """NFR-3 / FR-31: a fresh engine reconciles to whatever the room is doing."""
     for key in ("barco", "trinnov", "madvr", "zidoo"):
         drivers[key].power = Power.ON
@@ -78,9 +76,7 @@ async def test_selecting_the_active_activity_does_nothing(config, drivers, clock
     assert engine.snapshot().state is ActivityState.ON
 
 
-async def test_double_tap_during_startup_does_not_start_twice(
-    config, drivers, clock
-):
+async def test_double_tap_during_startup_does_not_start_twice(config, drivers, clock):
     """A10: an impatient second tap on the same activity is absorbed."""
     engine = _engine(config, drivers, clock)
 
@@ -220,9 +216,7 @@ class TestDrift:
         assert finding.classification is DriftClass.BENIGN
         assert drivers["shield"].calls.count("start") == 1  # not re-powered
 
-    async def test_unreachable_device_is_transport_class(
-        self, config, drivers, clock
-    ):
+    async def test_unreachable_device_is_transport_class(self, config, drivers, clock):
         engine = _engine(config, drivers, clock)
         await _activate(engine, clock, "film")
 
@@ -248,9 +242,7 @@ class TestDrift:
         assert drivers["barco"].applied[-1] == {"profile": "HDR 260 HDMI"}
         assert engine.snapshot().drift == ()
 
-    async def test_dismissed_drift_stops_being_reported(
-        self, config, drivers, clock
-    ):
+    async def test_dismissed_drift_stops_being_reported(self, config, drivers, clock):
         engine = _engine(config, drivers, clock)
         await _activate(engine, clock, "film")
         drivers["barco"].power = Power.OFF

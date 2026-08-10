@@ -51,9 +51,7 @@ async def test_cold_start_runs_devices_concurrently(config, drivers, clock):
     """FR-12: total time is the slowest device, not the sum of all of them."""
     plan = _plan(config, drivers, "film")
 
-    result = await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["film"])
-    )
+    result = await clock.run(_executor(drivers, clock).execute(plan))
 
     assert result.succeeded
     # Barco 120s dominates; trinnov 40 + madvr 25 + zidoo 20 would be 205s if
@@ -63,14 +61,10 @@ async def test_cold_start_runs_devices_concurrently(config, drivers, clock):
         assert drivers[key].power is Power.ON
 
 
-async def test_settings_are_applied_after_the_device_is_ready(
-    config, drivers, clock
-):
+async def test_settings_are_applied_after_the_device_is_ready(config, drivers, clock):
     plan = _plan(config, drivers, "film")
 
-    await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["film"])
-    )
+    await clock.run(_executor(drivers, clock).execute(plan))
 
     assert drivers["barco"].calls == ["start", "apply"]
     assert drivers["barco"].applied == [{"profile": "HDR 260 HDMI"}]
@@ -85,9 +79,7 @@ async def test_device_already_ready_is_not_restarted(config, drivers, clock):
     drivers["trinnov"].settings = {"source": "zidoo", "volume": -30.0}
     plan = _plan(config, drivers, "film")
 
-    result = await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["film"])
-    )
+    result = await clock.run(_executor(drivers, clock).execute(plan))
 
     assert result.succeeded
     assert drivers["trinnov"].calls == []
@@ -117,9 +109,7 @@ async def test_dependencies_serialise_only_where_real(config_doc, clock):
         driver.apply = _apply  # type: ignore[method-assign]
 
     plan = _plan(config, drivers, "musik")
-    await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["musik"])
-    )
+    await clock.run(_executor(drivers, clock).execute(plan))
 
     assert drivers["zidoo"].power is Power.ON
     # Zidoo waited for the Trinnov rather than racing it.
@@ -139,9 +129,7 @@ async def test_critical_path_device_is_started_first(config, drivers, clock):
         driver.start = _start  # type: ignore[method-assign]
 
     plan = _plan(config, drivers, "film")
-    await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["film"])
-    )
+    await clock.run(_executor(drivers, clock).execute(plan))
 
     assert started[0] == "barco"
 
@@ -150,9 +138,7 @@ async def test_musik_does_not_wait_on_the_projector(config, drivers, clock):
     """A3/FR-23: an activity without a projector is fast."""
     plan = _plan(config, drivers, "musik")
 
-    result = await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["musik"])
-    )
+    result = await clock.run(_executor(drivers, clock).execute(plan))
 
     assert result.succeeded
     assert result.duration_seconds == pytest.approx(40.0, abs=2.0)
@@ -168,18 +154,14 @@ async def test_playback_is_stopped_before_its_player_powers_down(
     drivers["trinnov"].settings = {"source": "zidoo", "volume": -30.0}
     plan = _plan(config, drivers, "musik", current="film")
 
-    await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["musik"])
-    )
+    await clock.run(_executor(drivers, clock).execute(plan))
 
     assert drivers["zidoo"].calls == []  # kept, so never touched
     assert "stop_playback" not in drivers["barco"].calls  # not a media device
 
     # Now switch to an activity that drops the Zidoo entirely.
     plan = _plan(config, drivers, "netflix", current="musik")
-    await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["netflix"])
-    )
+    await clock.run(_executor(drivers, clock).execute(plan))
     assert drivers["zidoo"].calls[:2] == ["stop_playback", "stop"]
 
 
@@ -192,9 +174,7 @@ async def test_unverified_shutdown_raises_but_does_not_block_others(
     drivers["barco"].never_stops = True
     plan = _plan(config, drivers, "aus", current="film")
 
-    result = await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["aus"])
-    )
+    result = await clock.run(_executor(drivers, clock).execute(plan))
 
     assert not result.succeeded
     assert "Beamer" in (result.error or "")
@@ -209,9 +189,7 @@ async def test_optional_device_failure_does_not_fail_the_transition(
     drivers["shield"].fail_start = True
     plan = _plan(config, drivers, "netflix")
 
-    result = await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["netflix"])
-    )
+    result = await clock.run(_executor(drivers, clock).execute(plan))
 
     assert result.succeeded
     shield_step = next(s for s in result.steps if s.action.device == "shield")
@@ -226,9 +204,7 @@ async def test_required_device_failure_aborts_with_a_named_device(
     drivers["barco"].fail_start = True
     plan = _plan(config, drivers, "film")
 
-    result = await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["film"])
-    )
+    result = await clock.run(_executor(drivers, clock).execute(plan))
 
     assert not result.succeeded
     assert "barco" in (result.error or "")
@@ -241,7 +217,7 @@ async def test_startup_timeout_is_reported_not_hung(config, drivers, clock):
     plan = _plan(config, drivers, "film")
 
     result = await clock.run(
-        _executor(drivers, clock).execute(plan, target=config.activities["film"]),
+        _executor(drivers, clock).execute(plan),
         max_steps=50_000,
     )
 
@@ -253,13 +229,7 @@ async def test_progress_reports_a_named_bottleneck(config, drivers, clock):
     updates: list[TransitionProgress] = []
     plan = _plan(config, drivers, "film")
 
-    await clock.run(
-        _executor(drivers, clock).execute(
-            plan,
-            target=config.activities["film"],
-            on_progress=updates.append,
-        )
-    )
+    await clock.run(_executor(drivers, clock).execute(plan, on_progress=updates.append))
 
     assert updates
     assert updates[0].percent < updates[-1].percent
@@ -276,11 +246,7 @@ async def test_durations_are_learned_from_observed_runs(config, drivers, clock):
     estimator = DurationEstimator()
     plan = _plan(config, drivers, "musik")
 
-    await clock.run(
-        _executor(drivers, clock, estimator).execute(
-            plan, target=config.activities["musik"]
-        )
-    )
+    await clock.run(_executor(drivers, clock, estimator).execute(plan))
 
     sample = next(
         row
