@@ -8,7 +8,7 @@
     "jellyfin"
   ],
   "codeowners": [
-    "@pkern90"
+    "@piemkay"
   ],
   "config_flow": true,
   "dependencies": [
@@ -17,10 +17,10 @@
     "lovelace",
     "panel_custom"
   ],
-  "documentation": "https://github.com/pkern90/home-theater-homeassistant",
+  "documentation": "https://github.com/piemkay/home-theater-homeassistant",
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/pkern90/home-theater-homeassistant/issues",
+  "issue_tracker": "https://github.com/piemkay/home-theater-homeassistant/issues",
   "loggers": [
     "custom_components.kino"
   ],

@@ -1,6 +1,6 @@
 # Kino — custom home theater integration for Home Assistant
 
-[![Validate](https://github.com/pkern90/home-theater-homeassistant/actions/workflows/validate.yml/badge.svg)](https://github.com/pkern90/home-theater-homeassistant/actions/workflows/validate.yml)
+[![Validate](https://github.com/piemkay/home-theater-homeassistant/actions/workflows/validate.yml/badge.svg)](https://github.com/piemkay/home-theater-homeassistant/actions/workflows/validate.yml)
 [![hacs](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 
 A generic **activity engine** for a home cinema, plus a responsive Lovelace
@@ -44,7 +44,7 @@ plays, as one action, with progress shown throughout.
 ### HACS (recommended)
 
 1. HACS → ⋮ → **Custom repositories**
-2. Add `https://github.com/pkern90/home-theater-homeassistant`, category
+2. Add `https://github.com/piemkay/home-theater-homeassistant`, category
    **Integration**
 3. Install **Kino**, then restart Home Assistant
 4. **Settings → Devices & Services → Add Integration → Kino**
