@@ -26,9 +26,10 @@ from .const import (
 )
 from .coordinator import KinoCoordinator, KinoRuntimeData
 from .core.schema import ConfigErrors
-from .frontend import async_register_card
+from .frontend import async_register_frontend
 from .http import async_register_http
 from .media.jellyfin import JellyfinClient
+from .panel import async_register_panel, async_remove_panel
 from .websocket_api import async_register_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
@@ -85,7 +86,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async_register_http(hass)
     async_register_websocket_api(hass)
-    await async_register_card(hass)
+    await async_register_frontend(hass)
+    await async_register_panel(hass)
     _async_register_services(hass)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -99,6 +101,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        if not hass.data.get(DOMAIN):
+            async_remove_panel(hass)
     return unloaded
 
 

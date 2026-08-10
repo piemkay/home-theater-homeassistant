@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from ..core.model import DeviceObservation, Power
 from .base import EntityBackedDriver
@@ -22,6 +22,7 @@ class GenericDriver(EntityBackedDriver):
     """Power and app selection through the standard media_player interface."""
 
     required_entities = ("media_player",)
+    setting_roles: ClassVar[dict[str, str | None]] = {"app": "media_player"}
 
     async def observe(self) -> DeviceObservation:
         media = self.state_of("media_player")

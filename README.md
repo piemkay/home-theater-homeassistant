@@ -117,6 +117,27 @@ one-handed single column on a phone, a denser grid on a tablet.
 type: custom:kino-card
 ```
 
+## Admin panel
+
+An admin-only **Kino** entry appears in the sidebar (the second user never
+sees it). Six tabs:
+
+| Tab | |
+|---|---|
+| **Aktivitäten** | The matrix editor: activities as columns, devices as rows. Every value is picked from what the device really offers — profiles, sources, presets and upmixers come from the live option lists, never free text. Add, duplicate, rename and delete activities |
+| **Geräte** | Which Home Assistant entity backs each logical device, timeouts and duration estimates. Missing entities are flagged |
+| **Gerätestatus** | Observed against expected, per device, plus start/stop for one device in isolation |
+| **Planer** | The computed delta for any activity — stop / keep / reconfigure / start — **without executing it** |
+| **Verlauf** | Recent transitions with per-step timings, and the learned durations behind the ETA |
+| **Datei** | The whole document as JSON, for backup and version control |
+
+Saving validates first: a rejected edit is never written, so the running
+configuration keeps working. The previous file is kept as `kino.yaml.bak`.
+Changes apply without a Home Assistant restart.
+
+> Editing through the panel rewrites `kino.yaml`, which does not preserve
+> inline comments from a hand-edited file. The backup does.
+
 ## Entities
 
 | Entity | What it is for |
@@ -176,9 +197,9 @@ projector's cooldown behaviour, transcribed from ten days of recorded history.
 
 ## Status
 
-Phase 1 (activity engine) and Phase 3 (media + card) are implemented. The
-admin panel (Phase 4) is deliberately deferred — `kino.yaml` is the contract,
-and the panel will be an editor over exactly that schema.
+Phases 1 (activity engine), 3 (media + card) and 4 (admin panel) are
+implemented. The panel edits the same `kino.yaml` schema the loader reads —
+one format, no migration.
 
 ## Licence
 

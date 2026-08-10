@@ -35,6 +35,31 @@ def _read(path: Path) -> Any:
         ) from err
 
 
+#: Written at the top of every panel-saved file. Inline comments in a
+#: hand-edited file do not survive a save — YAML round-tripping cannot keep
+#: them without a heavier parser — so the previous file is kept as a backup.
+_SAVED_HEADER = """\
+# Kino – Konfiguration
+#
+# Zuletzt über das Kino-Panel gespeichert. Die vorherige Fassung liegt
+# daneben als kino.yaml.bak.
+#
+# Achtung: Kommentare aus einer von Hand bearbeiteten Datei gehen beim
+# Speichern über das Panel verloren.
+"""
+
+
+def _write(path: Path, document: Any) -> None:
+    """Back up the current file, then write ``document`` as YAML."""
+    if path.exists():
+        backup = path.with_suffix(path.suffix + ".bak")
+        backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    body = yaml.safe_dump(
+        document, allow_unicode=True, sort_keys=False, default_flow_style=False
+    )
+    path.write_text(f"{_SAVED_HEADER}\n{body}", encoding="utf-8")
+
+
 class ConfigStore:
     """Reads ``<config>/kino.yaml`` and validates it on every load."""
 
@@ -65,6 +90,26 @@ class ConfigStore:
             path,
         )
         self._config = config
+        return config
+
+    async def async_read_raw(self) -> Any:
+        """Return the parsed document without validating it.
+
+        The admin panel edits the document, not the validated objects, so a
+        file that currently fails validation can still be opened and fixed.
+        """
+        return await self._hass.async_add_executor_job(_read, self.path)
+
+    async def async_save(self, document: Any) -> KinoConfig:
+        """Validate a document, back up the current file, then write it.
+
+        Validation happens *before* anything touches the disk, so a rejected
+        edit leaves the working configuration exactly as it was (FR-115).
+        """
+        config = validate(document)
+        await self._hass.async_add_executor_job(_write, self.path, document)
+        self._config = config
+        _LOGGER.info("Kino-Konfiguration gespeichert: %s", self.path)
         return config
 
     async def async_write_default(self) -> None:
@@ -136,6 +181,11 @@ devices:
       power: remote.madvr_envy
       power_state: binary_sensor.madvr_envy_power_state
       wake: button.kino_wake_on_lan_madvr
+    # Der Envy meldet sein aktives Profil nicht zurueck (wie beim Beamer).
+    unverifiable_settings: [profile]
+    options:
+      # {value} wird durch die Profil-Nummer der Aktivitaet ersetzt.
+      profile_command: "ActivateProfile,SOURCE,{value}"
     startup_timeout: 120
     default_startup_seconds: 30
 
@@ -153,6 +203,9 @@ devices:
     driver: generic
     name: Shield
     entities:
+      # 192.168.30.203 / 3c:6d:66:86:15:85 - die androidtv-Instanz.
+      # Nur diese kann Apps direkt starten (select_source); die
+      # androidtv_remote-Zwillingsentity kann das nicht.
       media_player: media_player.shield_kino_3
     # Die Shield schläft von selbst ein — das ist kein Fehler (FR-37).
     required: false
@@ -175,7 +228,9 @@ activities:
     devices:
       barco:   { power: true, profile: "HDR 260 HDMI" }
       trinnov: { power: true, source: zidoo, volume: -30.0 }
-      madvr:   { power: true }
+      # Fuer den Zidoo funktioniert das 5K-Profil. Nummer eintragen und die
+      # Zeile einkommentieren, sobald die Profile im Envy angelegt sind.
+      madvr:   { power: true }   # , profile: 1
       zidoo:   { power: true }
 
   netflix:
@@ -189,7 +244,10 @@ activities:
     devices:
       barco:   { power: true, profile: "HDR 260 HDMI" }
       trinnov: { power: true, source: shield, volume: -30.0 }
-      madvr:   { power: true }
+      # WICHTIG: Shield und Apple TV brauchen das 4K-Profil. Mit dem
+      # 5K-Profil bleibt das Bild schwarz (HDMI/EDID). Nummer eintragen
+      # und die Zeile einkommentieren.
+      madvr:   { power: true }   # , profile: 2
       shield:  { power: true }
 
   musik:

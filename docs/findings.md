@@ -22,37 +22,50 @@ The Kino config ships with the entity IDs that actually exist. Anything wrong
 fails loudly at load with the offending device and field named, rather than
 silently doing nothing.
 
-## 2. There is an HDFury VERTEX2-18 in the chain, and it is not in the spec
+## 2. The HDFury VERTEX2-18 — answered, deliberately out of scope
 
-Not mentioned anywhere in the requirements, but present in the Kino area:
+Present in the Kino area and not mentioned in the requirements:
 
 - `select.hdfury_vertex2_18_port_select_tx0` = `0`
 - `select.hdfury_vertex2_18_port_select_tx1` = `4`
 - `switch.hdfury_vertex2_18_mute_audio_tx0` / `tx1` — both currently **on**
 - `switch.hdfury_vertex2_18_auto_switch_inputs` = off
-- plus EDID/audio/output sensors
 
-**Open question (Q24):** does any activity need the HDFury switched? If it is
-doing input routing for Steam-over-DP vs Zidoo-over-HDMI, it must become a
-Kino device with a `port_select` setting per activity. If it is a passive
-splitter, it can stay out. Until this is answered, activities that rely on it
-may appear to succeed while producing no picture.
+**Answered (2026-08-10):** it is always on, never switched, and exists purely
+to keep the HDMI EDID stable. It is therefore **not** a Kino device.
 
-## 3. Duplicate Shield entities — F12 confirmed, and worse than described
+That is a decision, not an oversight. Adding it would fail validation anyway
+(`devices.hdfury: wird von keiner Aktivität verwendet`) — the schema refuses
+to carry a device no activity uses, which is exactly the right behaviour
+here.
 
-Four entities, all referring to something called "shield kino":
+If the EDID handling ever does need to change per source, it becomes a device
+with a `port_select` setting and nothing else about the design moves.
 
-| Entity | State |
-|---|---|
-| `media_player.shield_kino_2` | off |
-| `media_player.shield_kino_3` | off |
-| `remote.shield_kino` | off |
-| `remote.shield_kino_2` | unknown |
+## 3. Duplicate Shield entities — F12 resolved
 
-`media_player.kino_is_playing_state` groups `shield_kino_3`; the dashboard
-tile shows `shield_kino_2`. The shipped config uses `shield_kino_3` to match
-the aggregate, but **this needs a decision (Q3)**: one of these is a stale
-registry entry and should be deleted rather than worked around.
+There is **one** physical Shield (192.168.30.203). It appears twice because
+two integrations both found it, on its two NICs — the MACs are consecutive:
+
+| Entities | Platform | unique_id | Can launch apps? |
+|---|---|---|---|
+| `media_player.shield_kino_2`, `remote.shield_kino` | `androidtv_remote` | `3c:6d:66:86:15:84` | no (`play_media` only) |
+| `media_player.shield_kino_3`, `remote.shield_kino_2` | `androidtv` (ADB) | `3c:6d:66:86:15:85` | **yes** (`select_source`) |
+
+Decoding `supported_features` settles it: `shield_kino_3` carries bit 2048
+(`SELECT_SOURCE`), `shield_kino_2` does not. So **`media_player.shield_kino_3`
+is the right entity** — it is the one that can open Netflix directly rather
+than merely powering the box on, which is what Q3 was really asking. It also
+matches the MAC Patrick identified and the entity the existing aggregate
+already groups.
+
+Note `shield_kino_3` is `hidden_by: integration`. Hidden entities still accept
+service calls, so this is cosmetic.
+
+**Still worth doing:** neither integration is redundant *technically* —
+`androidtv_remote` is generally the more reliable way to power an Android TV
+on, while `androidtv` is the one that can launch apps. Keeping both is
+defensible; if one is removed, keep `androidtv`.
 
 ## 4a. Trinnov option lists — read live, Q1 partially answered
 
@@ -132,6 +145,42 @@ valid options — so the first attempt tells you the answer.
 Note the scene entity for gaming is `scene.kini_gaming` — a typo in the entity
 ID that has to be reproduced verbatim in config until it is renamed.
 
+## 4b. madVR profiles are per-source, and that is load-bearing
+
+A 5K madVR profile works for the Zidoo. On the **Shield and the Apple TV the
+same profile produces a black screen** — an HDMI/EDID difference. So the
+profile has to change with the activity, not just the input.
+
+The HA `madvr` integration exposes no profile entity and no madvr-specific
+services; profiles are activated through `remote.send_command` with a
+comma-separated command addressing a slot number:
+
+```yaml
+action: remote.send_command
+target: { entity_id: remote.madvr_envy }
+data: { command: "ActivateProfile,SOURCE,1" }
+```
+
+The driver now supports a per-activity `profile` setting and builds that
+command from a device option (`options.profile_command`), so the wording can
+change without touching code. The Envy cannot report which profile is active,
+so it gets the same shadow-value treatment as the Barco: remembered when set,
+dropped on power cycle, listed in `unverifiable_settings`.
+
+**Action needed:** the shipped `kino.yaml` has the `profile:` lines commented
+out, because the 5K/4K profiles do not exist in the Envy yet and guessing a
+slot number would activate the wrong one. Create the two profiles, then
+uncomment and set the numbers:
+
+```yaml
+film:    { madvr: { power: true, profile: 1 } }   # 5K  – Zidoo
+netflix: { madvr: { power: true, profile: 2 } }   # 4K  – Shield / Apple TV
+```
+
+Until then the integration behaves exactly as the old scripts did — it never
+touches the profile — so nothing regresses, but the Netflix black screen is
+not yet fixed either.
+
 ## 5. Projector timings, measured
 
 See `docs/barco-upstream-changes.md` for the full evidence. Summary:
@@ -198,17 +247,19 @@ Answered by this pass:
 - **Q16** (Pulse subscriptions) — the API reference documents
   `property.subscribe`; the integration does not implement it. See FR-142.
 - **Q19** (Jellyfin auth for play state) — QuickConnect user token. Done.
+- **Q3** (which Shield entity) — `media_player.shield_kino_3`, the `androidtv`
+  one; it is the only one that can launch apps. See §3.
+- **Q24** (HDFury) — always on, EDID only, not a Kino device. See §2.
 
 Still open, and each one blocks something:
 
 | # | Question | Blocks |
 |---|---|---|
 | Q1 | Trinnov **preset/upmixer** and reference volume per activity; Barco profile for Netflix | Sources are now confirmed (§4a). Presets/upmixers are deliberately unset — they are audio decisions |
-| Q3 | Which Shield entity is real; can Netflix be launched directly? | The Netflix activity being more than "Shield on" |
-| Q4 | Apple TV: activity or drop? Currently `off`/`unavailable` | FR-3 |
+| Q4 | Apple TV: activity or drop? Currently `off`/`unavailable` | FR-3. The Trinnov has an `appletv` source, and it needs the **4K** madVR profile like the Shield |
+| Q25 | **New:** which madVR slot numbers are the 5K and 4K profiles? | The Shield/Apple TV black screen (§4b) |
 | Q5 | Maximum volume ceiling in dB | Shipped default is −25.0 dB, chosen conservatively — needs confirming |
 | Q17 | Trinnov's own hard limit | The soft ceiling should sit below it |
-| Q24 | **New:** is the HDFury part of any activity? | Whether Steam/Film produce a picture at all |
 | Q7 | Replace the Zidoo integration or coexist? | Currently coexisting; the Kino drivers drive its entities |
 | Q10 | Does the second user have her own HA account? | FR-101 cannot be verified without one |
 | Q21 | Jellyfin app on Shield/Apple TV? | Whether multi-platform sync is real |

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from ..core.model import DeviceObservation, DeviceSpec, Power
 from .bridge import Bridge, StateSnapshot
@@ -56,10 +56,16 @@ class EntityBackedDriver:
         return state.state
 
     def options_of(self, role: str) -> list[str]:
+        """Legal values for a role, from whichever attribute carries them.
+
+        ``select`` entities use ``options``; ``media_player`` uses
+        ``source_list``. The editor needs both.
+        """
         state = self.state_of(role)
         if state is None:
             return []
-        return list(state.attributes.get("options") or [])
+        attributes = state.attributes
+        return list(attributes.get("options") or attributes.get("source_list") or [])
 
     def missing_entities(self) -> list[str]:
         return [
@@ -105,6 +111,36 @@ class EntityBackedDriver:
         if state.state in ACTIVE_MEDIA_STATES:
             return Power.ON
         return Power.UNKNOWN
+
+    # -- editor support (FR-112) -------------------------------------------
+
+    #: Settings this driver understands, mapped to the entity role whose
+    #: option list supplies the legal values. ``None`` means the value is a
+    #: free number rather than a choice.
+    setting_roles: ClassVar[Mapping[str, str | None]] = {}
+
+    def setting_options(self) -> dict[str, dict[str, Any]]:
+        """Describe the per-activity settings this device accepts.
+
+        The admin panel builds its dropdowns from this, so a profile or a
+        source is always picked from what the device really offers rather
+        than typed in free-hand.
+        """
+        described: dict[str, dict[str, Any]] = {}
+        for setting, role in self.setting_roles.items():
+            if role is None:
+                described[setting] = {"type": "number", "options": None}
+                continue
+            options = self.options_of(role)
+            described[setting] = {
+                "type": "select",
+                "options": options,
+                # An empty list means the device is off, not that the setting
+                # is invalid — the panel must say so rather than show nothing.
+                "available": bool(options),
+                "entity": self.entity(role),
+            }
+        return described
 
     # -- DeviceDriver protocol ---------------------------------------------
 

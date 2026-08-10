@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from ..core.model import DeviceObservation, Power
 from .base import EntityBackedDriver, select_option
@@ -45,6 +45,12 @@ class TrinnovDriver(EntityBackedDriver):
     """The processor. It is in every activity, so it is never the bottleneck."""
 
     required_entities = ("power", "media_player")
+    setting_roles: ClassVar[dict[str, str | None]] = {
+        "source": "source",
+        "preset": "preset",
+        "upmixer": "upmixer",
+        "volume": None,
+    }
 
     async def observe(self) -> DeviceObservation:
         media = self.state_of("media_player")

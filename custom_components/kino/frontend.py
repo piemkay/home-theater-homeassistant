@@ -1,9 +1,13 @@
 """
-Serve and auto-register the custom card (FR-77).
+Serve and auto-register the frontend assets (FR-77, FR-103).
 
 HACS installs one repository as one category, so this repo ships as an
-*integration* and the integration itself serves the card and registers it as a
-Lovelace resource. Nobody has to add a resource by hand.
+*integration* and the integration itself serves both the Lovelace card and the
+admin panel, and registers the card as a Lovelace resource. Nobody has to add
+a resource by hand.
+
+The assets live under ``/kino_frontend/`` rather than ``/kino/`` because the
+panel claims ``/kino`` as a frontend route.
 """
 
 from __future__ import annotations
@@ -19,28 +23,37 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+ASSET_BASE = "/kino_frontend"
 CARD_FILENAME = "kino-card.js"
-CARD_URL = f"/{DOMAIN}/{CARD_FILENAME}"
+PANEL_FILENAME = "kino-panel.js"
+CARD_URL = f"{ASSET_BASE}/{CARD_FILENAME}"
+PANEL_MODULE_URL = f"{ASSET_BASE}/{PANEL_FILENAME}"
+
+_REGISTERED = f"{DOMAIN}_frontend"
 
 
-async def async_register_card(hass: HomeAssistant) -> None:
-    """Serve the card bundle and add it to the Lovelace resources."""
-    if hass.data.get(f"{DOMAIN}_frontend"):
+def _asset_dir() -> Path:
+    return Path(__file__).parent / "www"
+
+
+async def async_register_frontend(hass: HomeAssistant) -> None:
+    """Serve the asset directory and register the card resource."""
+    if hass.data.get(_REGISTERED):
         return
 
-    source = Path(__file__).parent / "www" / CARD_FILENAME
-    if not source.exists():
+    directory = _asset_dir()
+    if not (directory / CARD_FILENAME).exists():
         _LOGGER.warning(
-            "Kino-Karte nicht gefunden (%s) — die Integration läuft, "
-            "aber die Karte muss manuell eingebunden werden",
-            source,
+            "Kino-Frontend nicht gefunden (%s) — die Integration läuft, "
+            "aber Karte und Panel fehlen",
+            directory,
         )
         return
 
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL, str(source), cache_headers=False)]
+        [StaticPathConfig(ASSET_BASE, str(directory), cache_headers=False)]
     )
-    hass.data[f"{DOMAIN}_frontend"] = True
+    hass.data[_REGISTERED] = True
 
     await _async_add_lovelace_resource(hass)
 
@@ -60,11 +73,12 @@ async def _async_add_lovelace_resource(hass: HomeAssistant) -> None:
         await resources.async_load()
         resources.loaded = True
 
-    version = _card_version()
-    wanted = f"{CARD_URL}?v={version}"
+    wanted = f"{CARD_URL}?v={card_version()}"
     for item in resources.async_items():
         url = item.get("url", "")
-        if url.split("?")[0] != CARD_URL:
+        # Match on the filename so a moved asset base updates the existing
+        # resource in place instead of leaving a dead one behind.
+        if not url.split("?")[0].endswith(CARD_FILENAME):
             continue
         if url == wanted:
             return
@@ -76,8 +90,8 @@ async def _async_add_lovelace_resource(hass: HomeAssistant) -> None:
     _LOGGER.info("Kino-Karte als Lovelace-Ressource registriert: %s", wanted)
 
 
-def _card_version() -> str:
-    """Cache-bust on every release so browsers pick the new card up."""
+def card_version() -> str:
+    """Cache-bust on every release so browsers pick the new assets up."""
     manifest = Path(__file__).parent / "manifest.json"
     try:
         return json.loads(manifest.read_text(encoding="utf-8"))["version"]

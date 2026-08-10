@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from ..core.model import DeviceObservation, DeviceSpec, Power
 from .base import EntityBackedDriver, select_option
@@ -51,6 +51,7 @@ class BarcoDriver(EntityBackedDriver):
     """Projector power, phase resolution and profile selection."""
 
     required_entities = ("power", "state")
+    setting_roles: ClassVar[dict[str, str | None]] = {"profile": "profile"}
 
     def __init__(self, bridge: Bridge, spec: DeviceSpec) -> None:
         super().__init__(bridge, spec)

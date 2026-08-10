@@ -50,7 +50,7 @@ ignore = [
     "D103",
 ]
 # WebSocket handlers have a fixed (hass, connection, msg) signature.
-"custom_components/kino/websocket_api.py" = ["ANN001", "D103"]
+"custom_components/kino/websocket_api.py" = ["ANN001", "ARG001", "D103"]
 "custom_components/kino/http.py" = ["ARG002"]
 "tests/*" = [
     "ANN",

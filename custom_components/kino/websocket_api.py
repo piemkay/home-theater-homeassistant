@@ -1,9 +1,12 @@
 """
-WebSocket commands backing the custom card (and later the admin panel).
+WebSocket commands backing the custom card and the admin panel (FR-102).
 
 The card never talks to Jellyfin directly — it asks Home Assistant, which
 holds the credentials. That keeps FR-42a honest and means the card works
 unchanged whether Jellyfin is reachable from the browser or not.
+
+Panel commands are all `require_admin`: the second user never sees the panel
+and cannot reach its commands either (FR-101).
 """
 
 from __future__ import annotations
@@ -15,7 +18,10 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
+from .config_store import ConfigNotFoundError, ConfigStore
 from .const import DOMAIN
+from .core.model import ControlClass
+from .core.schema import KNOWN_DRIVERS, ConfigErrors, validate
 from .media.base import (
     Category,
     MediaBackendError,
@@ -59,6 +65,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_restore_device)
     websocket_api.async_register_command(hass, ws_dismiss_drift)
     websocket_api.async_register_command(hass, ws_transition_log)
+    websocket_api.async_register_command(hass, ws_config_get)
+    websocket_api.async_register_command(hass, ws_config_save)
+    websocket_api.async_register_command(hass, ws_config_validate)
+    websocket_api.async_register_command(hass, ws_device_board)
+    websocket_api.async_register_command(hass, ws_device_test)
+    websocket_api.async_register_command(hass, ws_durations_reset)
 
 
 @websocket_api.websocket_command(
@@ -366,3 +378,247 @@ async def ws_transition_log(hass, connection, msg) -> None:
             "durations": coordinator.estimator.report(),
         },
     )
+
+
+# --------------------------------------------------------------------------
+# Admin panel (FR-110 .. FR-134)
+# --------------------------------------------------------------------------
+
+
+def _errors_payload(err: ConfigErrors) -> list[dict[str, str]]:
+    """Turn validation failures into something the editor can anchor on."""
+    return [{"path": e.path, "message": e.message} for e in err.errors]
+
+
+def _driver_catalogue(coordinator: Any) -> dict[str, Any]:
+    """Per configured device: which settings it accepts, and their values.
+
+    This is what makes FR-112 possible — every dropdown in the matrix editor
+    is populated from the live device, never from free text.
+    """
+    if coordinator is None:
+        return {}
+    catalogue: dict[str, Any] = {}
+    for key, driver in coordinator.engine.drivers.items():
+        spec = coordinator.config.devices.get(key)
+        catalogue[key] = {
+            "driver": spec.driver if spec else None,
+            "name": spec.name if spec else key,
+            "settings": driver.setting_options(),
+            "missingEntities": driver.missing_entities(),
+        }
+    return catalogue
+
+
+_EDITABLE_DOMAINS = (
+    "switch",
+    "remote",
+    "select",
+    "sensor",
+    "binary_sensor",
+    "media_player",
+    "button",
+    "number",
+    "scene",
+)
+
+
+def _entity_catalogue(hass: HomeAssistant) -> dict[str, list[str]]:
+    """Entity IDs the editor offers when wiring a device up (FR-130)."""
+    catalogue: dict[str, list[str]] = {domain: [] for domain in _EDITABLE_DOMAINS}
+    for entity_id in hass.states.async_entity_ids():
+        domain = entity_id.split(".", 1)[0]
+        if domain in catalogue:
+            catalogue[domain].append(entity_id)
+    return {domain: sorted(ids) for domain, ids in catalogue.items()}
+
+
+@websocket_api.websocket_command({vol.Required("type"): "kino/config/get"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_config_get(hass, connection, msg) -> None:
+    """Return the raw config document plus what the editor needs around it.
+
+    The *document* is returned rather than the validated objects, so a file
+    that currently fails validation can still be opened and fixed (FR-110).
+    """
+    store = ConfigStore(hass)
+    try:
+        document = await store.async_read_raw()
+    except ConfigNotFoundError:
+        document = None
+    except ConfigErrors as err:
+        connection.send_error(msg["id"], "unreadable_config", str(err))
+        return
+
+    errors: list[dict[str, str]] = []
+    if document is not None:
+        try:
+            validate(document)
+        except ConfigErrors as err:
+            errors = _errors_payload(err)
+
+    coordinator = _first_coordinator(hass)
+    connection.send_result(
+        msg["id"],
+        {
+            "document": document,
+            "path": str(store.path),
+            "errors": errors,
+            "drivers": _driver_catalogue(coordinator),
+            "entities": _entity_catalogue(hass),
+            "knownDrivers": sorted(KNOWN_DRIVERS),
+            "controlClasses": [c.value for c in ControlClass],
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "kino/config/validate", vol.Required("document"): dict}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_config_validate(hass, connection, msg) -> None:
+    """Validate without saving, so the editor can flag errors before you commit."""
+    try:
+        validate(msg["document"])
+    except ConfigErrors as err:
+        connection.send_result(
+            msg["id"], {"valid": False, "errors": _errors_payload(err)}
+        )
+        return
+    connection.send_result(msg["id"], {"valid": True, "errors": []})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "kino/config/save", vol.Required("document"): dict}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_config_save(hass, connection, msg) -> None:
+    """Validate, write and apply — without a Home Assistant restart (FR-115)."""
+    store = ConfigStore(hass)
+    try:
+        config = await store.async_save(msg["document"])
+    except ConfigErrors as err:
+        # Nothing was written, so the running configuration is untouched.
+        connection.send_result(
+            msg["id"], {"saved": False, "errors": _errors_payload(err)}
+        )
+        return
+    except OSError as err:
+        connection.send_error(msg["id"], "write_failed", str(err))
+        return
+
+    for runtime in _runtimes(hass):
+        await runtime.coordinator.async_reload_config(config)
+
+    connection.send_result(msg["id"], {"saved": True, "errors": []})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "kino/device_board"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_device_board(hass, connection, msg) -> None:
+    """Observed against expected, per device, live (FR-120)."""
+    coordinator = _first_coordinator(hass)
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_ready", "Kino ist nicht bereit.")
+        return
+
+    snapshot = coordinator.engine.snapshot()
+    observations = await coordinator.engine.observe_all()
+    activity = coordinator.config.activities.get(snapshot.activity)
+
+    rows = []
+    for key, spec in coordinator.config.devices.items():
+        observation = observations.get(key)
+        driver = coordinator.engine.drivers.get(key)
+        requirement = activity.devices.get(key) if activity else None
+        finding = next((f for f in snapshot.drift if f.device == key), None)
+        rows.append(
+            {
+                "key": key,
+                "name": spec.name,
+                "driver": spec.driver,
+                "power": observation.power.value if observation else "unknown",
+                "phase": observation.phase if observation else None,
+                "ready": bool(driver and observation and driver.is_ready(observation)),
+                "observed": dict(observation.settings) if observation else {},
+                "expected": dict(requirement.settings) if requirement else {},
+                "requiredByActivity": bool(requirement),
+                "entities": dict(spec.entities),
+                "missingEntities": driver.missing_entities() if driver else [],
+                "error": observation.error if observation else None,
+                "drift": finding.detail if finding else None,
+            }
+        )
+
+    connection.send_result(msg["id"], {"activity": snapshot.activity, "devices": rows})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/device_test",
+        vol.Required("device"): str,
+        vol.Required("action"): vol.In(["start", "stop", "apply"]),
+        vol.Optional("settings", default={}): dict,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_device_test(hass, connection, msg) -> None:
+    """Start, stop or reconfigure one device in isolation (FR-124)."""
+    coordinator = _first_coordinator(hass)
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_ready", "Kino ist nicht bereit.")
+        return
+    device = msg["device"]
+    driver = coordinator.engine.drivers.get(device)
+    if driver is None:
+        connection.send_error(
+            msg["id"], "unknown_device", f"Unbekanntes Gerät: {device}"
+        )
+        return
+
+    action = msg["action"]
+    try:
+        if action == "start":
+            await driver.start()
+        elif action == "stop":
+            await driver.stop()
+        else:
+            await driver.apply(msg["settings"])
+    except Exception as err:  # noqa: BLE001 - diagnosing is the point here
+        connection.send_error(msg["id"], "device_error", str(err))
+        return
+
+    observation = await driver.observe()
+    connection.send_result(
+        msg["id"],
+        {
+            "ok": True,
+            "power": observation.power.value,
+            "phase": observation.phase,
+            "ready": driver.is_ready(observation),
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/durations/reset",
+        vol.Optional("device"): vol.Any(str, None),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_durations_reset(hass, connection, msg) -> None:
+    """Throw away learned durations, per device or entirely (FR-123)."""
+    coordinator = _first_coordinator(hass)
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_ready", "Kino ist nicht bereit.")
+        return
+    coordinator.estimator.reset(msg.get("device"))
+    await coordinator.async_persist_durations()
+    connection.send_result(msg["id"], {"ok": True})

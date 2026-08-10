@@ -440,3 +440,164 @@ class TestTrinnovPowerStatus:
         for source in ("zidoo", "shield", "steam"):
             await driver.apply({"source": source})
         assert [c[2]["option"] for c in bridge.calls] == ["zidoo", "shield", "steam"]
+
+
+MADVR_SPEC = DeviceSpec(
+    key="madvr",
+    driver="madvr",
+    name="madVR",
+    entities={
+        "power": "remote.madvr_envy",
+        "power_state": "binary_sensor.madvr_envy_power_state",
+        "wake": "button.kino_wake_on_lan_madvr",
+    },
+    unverifiable_settings=frozenset({"profile"}),
+    options={"profile_command": "ActivateProfile,SOURCE,{value}"},
+)
+
+
+class TestMadvrProfile:
+    """A 5K profile blacks out the Shield, so each activity picks its own."""
+
+    @pytest.fixture
+    def driver(self, bridge):
+        bridge.set("remote.madvr_envy", "off")
+        bridge.set("binary_sensor.madvr_envy_power_state", "on")
+        return build_driver(bridge, MADVR_SPEC)
+
+    async def test_profile_is_unknown_until_we_set_it(self, driver):
+        observation = await driver.observe()
+        assert "profile" not in observation.settings
+
+    async def test_applying_a_profile_sends_the_envy_command(self, bridge, driver):
+        await driver.apply({"profile": 2})
+
+        assert bridge.calls == [
+            (
+                "remote",
+                "send_command",
+                {
+                    "entity_id": "remote.madvr_envy",
+                    "command": ["ActivateProfile,SOURCE,2"],
+                    "num_repeats": 1,
+                },
+            )
+        ]
+        observation = await driver.observe()
+        assert observation.settings["profile"] == 2
+
+    async def test_command_template_is_configurable(self, bridge):
+        spec = DeviceSpec(
+            key="madvr",
+            driver="madvr",
+            name="madVR",
+            entities={"power": "remote.madvr_envy"},
+            options={"profile_command": "ActivateProfile,DISPLAY,{value}"},
+        )
+        bridge.set("remote.madvr_envy", "on")
+        driver = build_driver(bridge, spec)
+
+        await driver.apply({"profile": 7})
+
+        assert bridge.calls[0][2]["command"] == ["ActivateProfile,DISPLAY,7"]
+
+    async def test_shadow_profile_is_dropped_on_power_cycle(self, bridge, driver):
+        await driver.apply({"profile": 1})
+        await driver.observe()
+
+        bridge.set("binary_sensor.madvr_envy_power_state", "off")
+        observation = await driver.observe()
+
+        assert "profile" not in observation.settings
+
+    async def test_switching_source_reconfigures_rather_than_restarts(self, config_doc):
+        """Film -> Netflix must change the madVR profile without a power cycle."""
+        from custom_components.kino.core.model import ActionKind, DeviceObservation
+        from custom_components.kino.core.planner import plan_transition
+        from custom_components.kino.core.schema import validate
+
+        config_doc["devices"]["madvr"]["unverifiable_settings"] = ["profile"]
+        config_doc["activities"]["film"]["devices"]["madvr"] = {
+            "power": True,
+            "profile": 1,
+        }
+        config_doc["activities"]["netflix"]["devices"]["madvr"] = {
+            "power": True,
+            "profile": 2,
+        }
+        config = validate(config_doc)
+
+        observations = {
+            "barco": DeviceObservation(
+                device="barco", power=Power.ON, settings={"profile": "HDR 260 HDMI"}
+            ),
+            "trinnov": DeviceObservation(
+                device="trinnov",
+                power=Power.ON,
+                settings={"source": "zidoo", "volume": -30.0},
+            ),
+            "madvr": DeviceObservation(
+                device="madvr", power=Power.ON, settings={"profile": 1}
+            ),
+            "zidoo": DeviceObservation(device="zidoo", power=Power.ON),
+            "shield": DeviceObservation(device="shield", power=Power.OFF),
+        }
+
+        plan = plan_transition(
+            devices=config.devices,
+            observations=observations,
+            target=config.activities["netflix"],
+            current_activity="film",
+        )
+
+        madvr = next(a for a in plan.actions if a.device == "madvr")
+        assert madvr.kind is ActionKind.RECONFIGURE
+        assert madvr.settings == {"profile": 2}
+        assert "madvr" not in {a.device for a in plan.stops}
+
+
+class TestSettingOptions:
+    """FR-112: the panel's dropdowns come from the live devices."""
+
+    async def test_trinnov_reports_its_live_lists(self, bridge):
+        bridge.set(
+            "select.trinnov_altitude_14683197_source", "zidoo", options=LIVE_SOURCES
+        )
+        driver = build_driver(bridge, TRINNOV_SPEC)
+
+        described = driver.setting_options()
+
+        assert described["source"]["type"] == "select"
+        assert described["source"]["options"] == LIVE_SOURCES
+        assert described["source"]["available"] is True
+        assert described["volume"]["type"] == "number"
+
+    async def test_an_off_device_reports_no_options_rather_than_lying(self, bridge):
+        bridge.set("select.trinnov_altitude_14683197_source", "unknown", options=[])
+        driver = build_driver(bridge, TRINNOV_SPEC)
+
+        described = driver.setting_options()
+
+        assert described["source"]["options"] == []
+        assert described["source"]["available"] is False
+
+    async def test_media_player_source_list_is_understood(self, bridge):
+        """The Shield's app list lives in `source_list`, not `options`."""
+        spec = DeviceSpec(
+            key="shield",
+            driver="generic",
+            name="Shield",
+            entities={"media_player": "media_player.shield_kino_3"},
+        )
+        bridge.set(
+            "media_player.shield_kino_3",
+            "off",
+            source_list=["Netflix", "Prime Video", "YouTube"],
+        )
+        driver = build_driver(bridge, spec)
+
+        assert driver.setting_options()["app"]["options"] == [
+            "Netflix",
+            "Prime Video",
+            "YouTube",
+        ]
