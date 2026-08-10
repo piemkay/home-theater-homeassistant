@@ -20,34 +20,61 @@
     },
     "abort": {
       "already_configured": "Kino ist bereits eingerichtet.",
-      "quick_connect_unavailable": "QuickConnect ist auf diesem Jellyfin-Server nicht aktiviert. Bitte in Jellyfin unter Einstellungen → QuickConnect aktivieren."
+      "quick_connect_unavailable": "QuickConnect ist auf diesem Jellyfin-Server nicht aktiviert. Bitte in Jellyfin unter Einstellungen → QuickConnect aktivieren.",
+      "single_instance_allowed": "Kino ist bereits eingerichtet."
     }
   },
   "entity": {
     "select": {
-      "activity": { "name": "Aktivität" },
-      "audio_track": { "name": "Tonspur" },
-      "subtitle_track": { "name": "Untertitel" }
+      "activity": {
+        "name": "Aktivität"
+      },
+      "audio_track": {
+        "name": "Tonspur"
+      },
+      "subtitle_track": {
+        "name": "Untertitel"
+      }
     },
     "sensor": {
-      "status": { "name": "Status" },
-      "progress": { "name": "Fortschritt" },
-      "device_status": { "name": "{device}" }
+      "status": {
+        "name": "Status"
+      },
+      "progress": {
+        "name": "Fortschritt"
+      },
+      "device_status": {
+        "name": "{device}"
+      }
     },
     "binary_sensor": {
-      "error": { "name": "Fehler" },
-      "degraded": { "name": "Degradiert" }
+      "error": {
+        "name": "Fehler"
+      },
+      "degraded": {
+        "name": "Degradiert"
+      }
     },
     "button": {
-      "retry": { "name": "Nochmal versuchen" },
-      "all_off": { "name": "Alles ausschalten" },
-      "refresh_library": { "name": "Bibliothek aktualisieren" }
+      "retry": {
+        "name": "Nochmal versuchen"
+      },
+      "all_off": {
+        "name": "Alles ausschalten"
+      },
+      "refresh_library": {
+        "name": "Bibliothek aktualisieren"
+      }
     },
     "number": {
-      "volume": { "name": "Lautstärke" }
+      "volume": {
+        "name": "Lautstärke"
+      }
     },
     "media_player": {
-      "kino": { "name": "Kino" }
+      "kino": {
+        "name": "Kino"
+      }
     }
   }
 }

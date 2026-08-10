@@ -73,11 +73,33 @@ TRINNOV_SPEC = DeviceSpec(
     entities={
         "power": "remote.trinnov_altitude_14683197",
         "media_player": "media_player.trinnov_altitude_14683197",
+        "power_status": "sensor.trinnov_altitude_14683197_power_status",
         "source": "select.trinnov_altitude_14683197_source",
         "volume": "sensor.trinnov_altitude_14683197_volume",
         "mute": "switch.trinnov_altitude_14683197_mute",
     },
 )
+
+#: The real option list, read off the live Altitude on 2026-08-10.
+LIVE_SOURCES = [
+    "shield",
+    "appletv",
+    "zidoo",
+    "steam",
+    "pc",
+    "HDMI 6",
+    "HDMI 7",
+    "HDMI 8",
+    "NETWORK",
+    "Roon Ready",
+    "S/PDIF IN 1",
+    "S/PDIF IN 2",
+    "Optical IN 3",
+    "Optical IN 4",
+    "ANALOG BAL IN 1",
+    "ANALOG SE2 IN",
+    "MIC IN",
+]
 
 
 @pytest.fixture
@@ -343,3 +365,78 @@ class TestTrinnov:
 
         assert observation.power is Power.UNAVAILABLE
         assert not observation.available
+
+
+class TestTrinnovPowerStatus:
+    """The Altitude's own power_status is the authoritative signal.
+
+    Transcribed from ten days of live history: off -> waking -> ready,
+    consistently 63-122 s.
+    """
+
+    @pytest.fixture
+    def driver(self, bridge):
+        bridge.set("remote.trinnov_altitude_14683197", "off")
+        bridge.set("media_player.trinnov_altitude_14683197", "off")
+        bridge.set("sensor.trinnov_altitude_14683197_power_status", "off")
+        bridge.set("select.trinnov_altitude_14683197_source", "unknown", options=[])
+        return build_driver(bridge, TRINNOV_SPEC)
+
+    async def test_off_is_off(self, driver):
+        observation = await driver.observe()
+        assert observation.power is Power.OFF
+
+    async def test_waking_is_transitioning_not_ready(self, bridge, driver):
+        bridge.set("sensor.trinnov_altitude_14683197_power_status", "waking")
+        bridge.set("media_player.trinnov_altitude_14683197", "on")
+
+        observation = await driver.observe()
+
+        assert observation.power is Power.TRANSITIONING
+        assert not driver.is_ready(observation)
+
+    async def test_ready_without_sources_is_still_not_usable(self, bridge, driver):
+        """The exact state the live Altitude sat in for ~2 minutes."""
+        bridge.set("sensor.trinnov_altitude_14683197_power_status", "ready")
+        bridge.set("media_player.trinnov_altitude_14683197", "on")
+
+        observation = await driver.observe()
+
+        assert observation.power is Power.TRANSITIONING
+        assert not driver.is_ready(observation)
+
+    async def test_ready_with_sources_is_usable(self, bridge, driver):
+        bridge.set("sensor.trinnov_altitude_14683197_power_status", "ready")
+        bridge.set(
+            "select.trinnov_altitude_14683197_source", "steam", options=LIVE_SOURCES
+        )
+        bridge.set("sensor.trinnov_altitude_14683197_volume", "-39.5")
+
+        observation = await driver.observe()
+
+        assert observation.power is Power.ON
+        assert driver.is_ready(observation)
+        assert observation.settings["source"] == "steam"
+        assert observation.settings["volume"] == -39.5
+
+    async def test_falls_back_to_the_media_player_when_unknown(self, bridge, driver):
+        """Not every Trinnov integration exposes power_status."""
+        bridge.set("sensor.trinnov_altitude_14683197_power_status", "unknown")
+        bridge.set("media_player.trinnov_altitude_14683197", "on")
+        bridge.set(
+            "select.trinnov_altitude_14683197_source", "zidoo", options=LIVE_SOURCES
+        )
+
+        observation = await driver.observe()
+
+        assert observation.power is Power.ON
+
+    async def test_every_configured_activity_source_really_exists(self, bridge, driver):
+        """The shipped config must not name a source the Altitude lacks."""
+        bridge.set("sensor.trinnov_altitude_14683197_power_status", "ready")
+        bridge.set(
+            "select.trinnov_altitude_14683197_source", "steam", options=LIVE_SOURCES
+        )
+        for source in ("zidoo", "shield", "steam"):
+            await driver.apply({"source": source})
+        assert [c[2]["option"] for c in bridge.calls] == ["zidoo", "shield", "steam"]

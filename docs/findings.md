@@ -54,6 +54,55 @@ tile shows `shield_kino_2`. The shipped config uses `shield_kino_3` to match
 the aggregate, but **this needs a decision (Q3)**: one of these is a stale
 registry entry and should be deleted rather than worked around.
 
+## 4a. Trinnov option lists — read live, Q1 partially answered
+
+The Altitude was powered on during this session specifically to read its real
+option lists. Recorded 2026-08-10, `power_status: ready`:
+
+**Sources** (17):
+
+```
+shield · appletv · zidoo · steam · pc
+HDMI 6 · HDMI 7 · HDMI 8 · NETWORK · Roon Ready
+S/PDIF IN 1 · S/PDIF IN 2 · Optical IN 3 · Optical IN 4
+ANALOG BAL IN 1 · ANALOG SE2 IN · MIC IN
+```
+
+So `zidoo`, `shield` and `steam` are all real, and **the shipped config's
+guess of `shield` for Netflix is correct**. `appletv` and `pc` also exist,
+which settles half of Q4.
+
+**Presets** (9):
+
+```
+Builtin · Base · Base + WF · Base + WF + top xover 130hz · MLP Flat
+Front Bass Boost · Front musical · Front musical er correctiom
+Front+Back Bass Boost
+```
+
+**Upmixers** (7): `auto`, `auro3d`, `dts`, `dolby`, `native`, `legacy`,
+`upmix on native`. Note the *state* can read `none`, which is not in the
+options list — so "no upmixer" cannot be selected through the select entity.
+
+**State at the time of reading:** source `steam`, preset `Front Bass Boost`,
+upmixer `none`, volume **−39.5 dB**, decoder `PCM`.
+
+**Deliberately not guessed:** the shipped `kino.yaml` sets only `source` and
+`volume` per activity, exactly as the old scripts did. Presets and upmixers
+are audio decisions, not integration decisions — picking one would silently
+change how the room sounds. Fill them in per activity when you want them:
+
+```yaml
+trinnov: { power: true, source: zidoo, preset: "MLP Flat", upmixer: auto, volume: -30.0 }
+```
+
+Also discovered: **`sensor.trinnov_altitude_14683197_power_status`** is a much
+better readiness signal than the media player. Ten days of history show a
+clean `off → waking → ready` in 63–122 s (mean ~86 s), whereas the media
+player reports `on` almost immediately and the source list stays empty for up
+to two minutes. The driver now prefers it, and the config's startup estimate
+was corrected from 60 s to 90 s.
+
 ## 4. The activity matrix (§5.5), as far as it is observable
 
 Recovered from the existing scripts — these are the values in production use:
@@ -62,22 +111,23 @@ Recovered from the existing scripts — these are the values in production use:
 |---|---|---|---|---|---|
 | Barco power | on | on | **off** | on | off |
 | Barco profile | `HDR 260 HDMI` | **unknown** | – | `HDR 260 DP` | – |
-| Trinnov source | `zidoo` | **unknown** | **unknown** | `steam` | – |
-| Trinnov preset | not set by any script | **unknown** | **unknown** | not set | – |
-| Trinnov upmixer | not set by any script | **unknown** | **unknown** | not set | – |
-| Reference volume | −30.0 | **unknown** | **unknown** | −30.0 | – |
+| Trinnov source | `zidoo` | `shield` ✅ §4a | `zidoo` (assumed) | `steam` | – |
+| Trinnov preset | not set by any script | not set | not set | not set | – |
+| Trinnov upmixer | not set by any script | not set | not set | not set | – |
+| Reference volume | −30.0 | −30.0 (assumed) | −35.0 (assumed) | −30.0 | – |
 | Light scene | `scene.dark`¹ | – | – | `scene.low_ambience` | – |
 
 ¹ The Zidoo activity script sets **no** scene at all; the light change comes
 from the separate `Kino – Licht dunkel bei Wiedergabe` automation. The Steam
 script does set `scene.low_ambience`.
 
-**Still unknown and needed before Netflix and Musik are trustworthy:** the
-Trinnov source names for Shield and for the Musik path, the Barco profile for
-Netflix, and the reference volumes. The shipped config guesses `shield` as the
-Trinnov source name for Netflix; if that is wrong, activating Netflix fails
-with `'shield' ist keine gültige Auswahl für source (verfügbar: …)`, which
-names the valid options — so the first attempt tells you the answer.
+**Still needed before Netflix and Musik are fully trustworthy:** the Barco
+profile for Netflix, and confirmation of the reference volumes. Source names
+are now settled (§4a).
+
+If a source name ever *is* wrong, activation fails with
+`'x' ist keine gültige Auswahl für source (verfügbar: …)`, which prints the
+valid options — so the first attempt tells you the answer.
 
 Note the scene entity for gaming is `scene.kini_gaming` — a typo in the entity
 ID that has to be reproduced verbatim in config until it is renamed.
@@ -110,12 +160,26 @@ not a cold start.
   `unavailable` at the time of writing — consistent with the library scan
   still running. The Kino integration does not depend on it (FR-39z).
 
-## 7. Everything was cold during development
+## 7. What was and was not exercised live
 
-Barco `standby`, Trinnov connection timing out ("Is it powered on?"), madVR
-off, Zidoo off. So the drivers were validated against recorded history and the
-fake device rig rather than against live transitions. **The live end-to-end
-runs in `docs/acceptance.md` still need to be performed with the room on.**
+The room was cold at the start of this session: Barco `standby`, Trinnov
+timing out ("Is it powered on?"), madVR off, Zidoo off.
+
+**Done live:** the Trinnov was powered on and off through Home Assistant to
+read its real option lists (§4a) and to confirm the boot sequence. The
+observed behaviour — media player `on` while the source list stayed empty for
+~2 minutes — is exactly the failure mode the driver's readiness rule exists
+for, and it is now covered by `TestTrinnovPowerStatus`. The Trinnov was
+switched back off afterwards, leaving the room as it was found.
+
+**Not done live:** the projector was deliberately left alone. Its behaviour is
+already pinned down by ten days of recorded history, and each start commits
+the room to an 8:12 cooldown for information already in hand. Every
+transition, drift and shutdown path is therefore validated against recorded
+history and the fake device rig, not against live hardware.
+
+**The live end-to-end runs in `docs/acceptance.md` still need to be performed
+with the room on** — start with §1 (Musik), which needs no projector.
 
 ---
 
@@ -123,6 +187,8 @@ runs in `docs/acceptance.md` still need to be performed with the room on.**
 
 Answered by this pass:
 
+- **Q1** (partially) — the Trinnov source names are confirmed live: `zidoo`,
+  `shield`, `steam`, `appletv`, `pc` all exist. See §4a.
 - **Q2** (what plays music) — the shipped config uses Trinnov + Zidoo, no
   projector, per §6.5.
 - **Q9** (library size / response times) — Movies had only 2 items mid-scan;
@@ -137,7 +203,7 @@ Still open, and each one blocks something:
 
 | # | Question | Blocks |
 |---|---|---|
-| Q1 | Trinnov source/preset/upmixer and volume per activity; Barco profile for Netflix | Netflix, Musik and Steam are guesses until answered |
+| Q1 | Trinnov **preset/upmixer** and reference volume per activity; Barco profile for Netflix | Sources are now confirmed (§4a). Presets/upmixers are deliberately unset — they are audio decisions |
 | Q3 | Which Shield entity is real; can Netflix be launched directly? | The Netflix activity being more than "Shield on" |
 | Q4 | Apple TV: activity or drop? Currently `off`/`unavailable` | FR-3 |
 | Q5 | Maximum volume ceiling in dB | Shipped default is −25.0 dB, chosen conservatively — needs confirming |

@@ -7,7 +7,7 @@ import logging
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -177,7 +177,7 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         SERVICE_DRY_RUN,
         _dry_run,
         schema=vol.Schema({vol.Required("activity"): cv.string}),
-        supports_response="only",
+        supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
         DOMAIN,

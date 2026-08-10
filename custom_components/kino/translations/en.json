@@ -20,7 +20,8 @@
     },
     "abort": {
       "already_configured": "Kino is already set up.",
-      "quick_connect_unavailable": "QuickConnect is not enabled on this Jellyfin server."
+      "quick_connect_unavailable": "QuickConnect is not enabled on this Jellyfin server.",
+      "single_instance_allowed": "Kino is already set up."
     }
   },
   "entity": {

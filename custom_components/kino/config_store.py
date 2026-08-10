@@ -123,8 +123,11 @@ devices:
       upmixer: select.trinnov_altitude_14683197_upmixer
       mute: switch.trinnov_altitude_14683197_mute
       volume: sensor.trinnov_altitude_14683197_volume
-    startup_timeout: 180
-    default_startup_seconds: 60
+      # Bessere Bereitschafts-Quelle als der media_player:
+      # off -> waking -> ready, gemessen 63-122 s.
+      power_status: sensor.trinnov_altitude_14683197_power_status
+    startup_timeout: 240
+    default_startup_seconds: 90
 
   madvr:
     driver: madvr
