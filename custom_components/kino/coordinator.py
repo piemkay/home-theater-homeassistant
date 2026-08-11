@@ -66,6 +66,10 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
         self.engine = self._build_engine(config)
         self._previous_activity: str | None = None
         self._previous_state: ActivityState | None = None
+        #: The catalogue entry behind the file the media device has open, as
+        #: resolved by the media player. Room-level, so the card's state
+        #: payload can carry it without going through the entity.
+        self.playing_item: dict[str, Any] | None = None
         self.engine.add_listener(self._on_engine_change)
 
     def _build_engine(self, config: KinoConfig) -> ActivityEngine:

@@ -740,3 +740,77 @@ class TestZidooPlayback:
             "/mnt/nfs/x#entertainment/"
         )
         assert driver.resolve_path("/media/other/a.mkv") == "/mnt/general/other/a.mkv"
+
+
+class TestZidooTrackSelects:
+    """FR-60: the player exposes no track entities, so helpers stand in."""
+
+    @pytest.fixture
+    def driver(self, bridge):
+        spec = DeviceSpec(
+            key="zidoo",
+            driver="zidoo",
+            name="Zidoo",
+            entities={
+                "media_player": "media_player.uhd8000",
+                # What this house really has: input_select helpers an
+                # automation fills from the player's own track list.
+                "audio_select": "input_select.kino_tonspur",
+                "subtitle_select": "input_select.kino_untertitel",
+            },
+        )
+        bridge.set("media_player.uhd8000", "playing")
+        bridge.set(
+            "input_select.kino_tonspur",
+            "0: English Dolby Digital Plus with Dolby Atmos 48.0KHz",
+            options=["0: English Dolby Digital Plus with Dolby Atmos 48.0KHz"],
+        )
+        bridge.set(
+            "input_select.kino_untertitel", "0: Off", options=["0: Off", "1: English"]
+        )
+        return build_driver(bridge, spec)
+
+    async def test_a_helper_is_driven_through_its_own_domain(self, bridge, driver):
+        await driver.select_subtitle_track("1: English")
+
+        assert bridge.calls == [
+            (
+                "input_select",
+                "select_option",
+                {
+                    "entity_id": "input_select.kino_untertitel",
+                    "option": "1: English",
+                },
+            )
+        ]
+
+    async def test_a_real_select_entity_still_works(self, bridge):
+        spec = DeviceSpec(
+            key="zidoo",
+            driver="zidoo",
+            name="Zidoo",
+            entities={
+                "media_player": "media_player.uhd8000",
+                "audio_select": "select.zidoo_audio",
+            },
+        )
+        bridge.set("media_player.uhd8000", "playing")
+        bridge.set("select.zidoo_audio", "eng", options=["eng", "ger"])
+        driver = build_driver(bridge, spec)
+
+        await driver.select_audio_track("ger")
+
+        assert bridge.calls[0][0] == "select"
+
+    async def test_without_a_helper_it_says_so(self, bridge):
+        spec = DeviceSpec(
+            key="zidoo",
+            driver="zidoo",
+            name="Zidoo",
+            entities={"media_player": "media_player.uhd8000"},
+        )
+        bridge.set("media_player.uhd8000", "playing")
+        driver = build_driver(bridge, spec)
+
+        with pytest.raises(RuntimeError, match="subtitle_select"):
+            await driver.select_subtitle_track("Aus")

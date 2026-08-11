@@ -39,8 +39,10 @@ class ZidooDriver(EntityBackedDriver):
     entity_roles: ClassVar[dict[str, tuple[str, ...]]] = {
         "power": ("remote", "switch"),
         "media_player": ("media_player",),
-        "audio_select": ("select",),
-        "subtitle_select": ("select",),
+        # The player exposes no track entities of its own, so these are
+        # usually helpers an automation fills from the player's track list.
+        "audio_select": ("select", "input_select"),
+        "subtitle_select": ("select", "input_select"),
     }
 
     def __init__(self, bridge: Bridge, spec: DeviceSpec) -> None:
@@ -174,12 +176,14 @@ class ZidooDriver(EntityBackedDriver):
         await self._select_track("subtitle", label)
 
     async def _select_track(self, kind: str, label: str) -> None:
-        entity_id = self.entity(f"{kind}_select")
-        if entity_id:
+        role = f"{kind}_select"
+        if self.entity(role):
+            # `select` or `input_select` — the service name is the same, the
+            # domain is not.
             await self.call(
-                "select",
+                self.domain_of(role, "select"),
                 "select_option",
-                role=f"{kind}_select",
+                role=role,
                 data={"option": label},
             )
             return

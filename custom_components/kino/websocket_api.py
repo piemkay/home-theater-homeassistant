@@ -330,6 +330,9 @@ def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
         "offActivity": config.off_activity,
         "entities": _own_entities(hass, coordinator),
         "controls": _sound_controls(coordinator),
+        # The catalogue entry behind the open file, so the playback view can
+        # ask for a 16:9 backdrop rather than crop a portrait poster.
+        "nowPlaying": coordinator.playing_item,
         "lightScenes": {
             "activity": (
                 activity.light_scene
@@ -480,6 +483,7 @@ _EDITABLE_DOMAINS = (
     "switch",
     "remote",
     "select",
+    "input_select",
     "sensor",
     "binary_sensor",
     "media_player",

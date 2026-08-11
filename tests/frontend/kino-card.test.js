@@ -312,3 +312,60 @@ describe("playback position", () => {
     );
   });
 });
+
+describe("re-render signature", () => {
+  /**
+   * A playing media_player republishes its position constantly. Rebuilding
+   * the markup for that recreates every <img>, which is what made the
+   * playback view flicker — so a moved position must not count as a change.
+   */
+  const card = Object.create(KinoCard.prototype);
+  card._kino = {
+    entities: { player: "media_player.kino", volume: "number.kino_volume" },
+    controls: {},
+  };
+  const hass = (overrides = {}) => ({
+    states: {
+      "media_player.kino": {
+        state: overrides.state || "playing",
+        attributes: {
+          media_position: overrides.position ?? 10,
+          media_position_updated_at: "2026-08-11T21:00:00+00:00",
+          media_title: overrides.title || "The Death of Robin Hood",
+          media_duration: 7314,
+          entity_picture: overrides.picture || "/api/media_player_proxy/x?token=1",
+          is_volume_muted: overrides.muted || false,
+        },
+      },
+      "number.kino_volume": { state: overrides.volume || "-30.0", attributes: {} },
+    },
+  });
+  const signatureOf = (overrides) => {
+    card._hass = hass(overrides);
+    return card._renderSignature();
+  };
+
+  test("a moved position is not a re-render", () => {
+    assert.equal(signatureOf({ position: 10 }), signatureOf({ position: 4000 }));
+  });
+
+  test("pausing is", () => {
+    assert.notEqual(signatureOf({}), signatureOf({ state: "paused" }));
+  });
+
+  test("a new title is", () => {
+    assert.notEqual(signatureOf({}), signatureOf({ title: "Gravity" }));
+  });
+
+  test("a volume step is", () => {
+    assert.notEqual(signatureOf({}), signatureOf({ volume: "-32.0" }));
+  });
+
+  test("muting is", () => {
+    assert.notEqual(signatureOf({}), signatureOf({ muted: true }));
+  });
+
+  test("a new poster is", () => {
+    assert.notEqual(signatureOf({}), signatureOf({ picture: "/other.jpg" }));
+  });
+});

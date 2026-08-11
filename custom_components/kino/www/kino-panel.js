@@ -10,7 +10,7 @@
  * and repaired.
  */
 
-const PANEL_VERSION = "0.1.2";
+const PANEL_VERSION = "0.1.3";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *

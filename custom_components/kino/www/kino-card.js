@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.1.2";
+const CARD_VERSION = "0.1.3";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -374,6 +374,8 @@ class KinoCard extends CardBase {
     // the integration answers at all) so the next successful state poll, two
     // seconds later, does not wipe it off the screen unread.
     this._actionError = null;
+    // What the last render was built from — see `_renderSignature`.
+    this._signature = "";
     this._unsub = null;
 
     this._view = {
@@ -434,9 +436,67 @@ class KinoCard extends CardBase {
     // Volume, transport and track state live in entities, not in the state
     // payload, so a card that only re-rendered on payload changes showed a
     // stale dB value until something else happened to change.
-    const watched = Object.values((this._kino && this._kino.entities) || {});
-    if (watched.some((id) => previous.states[id] !== hass.states[id])) {
+    //
+    // But a playing media_player republishes its position constantly, and
+    // rebuilding the markup for that recreates every <img> — which is what
+    // made the playback view flicker. So only a change that alters what the
+    // card *renders* is worth a re-render; a moved position is a number to
+    // write into two nodes.
+    const signature = this._renderSignature();
+    if (signature !== this._signature) {
+      this._signature = signature;
       this._render();
+    } else {
+      this._tick();
+    }
+  }
+
+  /** Everything the card renders as structure, as one comparable string. */
+  _renderSignature() {
+    if (!this._hass || !this._kino) return "";
+    const states = this._hass.states;
+    const player = states[this._playerEntity];
+    const parts = [
+      player && player.state,
+      player && player.attributes.media_title,
+      player && player.attributes.entity_picture,
+      player && player.attributes.is_volume_muted,
+      player && player.attributes.media_duration,
+      states[this._volumeEntity] && states[this._volumeEntity].state,
+    ];
+    const controls = this._kino.controls || {};
+    for (const id of [
+      this._entity("audioTrack"),
+      this._entity("subtitleTrack"),
+      controls.preset,
+      controls.upmixer,
+    ]) {
+      const state = id ? states[id] : null;
+      parts.push(state && `${state.state}/${(state.attributes.options || []).length}`);
+    }
+    return parts.join("|");
+  }
+
+  /**
+   * Advance the moving parts without touching the rest of the DOM.
+   *
+   * Rebuilding the markup would recreate the poster image every two seconds.
+   */
+  _tick() {
+    if (!this._container) return;
+    const state = this._hass.states[this._playerEntity];
+    if (!state) return;
+    const duration = state.attributes.media_duration || 0;
+    const position = this._position(state);
+    const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
+    for (const bar of this._container.querySelectorAll(".bar > div")) {
+      bar.style.width = `${pct}%`;
+    }
+    for (const el of this._container.querySelectorAll("[data-time='elapsed']")) {
+      el.textContent = helpers.formatTime(position);
+    }
+    for (const el of this._container.querySelectorAll("[data-time='duration']")) {
+      el.textContent = helpers.formatTime(duration);
     }
   }
 
@@ -448,11 +508,9 @@ class KinoCard extends CardBase {
     // a bespoke subscription.
     this._timer = setInterval(() => {
       this._refreshState();
-      // The player reports a position only now and then; while the playback
-      // view is open the clock carries it between updates. Deliberately not
-      // done while the grid is on screen — re-rendering under a finger that
-      // is scrolling is worse than a progress bar that ticks in steps.
-      if (this._view.playingOpen) this._render();
+      // The player reports a position only now and then; the clock carries it
+      // between updates, written straight into the two nodes that show it.
+      this._tick();
     }, 2000);
   }
 
@@ -745,6 +803,7 @@ class KinoCard extends CardBase {
       this._view.filterSheet ? this._renderFilterSheet() : "",
       this._view.powerConfirm ? this._renderPowerConfirm() : "",
     ].join("");
+    this._signature = this._renderSignature();
     const scroller = this._container.querySelector(".scroller");
     if (scroller) scroller.scrollTop = scrollTop;
     if (focusField) {
@@ -1120,7 +1179,18 @@ class KinoCard extends CardBase {
     const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
     const playing = state.state === "playing";
     const title = attrs.media_title || "Wiedergabe";
-    const art = attrs.entity_picture;
+    // A 16:9 frame showing a 2:3 poster crops two thirds of it away, so ask
+    // for the real backdrop and keep the poster as the fallback.
+    const poster = attrs.entity_picture;
+    const item = this._kino.nowPlaying;
+    const art =
+      item && item.id
+        ? helpers.artworkUrl(item.id, "Backdrop", this._kino.artworkSignature)
+        : poster;
+    const fallback =
+      art && poster && art !== poster
+        ? `this.onerror=null;this.src='${this._esc(poster)}'`
+        : "this.style.display='none'";
 
     return `<div class="sheet" style="z-index:30">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -1128,12 +1198,13 @@ class KinoCard extends CardBase {
         <a class="link" style="color:var(--kino-text3)" data-act="transport" data-key="media_stop">Wiedergabe beenden</a>
       </div>
       <div class="backdrop">
-        ${art ? `<img src="${this._esc(art)}" alt="" onerror="this.style.display='none'">` : ""}
+        ${art ? `<img src="${this._esc(art)}" alt="" onerror="${fallback}">` : ""}
         <div class="caption">${this._esc(title)}</div>
       </div>
       <div class="bar" style="margin:16px 0 6px"><div style="width:${pct}%"></div></div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-bottom:20px">
-        <span>${helpers.formatTime(position)}</span><span>${helpers.formatTime(duration)}</span>
+        <span data-time="elapsed">${helpers.formatTime(position)}</span>
+        <span data-time="duration">${helpers.formatTime(duration)}</span>
       </div>
       <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:22px">
         <button class="round ghosted" data-act="transport" data-key="media_previous_track" title="Vorheriger Titel">⏮</button>
@@ -1275,9 +1346,9 @@ class KinoCard extends CardBase {
             ${this._esc(attrs.media_title || "Wiedergabe")}
           </div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-            <span style="font-size:10px;color:var(--kino-text3);flex-shrink:0">${helpers.formatTime(position)}</span>
+            <span data-time="elapsed" style="font-size:10px;color:var(--kino-text3);flex-shrink:0">${helpers.formatTime(position)}</span>
             <div class="bar" style="flex:1;height:3px;margin:0"><div style="width:${pct}%"></div></div>
-            <span style="font-size:10px;color:var(--kino-text3);flex-shrink:0">${helpers.formatTime(duration)}</span>
+            <span data-time="duration" style="font-size:10px;color:var(--kino-text3);flex-shrink:0">${helpers.formatTime(duration)}</span>
           </div>
         </div>
         <button class="round" style="background:var(--kino-gold);color:var(--kino-goldText)"

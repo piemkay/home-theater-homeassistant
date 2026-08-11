@@ -219,4 +219,9 @@ async def select_option(driver: EntityBackedDriver, role: str, option: Any) -> N
             f"{driver.spec.name}: '{wanted}' ist keine gültige Auswahl für "
             f"{role} (verfügbar: {', '.join(options) or 'noch keine'})"
         )
-    await driver.call("select", "select_option", role=role, data={"option": wanted})
+    await driver.call(
+        driver.domain_of(role, "select"),
+        "select_option",
+        role=role,
+        data={"option": wanted},
+    )

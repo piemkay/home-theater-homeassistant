@@ -183,6 +183,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
         uri = self._now().get("uri")
         if not uri:
             self._playing = None
+            self.coordinator.playing_item = None
             return
         if (self._playing and self._playing["uri"] == uri) or self._resolving == uri:
             return
@@ -206,6 +207,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
             "id": item.id if item else None,
             "title": item.title if item else None,
         }
+        self.coordinator.playing_item = self._playing
         self.async_write_ha_state()
 
     async def _lookup(self, uri: str) -> MediaItem | None:
@@ -289,6 +291,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
     async def async_media_stop(self) -> None:
         await self._media("media_stop")
         self._playing = None
+        self.coordinator.playing_item = None
 
     async def async_media_next_track(self) -> None:
         await self._media("media_next_track")
