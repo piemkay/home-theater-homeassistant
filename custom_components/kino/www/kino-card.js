@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.1.4";
+const CARD_VERSION = "0.1.5";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -489,7 +489,9 @@ class KinoCard extends CardBase {
     const duration = state.attributes.media_duration || 0;
     const position = this._position(state);
     const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
-    for (const bar of this._container.querySelectorAll(".bar > div")) {
+    // Only the playback bars — the transition bar shows how far the room is
+    // from being ready, which has nothing to do with the film's position.
+    for (const bar of this._container.querySelectorAll('[data-bar="media"] > div')) {
       bar.style.width = `${pct}%`;
     }
     for (const el of this._container.querySelectorAll("[data-time='elapsed']")) {
@@ -1201,7 +1203,7 @@ class KinoCard extends CardBase {
         ${art ? `<img src="${this._esc(art)}" alt="" onerror="${fallback}">` : ""}
         <div class="caption">${this._esc(title)}</div>
       </div>
-      <div class="bar" style="margin:16px 0 6px"><div style="width:${pct}%"></div></div>
+      <div class="bar" data-bar="media" style="margin:16px 0 6px"><div style="width:${pct}%"></div></div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-bottom:20px">
         <span data-time="elapsed">${helpers.formatTime(position)}</span>
         <span data-time="duration">${helpers.formatTime(duration)}</span>
@@ -1347,7 +1349,7 @@ class KinoCard extends CardBase {
           </div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
             <span data-time="elapsed" style="font-size:10px;color:var(--kino-text3);flex-shrink:0">${helpers.formatTime(position)}</span>
-            <div class="bar" style="flex:1;height:3px;margin:0"><div style="width:${pct}%"></div></div>
+            <div class="bar" data-bar="media" style="flex:1;height:3px;margin:0"><div style="width:${pct}%"></div></div>
             <span data-time="duration" style="font-size:10px;color:var(--kino-text3);flex-shrink:0">${helpers.formatTime(duration)}</span>
           </div>
         </div>
