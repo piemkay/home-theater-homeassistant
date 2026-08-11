@@ -17,6 +17,10 @@ from .entity import KinoEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+#: Shown when there is no track list yet — a player that is not playing has
+#: nothing to offer, and saying so beats an empty dropdown (FR-60).
+PLACEHOLDER = "—"
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -111,18 +115,24 @@ class KinoTrackSelect(KinoEntity, SelectEntity):
     @property
     def options(self) -> list[str]:
         state = self._source_state()
-        options = list(state.attributes.get("options") or []) if state else []
+        raw = list(state.attributes.get("options") or []) if state else []
+        # A helper waiting for a track list holds a placeholder, not a track;
+        # passing it on would offer "—" as something to select.
+        options = [option for option in raw if option != PLACEHOLDER]
+        if not options:
+            return [PLACEHOLDER]
         # Subtitles always offer an explicit "Aus" (FR-62).
         if self._kind == "subtitle" and SUBTITLE_OFF_LABEL not in options:
             options = [SUBTITLE_OFF_LABEL, *options]
-        return options or ["—"]
+        return options
 
     @property
     def current_option(self) -> str | None:
         state = self._source_state()
         if state is None or state.state in ("unknown", "unavailable"):
             return None
-        return state.state
+        # Home Assistant rejects a current option that is not in the list.
+        return state.state if state.state in self.options else None
 
     @property
     def available(self) -> bool:
