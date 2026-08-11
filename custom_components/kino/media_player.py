@@ -47,6 +47,9 @@ _PLAYBACK_START_TIMEOUT = 30.0
 #: Below this, "resume" is not worth a seek — the player is already there.
 _MIN_RESUME_SECONDS = 30.0
 
+#: How long a catalogue lookup that *failed* is left alone before retrying.
+_LOOKUP_RETRY_SECONDS = 60.0
+
 _STATE_MAP = {
     "playing": MediaPlayerState.PLAYING,
     "paused": MediaPlayerState.PAUSED,
@@ -94,6 +97,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
         #: is what supplies a poster and a title fit to read.
         self._playing: dict[str, Any] | None = None
         self._resolving: str | None = None
+        self._lookup_failed_at: float = 0.0
 
     # -- the device currently carrying media --------------------------------
 
@@ -189,19 +193,25 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
             return
         if self.coordinator.media is None:
             return
+        if self.hass.loop.time() - self._lookup_failed_at < _LOOKUP_RETRY_SECONDS:
+            return
         self._resolving = uri
         self.hass.async_create_task(self._async_resolve(uri))
 
     async def _async_resolve(self, uri: str) -> None:
-        item: MediaItem | None = None
         try:
             item = await self._lookup(uri)
         except MediaBackendError as err:
+            # A catalogue that is briefly unreachable — a DNS blip is enough —
+            # is not an answer. Recording it as "no match" would cost the
+            # poster until the film changes, so try again shortly instead.
             _LOGGER.debug("Titel zu '%s' nicht auflösbar: %s", uri, err)
+            self._lookup_failed_at = self.hass.loop.time()
+            return
         finally:
             self._resolving = None
-        # Recorded even when nothing matched, so one unmatched file does not
-        # re-query the catalogue on every poll.
+        # A real "nothing matched" *is* recorded, so one unmatched file does
+        # not re-query the catalogue on every poll.
         self._playing = {
             "uri": uri,
             "id": item.id if item else None,
