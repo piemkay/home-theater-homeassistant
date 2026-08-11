@@ -79,7 +79,10 @@ class KinoVolumeNumber(KinoEntity, NumberEntity):
 
         # The Trinnov is authoritative: whatever it reports back is the truth,
         # and a value it clamps is a graceful bounce-back, not an error.
-        actual = await driver.set_volume(clamped)
-        if actual is not None and abs(actual - clamped) > 0.05:
-            _LOGGER.debug("Trinnov hat %.1f dB auf %.1f dB korrigiert", clamped, actual)
-        await self.coordinator.async_request_refresh()
+        # Whatever the Trinnov does with it — accept, clamp, ignore — shows up
+        # in its own sensor within seconds and wins from there (FR-64a).
+        await driver.set_volume(clamped)
+        # Not `async_request_refresh` — that is debounced by ten seconds, and
+        # a volume slider that lags that far behind the room is unusable.
+        self.async_write_ha_state()
+        self.coordinator.async_update_listeners()

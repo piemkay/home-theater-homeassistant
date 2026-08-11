@@ -19,6 +19,12 @@ from .model import (
     Power,
 )
 
+#: Settings the person is *expected* to change while an activity runs. The
+#: card's own volume buttons write these, so reporting them as drift would
+#: mean warning somebody in red about the thing they just did (FR-65). The
+#: activity's value is a starting point, not a set point.
+USER_OWNED_SETTINGS = frozenset({"volume", "mute"})
+
 
 @dataclass(frozen=True)
 class DriftFinding:
@@ -182,6 +188,7 @@ def _classify(
             key
             for key, value in requirement.settings.items()
             if key not in spec.unverifiable_settings
+            and key not in USER_OWNED_SETTINGS
             and key in obs.settings
             and not obs.setting_matches(key, value)
         ]

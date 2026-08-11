@@ -134,6 +134,25 @@ one-handed single column on a phone, a denser grid on a tablet.
 type: custom:kino-card
 ```
 
+The card is a **fixed-height frame** — header and transport bar stay put while
+the library scrolls between them, which is what keeps volume and playback
+reachable in a 300-title grid. It fills the viewport by default; `height:`
+takes any CSS length if you want something else:
+
+```yaml
+type: custom:kino-card
+height: 70vh
+```
+
+The playback view's **Dim** button appears once a scene is configured for it:
+
+```yaml
+settings:
+  dim_light_scene: scene.low_ambience
+```
+
+It toggles between that scene and the running activity's own `light_scene`.
+
 ## Admin panel
 
 An admin-only **Kino** entry appears in the sidebar (the second user never

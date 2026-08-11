@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.1.1";
+const CARD_VERSION = "0.1.2";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -165,22 +165,36 @@ const STYLES = `
     --kino-goldText: oklch(0.18 0.03 75);
   }
 }
+/* The mockup's frame: header and footer pinned, the middle scrolls. A card
+   that simply grew with its content put the transport bar at the bottom of
+   the *page*, which on a 300-title grid is nowhere near the screen. */
 .wrap {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  height: var(--kino-card-height, calc(100dvh - var(--header-height, 56px) - 24px));
+  min-height: 420px;
   font-family: Manrope, var(--primary-font-family, system-ui), sans-serif;
   background: var(--kino-bg);
   color: var(--kino-text);
   border-radius: var(--ha-card-border-radius, 12px);
   overflow: hidden;
-  min-height: 240px;
 }
+.scroller {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+.scroller::-webkit-scrollbar { display: none; }
 @keyframes kino-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 @keyframes kino-sheet-in { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
 .hscroll::-webkit-scrollbar { display: none; }
 .hscroll { scrollbar-width: none; }
 
 header {
-  padding: 14px 20px 10px;
+  padding: 14px 20px 10px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
 }
 .brand { font-weight: 800; font-size: 15px; letter-spacing: 1.5px; }
@@ -244,8 +258,11 @@ button { font-family: inherit; }
 .progress .hint { font-size: 11px; color: var(--kino-text3); }
 
 .posterrow { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 2px; }
-.poster { flex-shrink: 0; width: 120px; cursor: pointer; }
-.postergrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.poster { flex-shrink: 0; width: 120px; cursor: pointer; min-width: 0; }
+/* A plain 1fr means minmax(auto, 1fr), so a poster's intrinsic width can blow
+   its column out and the two columns end up different sizes on a phone.
+   minmax(0, 1fr) is what actually makes them equal. */
+.postergrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .postergrid .poster { width: auto; }
 .art {
   position: relative; aspect-ratio: 2/3; border-radius: 10px; overflow: hidden;
@@ -257,7 +274,8 @@ button { font-family: inherit; }
 .art .resume { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0,0,0,.4); }
 .art .resume > div { height: 100%; background: var(--kino-gold); }
 .poster .title { font-size: 12px; font-weight: 700; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.poster .meta { font-size: 11px; color: var(--kino-text3); }
+.poster .meta { font-size: 11px; color: var(--kino-text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.more { display: flex; justify-content: center; padding: 18px 0 4px; }
 
 input[type="text"], select {
   width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px;
@@ -272,16 +290,31 @@ input[type="text"], select {
   display: flex; flex-direction: column; overflow-y: auto;
   animation: kino-sheet-in .2s ease-out; padding: 16px 20px 24px; box-sizing: border-box;
 }
-.backdrop { width: 100%; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden; background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 10px, var(--kino-surface) 10px, var(--kino-surface) 20px); }
+.backdrop { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden; background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 10px, var(--kino-surface) 10px, var(--kino-surface) 20px); }
 .backdrop img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .dialog { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 28px; box-sizing: border-box; }
 .dialog > div { width: 100%; background: var(--kino-surface); border: 1px solid var(--kino-border); border-radius: 18px; padding: 22px; }
 
-footer { padding: 10px 16px 14px; border-top: 1px solid var(--kino-border); background: var(--kino-surface); }
+footer {
+  flex-shrink: 0; padding: 10px 16px 14px;
+  border-top: 1px solid var(--kino-border); background: var(--kino-surface);
+}
 .footrow { display: flex; align-items: center; gap: 10px; }
+.footthumb {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; overflow: hidden;
+  background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 5px, var(--kino-surface) 5px, var(--kino-surface) 10px);
+}
+.footthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .volrow { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .volval { font-size: 11px; color: var(--kino-text2); width: 62px; text-align: center; font-variant-numeric: tabular-nums; }
-.round { width: 36px; height: 36px; border-radius: 18px; border: none; background: var(--kino-surface2); color: var(--kino-text2); font-size: 15px; cursor: pointer; }
+.round { width: 36px; height: 36px; border-radius: 18px; border: none; background: var(--kino-surface2); color: var(--kino-text2); font-size: 15px; cursor: pointer; flex-shrink: 0; }
+.round.ghosted { background: transparent; }
+.seek { border: none; background: transparent; color: var(--kino-text2); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.backdrop .caption {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px;
+  font-weight: 800; font-size: 15px; box-sizing: border-box;
+  background: linear-gradient(0deg, rgba(0,0,0,.65), transparent);
+}
 
 .empty { text-align: center; padding: 40px 12px; color: var(--kino-text2); }
 .empty .sub { font-size: 12px; color: var(--kino-text3); margin-top: 6px; }
@@ -314,6 +347,13 @@ const SORT_OPTIONS = [
 ];
 
 const TAGS = ["4K", "HD", "Weitersehen", "Nicht gesehen"];
+
+// Titles per request. Small enough that the first screen is quick, large
+// enough that scrolling does not fetch constantly (FR-58).
+const PAGE_SIZE = 60;
+
+// What the ⟲10 / 10⟳ buttons move by.
+const SEEK_STEP_SECONDS = 10;
 
 /**
  * Home Assistant always provides HTMLElement; Node does not. Deriving from a
@@ -350,8 +390,15 @@ class KinoCard extends CardBase {
       activityMenu: false,
       musikSource: "spotify",
       refreshing: false,
+      dimmed: false,
     };
-    this._library = { items: [], total: 0, loading: false, error: null };
+    this._library = {
+      items: [],
+      total: 0,
+      hasMore: false,
+      loading: false,
+      error: null,
+    };
     this._resume = [];
     this._facets = { genres: [], countries: [] };
     this._searchTimer = null;
@@ -363,6 +410,13 @@ class KinoCard extends CardBase {
 
   setConfig(config) {
     this._config = config || {};
+    // The card is a fixed-height frame so the transport bar stays on screen;
+    // `height:` in the card config overrides how tall that frame is.
+    if (this._config.height) {
+      this.style.setProperty("--kino-card-height", this._config.height);
+    } else {
+      this.style.removeProperty("--kino-card-height");
+    }
   }
 
   getCardSize() {
@@ -392,7 +446,14 @@ class KinoCard extends CardBase {
     // The engine pushes through the coordinator, which updates the entities;
     // polling the compact state object keeps the card in step without needing
     // a bespoke subscription.
-    this._timer = setInterval(() => this._refreshState(), 2000);
+    this._timer = setInterval(() => {
+      this._refreshState();
+      // The player reports a position only now and then; while the playback
+      // view is open the clock carries it between updates. Deliberately not
+      // done while the grid is on screen — re-rendering under a finger that
+      // is scrolling is worse than a progress bar that ticks in steps.
+      if (this._view.playingOpen) this._render();
+    }, 2000);
   }
 
   disconnectedCallback() {
@@ -429,34 +490,57 @@ class KinoCard extends CardBase {
     }
   }
 
-  async _loadLibrary() {
+  /**
+   * Load a page of the library (FR-58).
+   *
+   * `append` keeps what is already on screen and asks for the next page, so
+   * a 300-title library arrives in screenfuls instead of one 60-item slab
+   * with no way to reach title 61.
+   */
+  async _loadLibrary(append = false) {
+    if (append && (this._library.loading || !this._library.hasMore)) return;
     this._library.loading = true;
-    this._library.error = null;
+    if (!append) this._library.error = null;
     this._render();
+    const offset = append ? this._library.items.length : 0;
     try {
       const message = helpers.queryFromFilters(
         this._view.filters,
         this._view.category,
         this._view.query,
-        this._view.sort
+        this._view.sort,
+        offset,
+        PAGE_SIZE
       );
       const page = await this._ws(message);
       this._library = {
-        items: page.items,
+        items: append ? [...this._library.items, ...page.items] : page.items,
         total: page.total,
+        hasMore: page.hasMore,
         loading: false,
         error: null,
       };
     } catch (err) {
       // Never a blank grid — say what happened and offer the retry (FR-45).
+      // An failed *append* keeps the titles already on screen.
       this._library = {
-        items: [],
-        total: 0,
+        items: append ? this._library.items : [],
+        total: append ? this._library.total : 0,
+        hasMore: false,
         loading: false,
         error: err.message || "Die Bibliothek ist nicht erreichbar.",
       };
     }
     this._render();
+  }
+
+  /** Load the next page once the grid is scrolled close to its end. */
+  _onScroll(event) {
+    if (this._view.main !== "library" || !this._library.hasMore) return;
+    const el = event.target;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) {
+      this._loadLibrary(true);
+    }
   }
 
   async _loadResume() {
@@ -568,6 +652,38 @@ class KinoCard extends CardBase {
     await this._player(service);
   }
 
+  /** Jump ±10 s, relative to where the player says it is right now. */
+  async _seekBy(seconds) {
+    const state = this._hass.states[this._playerEntity];
+    if (!state) return;
+    const duration = state.attributes.media_duration || 0;
+    const target = Math.max(0, this._position(state) + seconds);
+    await this._player("media_seek", {
+      seek_position: duration ? Math.min(target, duration - 1) : target,
+    });
+  }
+
+  /**
+   * Dim the room and back again.
+   *
+   * Both scenes come from the configuration — the dim one from
+   * `settings.dim_light_scene`, the other from the running activity — so the
+   * button does nothing surprising and disappears when nothing is set.
+   */
+  async _toggleDim() {
+    const scenes = this._kino.lightScenes || {};
+    const target = this._view.dimmed ? scenes.activity : scenes.dim;
+    this._view.dimmed = !this._view.dimmed;
+    this._render();
+    if (!target) return;
+    try {
+      await this._callService("scene", "turn_on", { entity_id: target });
+    } catch (err) {
+      this._actionError = err.message || String(err);
+      this._render();
+    }
+  }
+
   /* -- rendering ----------------------------------------------------- */
 
   _activityByKey(key) {
@@ -593,6 +709,9 @@ class KinoCard extends CardBase {
       this._container.addEventListener("click", (e) => this._onClick(e));
       this._container.addEventListener("change", (e) => this._onChange(e));
       this._container.addEventListener("input", (e) => this._onInput(e));
+      // Scroll does not bubble, so listen in the capture phase — the
+      // scroller element itself is replaced on every render.
+      this._container.addEventListener("scroll", (e) => this._onScroll(e), true);
     }
 
     if (!this._kino) {
@@ -859,9 +978,9 @@ class KinoCard extends CardBase {
       .join("");
 
     let grid;
-    if (lib.loading) {
+    if (lib.loading && !lib.items.length) {
       grid = '<p class="empty">Wird geladen…</p>';
-    } else if (lib.error) {
+    } else if (lib.error && !lib.items.length) {
       grid = `<div class="empty">
         <p class="error">${this._esc(lib.error)}</p>
         <p class="sub">Die Festplatten der NAS schlafen vielleicht noch.</p>
@@ -876,7 +995,17 @@ class KinoCard extends CardBase {
           : "Keine Treffer"
       }</p></div>`;
     } else {
-      grid = `<div class="postergrid">${lib.items.map((t) => this._poster(t, true)).join("")}</div>`;
+      const more = lib.hasMore
+        ? `<div class="more">
+             <button class="ghost" data-act="load-more" ${lib.loading ? "disabled" : ""}>
+               ${lib.loading ? "Wird geladen…" : "Weitere Titel laden"}
+             </button>
+           </div>`
+        : "";
+      grid = `<div class="postergrid">${lib.items
+        .map((t) => this._poster(t, true))
+        .join("")}</div>${more}
+        ${lib.error ? `<p class="error" style="margin-top:12px">${this._esc(lib.error)}</p>` : ""}`;
     }
 
     return `
@@ -904,7 +1033,11 @@ class KinoCard extends CardBase {
         </select>
       </div>
       ${chips ? `<div class="posterrow hscroll" style="margin-bottom:10px">${chips}</div>` : ""}
-      <div style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">${lib.total} Titel</div>
+      <div style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">${
+        lib.items.length && lib.items.length < lib.total
+          ? `${lib.items.length} von ${lib.total} Titeln`
+          : `${lib.total} Titel`
+      }</div>
       ${grid}`;
   }
 
@@ -976,60 +1109,122 @@ class KinoCard extends CardBase {
     </div>`;
   }
 
+  /** The full playback view from the mockup. */
   _renderPlayingSheet() {
     const player = this._playerEntity;
     const state = player ? this._hass.states[player] : null;
     if (!state) return "";
     const attrs = state.attributes;
     const duration = attrs.media_duration || 0;
-    const position = attrs.media_position || 0;
+    const position = this._position(state);
     const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
+    const playing = state.state === "playing";
+    const title = attrs.media_title || "Wiedergabe";
+    const art = attrs.entity_picture;
+
     return `<div class="sheet" style="z-index:30">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <a class="link" data-act="collapse-playing">⌄ Minimieren</a>
         <a class="link" style="color:var(--kino-text3)" data-act="transport" data-key="media_stop">Wiedergabe beenden</a>
       </div>
-      <div class="backdrop"></div>
-      <h3 style="margin:14px 0 0">${this._esc(attrs.media_title || "Wiedergabe")}</h3>
+      <div class="backdrop">
+        ${art ? `<img src="${this._esc(art)}" alt="" onerror="this.style.display='none'">` : ""}
+        <div class="caption">${this._esc(title)}</div>
+      </div>
       <div class="bar" style="margin:16px 0 6px"><div style="width:${pct}%"></div></div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-bottom:20px">
         <span>${helpers.formatTime(position)}</span><span>${helpers.formatTime(duration)}</span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:22px">
-        <button class="round" data-act="transport" data-key="media_previous_track">⏮</button>
+      <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:22px">
+        <button class="round ghosted" data-act="transport" data-key="media_previous_track" title="Vorheriger Titel">⏮</button>
+        <button class="seek" data-act="seek" data-key="-${SEEK_STEP_SECONDS}" title="10 Sekunden zurück">⟲${SEEK_STEP_SECONDS}</button>
         <button class="round" style="width:52px;height:52px;border-radius:26px;background:var(--kino-gold);color:var(--kino-goldText)"
-          data-act="transport" data-key="${state.state === "playing" ? "media_pause" : "media_play"}">
-          ${state.state === "playing" ? "⏸" : "▶"}
+          data-act="transport" data-key="${playing ? "media_pause" : "media_play"}">
+          ${playing ? "⏸" : "▶"}
         </button>
-        <button class="round" data-act="transport" data-key="media_next_track">⏭</button>
+        <button class="seek" data-act="seek" data-key="${SEEK_STEP_SECONDS}" title="10 Sekunden vor">${SEEK_STEP_SECONDS}⟳</button>
+        <button class="round ghosted" data-act="transport" data-key="media_next_track" title="Nächster Titel">⏭</button>
       </div>
+      ${this._renderVolumeRow(true)}
+      ${this._renderSoundSelects()}
       ${this._renderTrackSelects()}
     </div>`;
   }
 
+  /** Position, advanced by the clock between the player's own updates. */
+  _position(state) {
+    const attrs = state.attributes;
+    const base = attrs.media_position || 0;
+    if (state.state !== "playing" || !attrs.media_position_updated_at) return base;
+    const since = (Date.now() - Date.parse(attrs.media_position_updated_at)) / 1000;
+    const duration = attrs.media_duration || 0;
+    const position = base + Math.max(0, since);
+    return duration ? Math.min(position, duration) : position;
+  }
+
+  /** Mute, the optional Dim scene, and the dB stepper. */
+  _renderVolumeRow(withDim) {
+    const player = this._playerEntity;
+    const state = player ? this._hass.states[player] : null;
+    const muted = state && state.attributes.is_volume_muted;
+    const volumeEntity = this._volumeEntity;
+    const db = volumeEntity ? this._hass.states[volumeEntity]?.state : null;
+    const dimScene = (this._kino.lightScenes || {}).dim;
+    return `<div class="volrow" style="${withDim ? "justify-content:flex-start" : ""}">
+      <button class="pill" data-act="mute" aria-pressed="${!!muted}">Stumm</button>
+      ${
+        withDim && dimScene
+          ? `<button class="pill" data-act="dim" aria-pressed="${this._view.dimmed}">Dim</button>`
+          : ""
+      }
+      ${withDim ? '<div style="flex:1"></div>' : ""}
+      <button class="round" data-act="vol" data-key="down">–</button>
+      <span class="volval">${this._esc(helpers.formatVolume(db, muted))}</span>
+      <button class="round" data-act="vol" data-key="up">+</button>
+    </div>`;
+  }
+
+  /** Preset and upmixer, straight off the processor's own option lists. */
+  _renderSoundSelects() {
+    const controls = this._kino.controls || {};
+    const blocks = [
+      [controls.preset, "Trinnov · Preset"],
+      [controls.upmixer, "Upmixer"],
+    ]
+      .map(([entityId, label]) => this._entitySelectBlock(entityId, label))
+      .filter(Boolean);
+    if (!blocks.length) return "";
+    return `<div style="display:flex;gap:10px;margin-bottom:16px">
+      ${blocks.map((block) => `<div style="flex:1;min-width:0">${block}</div>`).join("")}
+    </div>`;
+  }
+
   _renderTrackSelects() {
-    const audio = this._entity("audioTrack");
-    const subtitle = this._entity("subtitleTrack");
-    const block = (entityId, label) => {
-      if (!entityId) return "";
-      const state = this._hass.states[entityId];
-      if (!state || state.state === "unavailable") return "";
-      const options = (state.attributes.options || []).filter((o) => o !== "—");
-      // A player that reports no track list gets no empty dropdown (FR-60).
-      if (!options.length) return "";
-      return `<div style="margin-bottom:12px">
-        <div class="label">${label}</div>
-        <select data-field="entity-select" data-key="${entityId}">
-          ${options
-            .map(
-              (o) =>
-                `<option value="${this._esc(o)}"${state.state === o ? " selected" : ""}>${this._esc(o)}</option>`
-            )
-            .join("")}
-        </select>
-      </div>`;
-    };
-    return block(audio, "Tonspur") + block(subtitle, "Untertitel");
+    return (
+      this._entitySelectBlock(this._entity("audioTrack"), "Tonspur") +
+      this._entitySelectBlock(this._entity("subtitleTrack"), "Untertitel")
+    );
+  }
+
+  /** One labelled select over a `select.*` entity, or nothing at all. */
+  _entitySelectBlock(entityId, label) {
+    if (!entityId) return "";
+    const state = this._hass.states[entityId];
+    if (!state || state.state === "unavailable") return "";
+    const options = (state.attributes.options || []).filter((o) => o !== "—");
+    // A device that reports no list gets no empty dropdown (FR-60).
+    if (!options.length) return "";
+    return `<div style="margin-bottom:12px">
+      <div class="label">${this._esc(label)}</div>
+      <select data-field="entity-select" data-key="${entityId}">
+        ${options
+          .map(
+            (o) =>
+              `<option value="${this._esc(o)}"${state.state === o ? " selected" : ""}>${this._esc(o)}</option>`
+          )
+          .join("")}
+      </select>
+    </div>`;
   }
 
   _renderPowerConfirm() {
@@ -1051,17 +1246,7 @@ class KinoCard extends CardBase {
     const player = this._playerEntity;
     const state = player ? this._hass.states[player] : null;
     const playing = state && ["playing", "paused"].includes(state.state);
-    const volumeEntity = this._volumeEntity;
-    const db = volumeEntity ? this._hass.states[volumeEntity]?.state : null;
-    const muted = state && state.attributes.is_volume_muted;
-
-    const volume = `
-      <div class="volrow">
-        <button class="pill" data-act="mute" aria-pressed="${!!muted}">Stumm</button>
-        <button class="round" data-act="vol" data-key="down">–</button>
-        <span class="volval">${this._esc(helpers.formatVolume(db, muted))}</span>
-        <button class="round" data-act="vol" data-key="up">+</button>
-      </div>`;
+    const volume = this._renderVolumeRow(false);
 
     if (!playing) {
       const current = this._currentActivity;
@@ -1077,24 +1262,29 @@ class KinoCard extends CardBase {
 
     const attrs = state.attributes;
     const duration = attrs.media_duration || 0;
-    const position = attrs.media_position || 0;
+    const position = this._position(state);
     const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
+    const art = attrs.entity_picture;
     return `<footer>
       <div class="footrow">
-        <div style="flex:1;overflow:hidden;cursor:pointer" data-act="expand-playing">
+        <div class="footthumb" data-act="expand-playing">
+          ${art ? `<img src="${this._esc(art)}" alt="" onerror="this.style.display='none'">` : ""}
+        </div>
+        <div style="flex:1;overflow:hidden;cursor:pointer;min-width:0" data-act="expand-playing">
           <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
             ${this._esc(attrs.media_title || "Wiedergabe")}
           </div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-            <span style="font-size:10px;color:var(--kino-text3)">${helpers.formatTime(position)}</span>
+            <span style="font-size:10px;color:var(--kino-text3);flex-shrink:0">${helpers.formatTime(position)}</span>
             <div class="bar" style="flex:1;height:3px;margin:0"><div style="width:${pct}%"></div></div>
-            <span style="font-size:10px;color:var(--kino-text3)">${helpers.formatTime(duration)}</span>
+            <span style="font-size:10px;color:var(--kino-text3);flex-shrink:0">${helpers.formatTime(duration)}</span>
           </div>
         </div>
         <button class="round" style="background:var(--kino-gold);color:var(--kino-goldText)"
           data-act="transport" data-key="${state.state === "playing" ? "media_pause" : "media_play"}">
           ${state.state === "playing" ? "⏸" : "▶"}
         </button>
+        <button class="round ghosted" data-act="expand-playing" title="Wiedergabe öffnen">⌃</button>
       </div>
       ${volume}
     </footer>`;
@@ -1218,6 +1408,15 @@ class KinoCard extends CardBase {
         break;
       case "mute":
         await this._toggleMute();
+        break;
+      case "seek":
+        await this._seekBy(Number(key));
+        break;
+      case "dim":
+        await this._toggleDim();
+        break;
+      case "load-more":
+        await this._loadLibrary(true);
         break;
       case "musik-source":
         view.musikSource = key;

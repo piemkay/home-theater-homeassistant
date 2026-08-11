@@ -376,7 +376,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
         config = self.coordinator.config
         span = config.volume_max_db - config.volume_min_db
         await driver.set_volume(config.volume_min_db + volume * span)
-        await self.coordinator.async_request_refresh()
+        self._write_volume_state()
 
     async def async_volume_up(self) -> None:
         await self._step_volume(+1)
@@ -395,11 +395,22 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
         target = current + direction * config.volume_step_db
         target = min(max(target, config.volume_min_db), config.volume_max_db)
         await driver.set_volume(target)
-        await self.coordinator.async_request_refresh()
+        self._write_volume_state()
 
     async def async_mute_volume(self, mute: bool) -> None:
         driver = self._volume_driver
         if driver is None:
             raise HomeAssistantError("Kein Lautstärke-Gerät konfiguriert")
         await driver.set_mute(mute)
-        await self.coordinator.async_request_refresh()
+        self._write_volume_state()
+
+    def _write_volume_state(self) -> None:
+        """Publish the new level at once, and let the engine catch up after.
+
+        `async_request_refresh` is debounced by ten seconds, which is why the
+        card sat on the old dB value long after the processor had moved. The
+        driver already holds the value it just set, so the entity can say so
+        immediately; the coordinator's own poll reconciles it later.
+        """
+        self.async_write_ha_state()
+        self.coordinator.async_update_listeners()

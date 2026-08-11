@@ -259,3 +259,56 @@ describe("entity resolution", () => {
     assert.equal(card._playerEntity, null);
   });
 });
+
+describe("playback position", () => {
+  const card = Object.create(KinoCard.prototype);
+  const at = (seconds) =>
+    new Date(Date.now() - seconds * 1000).toISOString();
+
+  test("carries the position forward between the player's updates", () => {
+    const position = card._position({
+      state: "playing",
+      attributes: {
+        media_position: 100,
+        media_duration: 6000,
+        media_position_updated_at: at(5),
+      },
+    });
+    assert.ok(position >= 104 && position <= 106, `got ${position}`);
+  });
+
+  test("a paused player stays exactly where it is", () => {
+    assert.equal(
+      card._position({
+        state: "paused",
+        attributes: {
+          media_position: 100,
+          media_duration: 6000,
+          media_position_updated_at: at(30),
+        },
+      }),
+      100
+    );
+  });
+
+  test("never runs past the end of the film", () => {
+    assert.equal(
+      card._position({
+        state: "playing",
+        attributes: {
+          media_position: 5990,
+          media_duration: 6000,
+          media_position_updated_at: at(600),
+        },
+      }),
+      6000
+    );
+  });
+
+  test("a player that reports no update time is taken at its word", () => {
+    assert.equal(
+      card._position({ state: "playing", attributes: { media_position: 42 } }),
+      42
+    );
+  });
+});

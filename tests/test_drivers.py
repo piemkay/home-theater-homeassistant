@@ -24,6 +24,7 @@ from custom_components.kino.devices.barco import (
     RETRY_REJECTED_AFTER,
 )
 from custom_components.kino.devices.bridge import StateSnapshot
+from custom_components.kino.devices.trinnov import VOLUME_CONFIRM_SECONDS
 
 
 class FakeBridge:
@@ -371,13 +372,30 @@ class TestTrinnov:
         assert services == [("select", "select_option"), ("remote", "send_command")]
         assert bridge.calls[-1][2]["command"] == ["volume_set -30.0"]
 
-    async def test_volume_is_read_back_after_setting(self, bridge, driver):
+    async def test_the_level_just_set_is_reported_at_once(self, bridge, driver):
+        """The processor's sensor lags the command by a second or two.
+
+        Reporting the stale value in the meantime is what made the card sit on
+        the old dB reading — and made the next step compute from it, so two
+        quick taps moved one step.
+        """
+        bridge.set("sensor.trinnov_altitude_14683197_volume", "-30.0")
+
+        assert await driver.set_volume(-32.0) == -32.0
+
+        bridge.set("sensor.trinnov_altitude_14683197_volume", "-32.0")
+        assert driver.volume_db() == -32.0
+
+    async def test_the_trinnov_wins_when_it_clamps(self, bridge, driver):
         """FR-64a: the Trinnov is authoritative, a clamp is not an error."""
         bridge.set("sensor.trinnov_altitude_14683197_volume", "-40.0")
 
-        actual = await driver.set_volume(-10.0)
+        assert await driver.set_volume(-10.0) == -10.0
 
-        assert actual == -40.0
+        # It never accepted -10, so once the confirmation window closes its
+        # own value is the truth again.
+        bridge.clock += VOLUME_CONFIRM_SECONDS + 1.0
+        assert driver.volume_db() == -40.0
 
     async def test_invalid_source_names_the_available_options(self, bridge, driver):
         bridge.set(

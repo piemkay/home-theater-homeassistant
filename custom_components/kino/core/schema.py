@@ -143,6 +143,16 @@ def _unknown_keys(
     )
 
 
+def _scene_or_none(value: Any, path: str, errors: list[ConfigError]) -> str | None:
+    """Accept a `scene.*` entity, or nothing at all."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.startswith("scene."):
+        errors.append(ConfigError(path, f"{value!r} ist keine scene.*-Entity"))
+        return None
+    return value
+
+
 def _check_path_map(value: Any, path: str, errors: list[ConfigError]) -> None:
     """Check the prefix rewrites that turn catalogue paths into player paths.
 
@@ -484,17 +494,12 @@ def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
         minimum=0.0,
     )
 
-    shutdown_scene = settings.get("shutdown_light_scene")
-    if shutdown_scene is not None and (
-        not isinstance(shutdown_scene, str) or not shutdown_scene.startswith("scene.")
-    ):
-        errors.append(
-            ConfigError(
-                "settings.shutdown_light_scene",
-                f"{shutdown_scene!r} ist keine scene.*-Entity",
-            )
-        )
-        shutdown_scene = None
+    shutdown_scene = _scene_or_none(
+        settings.get("shutdown_light_scene"), "settings.shutdown_light_scene", errors
+    )
+    dim_scene = _scene_or_none(
+        settings.get("dim_light_scene"), "settings.dim_light_scene", errors
+    )
 
     # A device no activity ever mentions is dead weight and almost certainly a
     # typo; flag it rather than let it sit there doing nothing (FR-115).
@@ -516,6 +521,7 @@ def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
         volume_max_db=-20.0 if max_db is None else max_db,
         volume_step_db=2.0 if step_db is None else step_db,
         shutdown_light_scene=shutdown_scene,
+        dim_light_scene=dim_scene,
         drift_debounce_seconds=20.0 if debounce is None else debounce,
         preferred_audio_language=settings.get("preferred_audio_language"),
         preferred_subtitle_language=settings.get("preferred_subtitle_language"),

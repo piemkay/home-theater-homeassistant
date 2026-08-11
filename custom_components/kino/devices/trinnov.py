@@ -22,12 +22,22 @@ import logging
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
-from ..core.model import DeviceObservation, Power
+from ..core.model import DeviceObservation, DeviceSpec, Power
 from .base import EntityBackedDriver, select_option
+from .bridge import Bridge
 
 _LOGGER = logging.getLogger(__name__)
 
 _READY_MEDIA_STATES = frozenset({"on", "idle", "playing", "paused"})
+
+#: How long a volume we just set is trusted over the processor's own sensor.
+#: The Altitude reports the new level a second or two later, and until it does
+#: the card would otherwise show the old value and count the next step from
+#: it — so two taps in a row moved one step (FR-64).
+VOLUME_CONFIRM_SECONDS = 8.0
+
+#: dB difference at which the sensor is considered to have caught up.
+VOLUME_EPSILON = 0.05
 
 #: Values seen on `sensor.<name>_power_status`.
 _POWER_STATUS = {
@@ -62,6 +72,12 @@ class TrinnovDriver(EntityBackedDriver):
         "upmixer": "upmixer",
         "volume": None,
     }
+
+    def __init__(self, bridge: Bridge, spec: DeviceSpec) -> None:
+        super().__init__(bridge, spec)
+        #: The level we last asked for, held until the processor confirms it.
+        self._volume_target: float | None = None
+        self._volume_target_at: float = 0.0
 
     async def observe(self) -> DeviceObservation:
         media = self.state_of("media_player")
@@ -116,6 +132,18 @@ class TrinnovDriver(EntityBackedDriver):
         )
 
     def volume_db(self) -> float | None:
+        """Return the current level: the one just set until the Trinnov agrees.
+
+        The processor's sensor lags a command by a second or two. Reporting
+        the stale value in the meantime made the card look broken and, worse,
+        made the *next* step compute from the old level, so a quick double-tap
+        moved one step instead of two.
+        """
+        reported = self._reported_volume_db()
+        pending = self._pending_volume(reported)
+        return reported if pending is None else pending
+
+    def _reported_volume_db(self) -> float | None:
         for role in ("volume", "volume_number"):
             raw = self.value_of(role)
             if raw is None:
@@ -125,6 +153,20 @@ class TrinnovDriver(EntityBackedDriver):
             except (TypeError, ValueError):
                 continue
         return None
+
+    def _pending_volume(self, reported: float | None) -> float | None:
+        """Return the unconfirmed target, or None once it lands or times out."""
+        target = self._volume_target
+        if target is None:
+            return None
+        if reported is not None and abs(reported - target) < VOLUME_EPSILON:
+            self._volume_target = None
+            return None
+        if self.bridge.now() - self._volume_target_at > VOLUME_CONFIRM_SECONDS:
+            # The Trinnov clamped or ignored it; its own value is the truth.
+            self._volume_target = None
+            return None
+        return target
 
     async def start(self) -> None:
         await self.call("remote", "turn_on", role="power")
@@ -165,6 +207,8 @@ class TrinnovDriver(EntityBackedDriver):
             role="power",
             data={"command": [f"volume_set {db:.1f}"], "num_repeats": 1},
         )
+        self._volume_target = db
+        self._volume_target_at = self.bridge.now()
         return self.volume_db()
 
     async def set_mute(self, muted: bool) -> None:

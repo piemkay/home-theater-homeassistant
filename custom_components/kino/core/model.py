@@ -165,6 +165,9 @@ class KinoConfig:
     volume_max_db: float = -20.0
     volume_step_db: float = 2.0
     shutdown_light_scene: str | None = None
+    #: Optional "darker still" scene the playback view can toggle to, and
+    #: back to the activity's own scene (the mockup's Dim button).
+    dim_light_scene: str | None = None
     drift_debounce_seconds: float = 20.0
     preferred_audio_language: str | None = None
     preferred_subtitle_language: str | None = None
