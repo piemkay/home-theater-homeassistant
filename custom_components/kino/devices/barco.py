@@ -46,11 +46,35 @@ DECONDITIONING_SECONDS = 180.0
 #: take effect directly. If it does not, we fall back to waiting for standby.
 RETRY_POWER_ON_AFTER = 45.0
 
+#: The projector answers a power-on issued mid-transition with "Ignored
+#: POWER_ON event, busy transitioning to ready" and the upstream integration
+#: raises. That is a "not yet", not a failure — the standing intent re-issues
+#: it shortly, and only a genuinely stuck projector reaches the timeout.
+RETRY_REJECTED_AFTER = 5.0
+
+_TRANSIENT_POWER_ON_MARKERS = (
+    "not ready",
+    "busy",
+    "ignored",
+    "transitioning",
+)
+
+
+def _is_transient_rejection(err: Exception) -> bool:
+    """Return True when the projector said "not now" rather than "no"."""
+    text = str(err).lower()
+    return any(marker in text for marker in _TRANSIENT_POWER_ON_MARKERS)
+
 
 class BarcoDriver(EntityBackedDriver):
     """Projector power, phase resolution and profile selection."""
 
     required_entities = ("power", "state")
+    entity_roles: ClassVar[dict[str, tuple[str, ...]]] = {
+        "power": ("switch",),
+        "state": ("sensor",),
+        "profile": ("select",),
+    }
     setting_roles: ClassVar[dict[str, str | None]] = {"profile": "profile"}
 
     def __init__(self, bridge: Bridge, spec: DeviceSpec) -> None:
@@ -64,7 +88,8 @@ class BarcoDriver(EntityBackedDriver):
         #: Standing intent, so a power-on swallowed by a cooldown is retried
         #: as soon as the projector is in a state that accepts it.
         self._want_on = False
-        self._last_power_on_at: float | None = None
+        #: Earliest time a further power-on may be issued.
+        self._next_power_on_at: float | None = None
 
     # -- phase resolution ---------------------------------------------------
 
@@ -171,17 +196,27 @@ class BarcoDriver(EntityBackedDriver):
             _LOGGER.debug("Beamer kühlt ab (%s) — Einschalten wird nachgeholt", raw)
             return
         now = self.bridge.now()
-        if (
-            self._last_power_on_at is not None
-            and now - self._last_power_on_at < RETRY_POWER_ON_AFTER
-        ):
+        if self._next_power_on_at is not None and now < self._next_power_on_at:
             return
-        self._last_power_on_at = now
-        await self.call("switch", "turn_on", role="power")
+        self._next_power_on_at = now + RETRY_POWER_ON_AFTER
+        try:
+            await self.call("switch", "turn_on", role="power")
+        except Exception as err:
+            if not _is_transient_rejection(err):
+                raise
+            # Not an error the user should ever see: the projector is busy,
+            # and the standing intent will try again in a moment.
+            _LOGGER.debug(
+                "Beamer hat das Einschalten (noch) abgelehnt: %s — wird in %.0fs "
+                "erneut versucht",
+                err,
+                RETRY_REJECTED_AFTER,
+            )
+            self._next_power_on_at = now + RETRY_REJECTED_AFTER
 
     async def stop(self) -> None:
         self._want_on = False
-        self._last_power_on_at = None
+        self._next_power_on_at = None
         self._profile = None
         await self.call("switch", "turn_off", role="power")
 

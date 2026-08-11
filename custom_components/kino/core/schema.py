@@ -143,6 +143,28 @@ def _unknown_keys(
     )
 
 
+def _check_path_map(value: Any, path: str, errors: list[ConfigError]) -> None:
+    """Check the prefix rewrites that turn catalogue paths into player paths.
+
+    Both sides see the same share through different mounts, so getting this
+    wrong means "nothing plays" — worth naming precisely (FR-46).
+    """
+    if value is None:
+        return
+    if not isinstance(value, Mapping):
+        errors.append(
+            ConfigError(path, "erwartet ein Objekt {Bibliothekspfad: Player-Pfad}")
+        )
+        return
+    for source, target in value.items():
+        if not isinstance(source, str) or not source:
+            errors.append(ConfigError(path, f"ungültiger Pfad-Präfix {source!r}"))
+        if not isinstance(target, str) or not target:
+            errors.append(
+                ConfigError(f"{path}.{source}", f"erwartet einen Pfad, ist {target!r}")
+            )
+
+
 def _parse_device(key: str, raw: Any, errors: list[ConfigError]) -> DeviceSpec | None:
     path = f"devices.{key}"
     if not isinstance(raw, Mapping):
@@ -179,6 +201,8 @@ def _parse_device(key: str, raw: Any, errors: list[ConfigError]) -> DeviceSpec |
     if not isinstance(options, Mapping):
         errors.append(ConfigError(f"{path}.options", "erwartet ein Objekt"))
         options = {}
+    else:
+        _check_path_map(options.get("path_map"), f"{path}.options.path_map", errors)
 
     required = raw.get("required", True)
     required_value = _as_bool(required, f"{path}.required", errors)

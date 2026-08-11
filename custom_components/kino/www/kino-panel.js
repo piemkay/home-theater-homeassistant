@@ -10,7 +10,7 @@
  * and repaired.
  */
 
-const PANEL_VERSION = "0.1.0";
+const PANEL_VERSION = "0.1.1";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -112,6 +112,26 @@ export const panelHelpers = {
     return grouped;
   },
 
+  /**
+   * The entities a role may be wired to, filtered by domain.
+   *
+   * An empty domain list means "the driver does not say", so everything is
+   * offered rather than nothing.
+   */
+  entityOptions(catalogue, domains) {
+    const source = catalogue || {};
+    const wanted =
+      domains && domains.length ? domains : Object.keys(source).sort();
+    const out = [];
+    for (const domain of wanted) {
+      for (const entry of source[domain] || []) {
+        // Older payloads were plain ID strings; tolerate both.
+        out.push(typeof entry === "string" ? { id: entry, name: entry } : entry);
+      }
+    }
+    return out;
+  },
+
   /** Colour token for a device-board power value. */
   powerColor(power, ready) {
     if (ready) return "var(--kino-teal)";
@@ -179,21 +199,39 @@ const STYLES = `
   min-height: 100vh;
   font-family: var(--primary-font-family, system-ui), sans-serif;
 }
+/* One row, exactly as tall as Home Assistant's own header, so the panel does
+   not look bolted on. Everything scrolls sideways rather than wrapping into
+   a second row. */
 .bar {
   position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; gap: 16px;
-  padding: 14px 20px; background: var(--kino-surface);
+  display: flex; align-items: center; gap: 8px;
+  height: var(--header-height, 56px);
+  box-sizing: border-box;
+  padding: 0 12px;
+  background: var(--app-header-background-color, var(--kino-surface));
+  color: var(--app-header-text-color, var(--kino-text));
   border-bottom: 1px solid var(--kino-border);
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none;
 }
-.bar h1 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: 1px; }
-.tabs { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+.bar::-webkit-scrollbar { display: none; }
+.bar h1 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: 1px; white-space: nowrap; }
+.menu {
+  border: none; background: transparent; color: inherit; cursor: pointer;
+  padding: 0 6px 0 0; font-size: 20px; line-height: 1; flex-shrink: 0;
+}
+.tabs { display: flex; gap: 4px; flex: 1; flex-wrap: nowrap; }
 .tab {
   border: none; background: transparent; color: var(--kino-text2);
   font: inherit; font-weight: 700; font-size: 13px; cursor: pointer;
-  padding: 8px 14px; border-radius: 18px; min-height: 36px;
+  padding: 6px 12px; border-radius: 16px; min-height: 32px; white-space: nowrap;
 }
 .tab[aria-selected="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
-.dirty { font-size: 12px; color: var(--kino-gold); font-weight: 700; }
+.bar .actions { flex-wrap: nowrap; flex-shrink: 0; }
+.bar button.primary, .bar button.ghost {
+  min-height: 32px; padding: 6px 12px; white-space: nowrap;
+}
+.dirty { font-size: 12px; color: var(--kino-gold); font-weight: 700; white-space: nowrap; }
 main { padding: 20px; max-width: 1400px; }
 section { margin-bottom: 28px; }
 h2 { font-size: 15px; font-weight: 800; margin: 0 0 4px; }
@@ -298,7 +336,11 @@ class KinoPanel extends PanelBase {
   }
 
   set narrow(value) {
+    const changed = this._narrow !== value;
     this._narrow = value;
+    // A custom panel draws its own toolbar, so it also owns the only way
+    // back to the sidebar on a phone.
+    if (changed && this._document) this._render();
   }
 
   connectedCallback() {
@@ -469,6 +511,11 @@ class KinoPanel extends PanelBase {
 
     this._root.innerHTML = `
       <div class="bar">
+        ${
+          this._narrow
+            ? '<button class="menu" data-act="toggle-sidebar" title="Menü">☰</button>'
+            : ""
+        }
         <h1>KINO</h1>
         <div class="tabs">
           ${TABS.map(
@@ -584,12 +631,13 @@ class KinoPanel extends PanelBase {
       ),
       metaRow(
         "Lichtszene",
-        (key) => this._entitySelect(
-          "light-scene",
-          key,
-          doc.activities[key].light_scene || "",
-          this._meta.entities.scene || []
-        )
+        (key) =>
+          this._entitySelect(
+            "light-scene",
+            key,
+            doc.activities[key].light_scene || "",
+            ["scene"]
+          )
       ),
       metaRow(
         "Icon",
@@ -689,15 +737,18 @@ class KinoPanel extends PanelBase {
     return `<td>${checkbox}${inputs}</td>`;
   }
 
-  _entitySelect(field, activityKey, value, options) {
-    const known = options.includes(value) || !value;
+  _entitySelect(field, activityKey, value, domains) {
+    const options = this._entityOptions(domains);
+    const known = !value || options.some((o) => o.id === value);
     return `<select data-field="${field}" data-activity="${activityKey}">
       <option value=""${!value ? " selected" : ""}>—</option>
       ${!known ? `<option value="${this._esc(value)}" selected>${this._esc(value)} (fehlt!)</option>` : ""}
       ${options
         .map(
           (o) =>
-            `<option value="${this._esc(o)}"${value === o ? " selected" : ""}>${this._esc(o)}</option>`
+            `<option value="${this._esc(o.id)}"${value === o.id ? " selected" : ""}>${this._esc(
+              o.name
+            )}</option>`
         )
         .join("")}
     </select>`;
@@ -705,13 +756,98 @@ class KinoPanel extends PanelBase {
 
   /* -- 10.3 device wiring (FR-130) ----------------------------------- */
 
+  /** Entities the picker for a role may offer, filtered by domain. */
+  _entityOptions(domains) {
+    return panelHelpers.entityOptions(this._meta.entities, domains);
+  }
+
+  /**
+   * One role, wired through a searchable, type-filtered picker (FR-130).
+   *
+   * A `<datalist>` gives the browser's own search-as-you-type over a list
+   * that only contains entities of the domains the driver can actually use —
+   * a `power` role never offers a sensor. The field stays a text input, so an
+   * entity that is currently unavailable can still be typed in, and is
+   * flagged rather than silently dropped.
+   */
+  _entityPicker(deviceKey, role) {
+    const entities = this._document.devices[deviceKey].entities || {};
+    const value = entities[role.role] || "";
+    const options = this._entityOptions(role.domains);
+    const listId = `entities-${deviceKey}-${role.role}`;
+    const missing = role.required && !value;
+    const unknown = value && !options.some((o) => o.id === value);
+    const hint = (role.domains || []).length
+      ? role.domains.map((d) => `${d}.…`).join(" / ")
+      : "entity_id";
+    return `<div class="setting">
+      <span class="${missing ? "bad" : ""}">${this._esc(role.role)}${
+        role.required ? " *" : ""
+      }</span>
+      <div>
+        <input class="mono" list="${listId}" placeholder="${this._esc(hint)}"
+          data-field="device-entity" data-device="${deviceKey}" data-role="${role.role}"
+          value="${this._esc(value)}">
+        <datalist id="${listId}">
+          ${options
+            .map(
+              (o) =>
+                `<option value="${this._esc(o.id)}" label="${this._esc(o.name)}"></option>`
+            )
+            .join("")}
+        </datalist>
+        ${
+          unknown
+            ? '<div class="bad" style="font-size:11px;margin-top:3px">Diese Entity existiert nicht</div>'
+            : ""
+        }
+      </div>
+    </div>`;
+  }
+
+  /** Prefix rewrites from catalogue paths to player paths (FR-46). */
+  _renderPathMap(deviceKey) {
+    const device = this._document.devices[deviceKey];
+    const map = (device.options && device.options.path_map) || {};
+    const rows = Object.entries(map)
+      .map(
+        ([from, to]) => `<div class="setting" style="grid-template-columns:1fr 1fr auto">
+          <input class="mono" data-field="path-map-from" data-device="${deviceKey}"
+            data-key="${this._esc(from)}" value="${this._esc(from)}">
+          <input class="mono" data-field="path-map-to" data-device="${deviceKey}"
+            data-key="${this._esc(from)}" value="${this._esc(to)}">
+          <button class="danger" data-act="path-map-remove" data-key="${deviceKey}"
+            data-mode="${this._esc(from)}" title="Entfernen">✕</button>
+        </div>`
+      )
+      .join("");
+    return `<div style="margin-top:12px;border-top:1px solid var(--kino-border);padding-top:10px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:2px">Pfad-Zuordnung</div>
+      <p class="sub" style="margin-bottom:8px">
+        Links der Pfad aus der Bibliothek, rechts der Pfad, unter dem der
+        Player dieselbe Datei öffnet. Ohne passenden Eintrag lässt sich ein
+        Titel nicht abspielen — die Karte nennt dann den Pfad.
+      </p>
+      ${rows || '<p class="sub">Noch keine Zuordnung.</p>'}
+      <button class="ghost" data-act="path-map-add" data-key="${deviceKey}"
+        style="margin-top:6px">+ Zuordnung</button>
+    </div>`;
+  }
+
   _renderDevices() {
     const doc = this._document;
     const cards = panelHelpers.deviceKeys(doc).map((key) => {
       const device = doc.devices[key];
       const catalogue = this._meta.drivers[key] || {};
       const missing = catalogue.missingEntities || [];
-      const roles = Object.keys(device.entities || {});
+      const roles =
+        catalogue.roles && catalogue.roles.length
+          ? catalogue.roles
+          : Object.keys(device.entities || {}).map((role) => ({
+              role,
+              domains: [],
+              required: false,
+            }));
       return `<div class="card">
         <h3>${this._esc(device.name || key)} <span class="mono muted">${this._esc(key)}</span></h3>
         ${
@@ -734,13 +870,7 @@ class KinoPanel extends PanelBase {
           <input data-field="device-name" data-device="${key}" value="${this._esc(
             device.name || ""
           )}"></div>
-        ${roles
-          .map(
-            (role) => `<div class="setting"><span>${this._esc(role)}</span>
-              <input data-field="device-entity" data-device="${key}" data-role="${role}"
-                class="mono" value="${this._esc(device.entities[role])}"></div>`
-          )
-          .join("")}
+        ${roles.map((role) => this._entityPicker(key, role)).join("")}
         <div class="setting"><span>Start-Timeout</span>
           <input type="number" data-field="device-number" data-device="${key}"
             data-key="startup_timeout" value="${device.startup_timeout ?? 180}"></div>
@@ -749,15 +879,16 @@ class KinoPanel extends PanelBase {
             data-key="default_startup_seconds" value="${
               device.default_startup_seconds ?? 30
             }"></div>
+        ${device.driver === "zidoo" ? this._renderPathMap(key) : ""}
       </div>`;
     });
 
     return `<section>
       <h2>Geräte</h2>
       <p class="sub">
-        Welche Home-Assistant-Entity welches logische Gerät bedient. Ein Feld
-        das rot markiert ist fehlt dem Treiber — die Aktivität würde damit
-        scheitern.
+        Welche Home-Assistant-Entity welches logische Gerät bedient. Jede Rolle
+        bietet nur Entities des passenden Typs an; mit <strong>*</strong>
+        markierte Rollen braucht der Treiber zwingend.
       </p>
       <div class="grid">${cards.join("")}</div>
     </section>`;
@@ -974,6 +1105,11 @@ class KinoPanel extends PanelBase {
     const { act, key, mode } = target.dataset;
 
     switch (act) {
+      case "toggle-sidebar":
+        this.dispatchEvent(
+          new CustomEvent("hass-toggle-menu", { bubbles: true, composed: true })
+        );
+        break;
       case "tab":
         this._tab = key;
         this._notice = null;
@@ -1028,6 +1164,14 @@ class KinoPanel extends PanelBase {
         if (!confirm("Alle gelernten Dauern zurücksetzen?")) return;
         await this._resetDurations(null);
         break;
+      case "path-map-add":
+        this._pathMap(key)[""] = "";
+        this._render();
+        break;
+      case "path-map-remove":
+        delete this._pathMap(key)[mode];
+        this._render();
+        break;
       case "copy-raw":
         await navigator.clipboard
           .writeText(JSON.stringify(this._document, null, 2))
@@ -1053,6 +1197,14 @@ class KinoPanel extends PanelBase {
     }
   }
 
+  /** The live `path_map` object for a device, created on first use. */
+  _pathMap(deviceKey) {
+    const device = this._document.devices[deviceKey];
+    device.options = device.options || {};
+    device.options.path_map = device.options.path_map || {};
+    return device.options.path_map;
+  }
+
   _onChange(event) {
     const el = event.target;
     const { field, activity, device, setting, role, key } = el.dataset;
@@ -1060,6 +1212,24 @@ class KinoPanel extends PanelBase {
     const doc = this._document;
 
     switch (field) {
+      case "path-map-from": {
+        // Renaming the key has to preserve order and value, so rebuild the
+        // object rather than delete-and-append.
+        const map = this._pathMap(device);
+        const rebuilt = {};
+        for (const [from, to] of Object.entries(map)) {
+          if (from === key) {
+            if (el.value) rebuilt[el.value] = to;
+          } else {
+            rebuilt[from] = to;
+          }
+        }
+        doc.devices[device].options.path_map = rebuilt;
+        break;
+      }
+      case "path-map-to":
+        this._pathMap(device)[key] = el.value;
+        break;
       case "activity-name":
         doc.activities[activity].name = el.value;
         break;
@@ -1102,9 +1272,13 @@ class KinoPanel extends PanelBase {
       case "device-name":
         doc.devices[device].name = el.value;
         break;
-      case "device-entity":
-        doc.devices[device].entities[role] = el.value;
+      case "device-entity": {
+        const target = doc.devices[device];
+        target.entities = target.entities || {};
+        if (el.value) target.entities[role] = el.value;
+        else delete target.entities[role];
         break;
+      }
       case "device-number":
         doc.devices[device][key] = Number(el.value);
         break;

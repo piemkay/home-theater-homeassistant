@@ -210,3 +210,52 @@ describe("card escaping", () => {
     assert.equal(card._esc("Ohne & mit"), "Ohne &amp; mit");
   });
 });
+
+describe("artworkUrl", () => {
+  test("carries the signature an <img> cannot send as a header", () => {
+    assert.equal(
+      helpers.artworkUrl("abc123", "Primary", "1799.deadbeef"),
+      "/api/kino/artwork/abc123/Primary?sig=1799.deadbeef"
+    );
+  });
+
+  test("item ids and signatures are encoded, not concatenated", () => {
+    const url = helpers.artworkUrl("a/b c", "Backdrop", "1799.dead+beef");
+    assert.equal(url, "/api/kino/artwork/a%2Fb%20c/Backdrop?sig=1799.dead%2Bbeef");
+  });
+
+  test("without a signature the plain path is still produced", () => {
+    assert.equal(
+      helpers.artworkUrl("abc", "Primary", null),
+      "/api/kino/artwork/abc/Primary"
+    );
+  });
+});
+
+describe("entity resolution", () => {
+  /**
+   * Regression: the card used to pick "the media_player whose id contains
+   * kino", which in the real house matched a media-player *group*. Every
+   * volume_down then failed inside the group helper with KeyError
+   * 'volume_level'.
+   */
+  test("uses the ids the integration reports, never a name match", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = {
+      entities: {
+        player: "media_player.kino_kino_control_kino",
+        volume: "number.kino_kino_control_volume",
+      },
+    };
+
+    assert.equal(card._playerEntity, "media_player.kino_kino_control_kino");
+    assert.equal(card._volumeEntity, "number.kino_kino_control_volume");
+    assert.equal(card._entity("audioTrack"), null);
+  });
+
+  test("an older integration without the map degrades to no player", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = {};
+    assert.equal(card._playerEntity, null);
+  });
+});

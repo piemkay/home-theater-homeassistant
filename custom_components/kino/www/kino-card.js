@@ -6,11 +6,12 @@
  *
  * All library data comes over the Home Assistant WebSocket API — the card
  * never talks to Jellyfin and never sees a Jellyfin credential (FR-42a).
- * Artwork is fetched through /api/kino/artwork/... with the user's own HA
- * token.
+ * Artwork comes through /api/kino/artwork/..., authorised by the short-lived
+ * signature the state payload carries, because an <img> request cannot send
+ * an Authorization header.
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.1";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -91,6 +92,20 @@ export const helpers = {
       offset,
       limit,
     };
+  },
+
+  /**
+   * A poster URL the browser can actually load.
+   *
+   * An `<img>` request carries no Authorization header, so the proxy is
+   * authorised by a short-lived signature that arrives with the state
+   * payload. It stays stable for hours on purpose — the URL is the browser's
+   * cache key, and a signature that changed every poll would re-download the
+   * whole grid.
+   */
+  artworkUrl(itemId, imageType, signature) {
+    const path = `/api/kino/artwork/${encodeURIComponent(itemId)}/${imageType}`;
+    return signature ? `${path}?sig=${encodeURIComponent(signature)}` : path;
   },
 
   /** Colour token for a per-device health value. */
@@ -315,6 +330,10 @@ class KinoCard extends CardBase {
     this._config = {};
     this._kino = null;
     this._error = null;
+    // An action that failed. Kept apart from `_error` (which tracks whether
+    // the integration answers at all) so the next successful state poll, two
+    // seconds later, does not wipe it off the screen unread.
+    this._actionError = null;
     this._unsub = null;
 
     this._view = {
@@ -351,11 +370,19 @@ class KinoCard extends CardBase {
   }
 
   set hass(hass) {
-    const first = this._hass === null;
+    const previous = this._hass;
     this._hass = hass;
-    if (first) {
+    if (previous === null) {
       this._refreshState();
       this._loadFacets();
+      return;
+    }
+    // Volume, transport and track state live in entities, not in the state
+    // payload, so a card that only re-rendered on payload changes showed a
+    // stale dB value until something else happened to change.
+    const watched = Object.values((this._kino && this._kino.entities) || {});
+    if (watched.some((id) => previous.states[id] !== hass.states[id])) {
+      this._render();
     }
   }
 
@@ -451,7 +478,7 @@ class KinoCard extends CardBase {
     try {
       await this._ws({ type: "kino/activate", activity: key });
     } catch (err) {
-      this._error = err.message;
+      this._actionError = err.message;
     }
     await this._refreshState();
   }
@@ -460,7 +487,7 @@ class KinoCard extends CardBase {
     try {
       await this._ws({ type: "kino/restore_device", device });
     } catch (err) {
-      this._error = err.message;
+      this._actionError = err.message;
     }
     await this._refreshState();
   }
@@ -488,61 +515,57 @@ class KinoCard extends CardBase {
     return this._hass.callService(domain, service, data);
   }
 
-  _entity(suffix) {
-    if (!this._hass) return null;
-    const wanted = `_${suffix}`;
-    return (
-      Object.keys(this._hass.states).find(
-        (id) => id.startsWith("kino") || id.includes(`kino${wanted}`)
-      ) || null
-    );
-  }
-
-  _findEntity(domain, key) {
-    if (!this._hass) return null;
-    const states = this._hass.states;
-    return (
-      Object.keys(states).find(
-        (id) =>
-          id.startsWith(`${domain}.`) &&
-          id.includes("kino") &&
-          id.includes(key)
-      ) || null
-    );
+  /**
+   * Kino's own entity IDs, as reported by the integration.
+   *
+   * Never guessed from the entity list: "the media_player whose ID contains
+   * kino" also matches a media-player group in this house, and calling
+   * `volume_down` on that one fails inside the group helper.
+   */
+  _entity(role) {
+    return (this._kino && this._kino.entities && this._kino.entities[role]) || null;
   }
 
   get _volumeEntity() {
-    return this._findEntity("number", "lautst") || this._findEntity("number", "volume");
+    return this._entity("volume");
   }
 
   get _playerEntity() {
-    return this._findEntity("media_player", "kino");
+    return this._entity("player");
+  }
+
+  /** Call a service on Kino's own player, surfacing whatever comes back. */
+  async _player(service, data = {}) {
+    const player = this._playerEntity;
+    if (!player) {
+      this._actionError = "Die Kino-Player-Entity wurde nicht gefunden.";
+      this._render();
+      return;
+    }
+    try {
+      await this._callService("media_player", service, {
+        entity_id: player,
+        ...data,
+      });
+    } catch (err) {
+      this._actionError = err.message || String(err);
+      this._render();
+    }
   }
 
   async _stepVolume(direction) {
-    const player = this._playerEntity;
-    if (!player) return;
-    await this._callService(
-      "media_player",
-      direction > 0 ? "volume_up" : "volume_down",
-      { entity_id: player }
-    );
+    await this._player(direction > 0 ? "volume_up" : "volume_down");
   }
 
   async _toggleMute() {
-    const player = this._playerEntity;
-    if (!player) return;
-    const state = this._hass.states[player];
-    await this._callService("media_player", "volume_mute", {
-      entity_id: player,
+    const state = this._hass.states[this._playerEntity];
+    await this._player("volume_mute", {
       is_volume_muted: !(state && state.attributes.is_volume_muted),
     });
   }
 
   async _transport(service) {
-    const player = this._playerEntity;
-    if (!player) return;
-    await this._callService("media_player", service, { entity_id: player });
+    await this._player(service);
   }
 
   /* -- rendering ----------------------------------------------------- */
@@ -582,11 +605,17 @@ class KinoCard extends CardBase {
     }
 
     const scrollTop = this._container.querySelector(".scroller")?.scrollTop || 0;
+    // Re-rendering the whole card would otherwise drop the caret out of the
+    // search box mid-word.
+    const focused = this.shadowRoot.activeElement;
+    const focusField = focused && focused.dataset ? focused.dataset.field : null;
+    const caret = focused && focused.selectionStart != null ? focused.selectionStart : null;
     this._container.innerHTML = [
       this._renderHeader(),
       '<div class="scroller">',
       this._renderActivitySelector(),
       this._renderDeviceChips(),
+      this._renderActionError(),
       this._renderDriftBanner(),
       this._renderProgress(),
       `<div class="body">${this._renderBody()}</div>`,
@@ -599,6 +628,15 @@ class KinoCard extends CardBase {
     ].join("");
     const scroller = this._container.querySelector(".scroller");
     if (scroller) scroller.scrollTop = scrollTop;
+    if (focusField) {
+      const next = this._container.querySelector(`[data-field="${focusField}"]`);
+      if (next) {
+        next.focus();
+        if (caret != null && next.setSelectionRange) {
+          next.setSelectionRange(caret, caret);
+        }
+      }
+    }
   }
 
   _esc(value) {
@@ -677,6 +715,16 @@ class KinoCard extends CardBase {
       })
       .join("");
     return `<div class="devicechips" style="padding:0 20px">${chips}</div>`;
+  }
+
+  _renderActionError() {
+    if (!this._actionError) return "";
+    return `<div style="padding:0 20px"><div class="banner">
+      <strong>${this._esc(this._actionError)}</strong>
+      <div class="row">
+        <button class="ghost" data-act="dismiss-error">Verstanden</button>
+      </div>
+    </div></div>`;
   }
 
   _renderDriftBanner() {
@@ -777,8 +825,7 @@ class KinoCard extends CardBase {
   }
 
   _poster(item, showResume) {
-    const art = item.playable !== false || true;
-    const src = `/api/kino/artwork/${encodeURIComponent(item.id)}/Primary`;
+    const src = helpers.artworkUrl(item.id, "Primary", this._kino.artworkSignature);
     return `<div class="poster" data-act="open-detail" data-key="${this._esc(item.id)}">
       <div class="art">
         <img loading="lazy" src="${src}" alt="" onerror="this.style.display='none'">
@@ -892,7 +939,11 @@ class KinoCard extends CardBase {
   _renderDetailSheet() {
     const item = this._view.detail;
     if (!item) return '<div class="sheet"><p class="empty">Wird geladen…</p></div>';
-    const backdrop = `/api/kino/artwork/${encodeURIComponent(item.id)}/Backdrop`;
+    const backdrop = helpers.artworkUrl(
+      item.id,
+      "Backdrop",
+      this._kino.artworkSignature
+    );
     return `<div class="sheet">
       <a class="link" data-act="close-detail">‹ Zurück</a>
       <div class="backdrop" style="margin-top:12px">
@@ -957,13 +1008,15 @@ class KinoCard extends CardBase {
   }
 
   _renderTrackSelects() {
-    const audio = this._findEntity("select", "tonspur");
-    const subtitle = this._findEntity("select", "untertitel");
+    const audio = this._entity("audioTrack");
+    const subtitle = this._entity("subtitleTrack");
     const block = (entityId, label) => {
       if (!entityId) return "";
       const state = this._hass.states[entityId];
-      if (!state) return "";
-      const options = state.attributes.options || [];
+      if (!state || state.state === "unavailable") return "";
+      const options = (state.attributes.options || []).filter((o) => o !== "—");
+      // A player that reports no track list gets no empty dropdown (FR-60).
+      if (!options.length) return "";
       return `<div style="margin-bottom:12px">
         <div class="label">${label}</div>
         <select data-field="entity-select" data-key="${entityId}">
@@ -1082,6 +1135,10 @@ class KinoCard extends CardBase {
       case "dismiss-drift":
         await this._dismissDrift(key);
         break;
+      case "dismiss-error":
+        this._actionError = null;
+        this._render();
+        break;
       case "open-library":
         view.main = "library";
         view.category = key || "movies";
@@ -1132,7 +1189,7 @@ class KinoCard extends CardBase {
           view.detail = await this._ws({ type: "kino/library/item", item_id: key });
         } catch (err) {
           view.detail = null;
-          this._error = err.message;
+          this._actionError = err.message;
         }
         this._render();
         break;
@@ -1174,27 +1231,40 @@ class KinoCard extends CardBase {
   /**
    * FR-55: picking a title while Film is not running starts the activity and
    * then plays — one user action, with progress shown throughout.
+   *
+   * Both halves happen in the integration: it starts the activity, waits for
+   * the room to settle and only then opens the file. The card does not await
+   * that — the projector alone takes minutes — it just shows the progress the
+   * state poll is already delivering.
    */
   async _play(itemId, fromStart) {
-    const k = this._kino;
-    const filmActivity = k.activities.find((a) => a.media);
+    const player = this._playerEntity;
     this._view.detailId = null;
     this._view.detail = null;
-    if (filmActivity && k.activity !== filmActivity.key) {
-      await this._activate(filmActivity.key);
+    this._render();
+    if (!player) {
+      this._actionError = "Die Kino-Player-Entity wurde nicht gefunden.";
+      this._render();
+      return;
     }
-    const player = this._playerEntity;
-    if (!player) return;
-    await this._callService("media_player", "play_media", {
+    // Until it really plays, the transition progress is the more useful
+    // thing to look at than an empty playback sheet.
+    this._callService("media_player", "play_media", {
       entity_id: player,
       media_content_id: itemId,
       media_content_type: "movie",
       extra: { resume: !fromStart },
-    }).catch((err) => {
-      this._error = err.message;
-    });
-    this._view.playingOpen = true;
-    this._render();
+    })
+      .then(() => {
+        this._view.playingOpen = true;
+      })
+      .catch((err) => {
+        this._actionError = err.message || String(err);
+      })
+      .finally(() => {
+        this._render();
+        this._refreshState();
+      });
   }
 
   _onChange(event) {

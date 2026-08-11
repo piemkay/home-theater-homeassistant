@@ -8,6 +8,7 @@ WebSocket.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -23,14 +24,27 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import ARTWORK_URL_FORMAT
 from .coordinator import KinoCoordinator, KinoRuntimeData
 from .core.model import ActivityState
 from .devices.trinnov import TrinnovDriver
 from .devices.zidoo import ZidooDriver
 from .entity import KinoEntity
+from .http import async_artwork_url
+from .media.base import MediaBackendError, MediaItem
 
 _LOGGER = logging.getLogger(__name__)
+
+#: `media_content_type` values that mean "this is already a player path, do
+#: not look it up in the catalogue".
+_PATH_MEDIA_TYPES = frozenset({"file", "path"})
+
+#: How long to wait for the player to actually start before seeking to a
+#: resume position. Long enough for a spun-down NAS disk, short enough that a
+#: title that never starts does not hang the service call.
+_PLAYBACK_START_TIMEOUT = 30.0
+
+#: Below this, "resume" is not worth a seek — the player is already there.
+_MIN_RESUME_SECONDS = 30.0
 
 _STATE_MAP = {
     "playing": MediaPlayerState.PLAYING,
@@ -69,18 +83,24 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
         | MediaPlayerEntityFeature.VOLUME_SET
         | MediaPlayerEntityFeature.VOLUME_MUTE
         | MediaPlayerEntityFeature.SELECT_SOURCE
+        | MediaPlayerEntityFeature.PLAY_MEDIA
     )
 
     def __init__(self, coordinator: KinoCoordinator) -> None:
         super().__init__(coordinator, "player")
+        #: The catalogue entry this player was last asked to play. The Zidoo
+        #: knows the file, not the Jellyfin item, so remembering it is what
+        #: lets the card show the right poster.
+        self._item_id: str | None = None
 
     # -- the device currently carrying media --------------------------------
 
     @property
     def _media_driver(self) -> ZidooDriver | None:
-        snapshot = self.snapshot
-        if snapshot is None:
-            return None
+        # Read the engine rather than the coordinator's last poll: playback is
+        # started right after a transition finishes, and one stale poll would
+        # mean "this activity has no media player" a moment after it does.
+        snapshot = self.coordinator.engine.snapshot()
         activity = self.coordinator.config.activities.get(snapshot.activity)
         if activity is None:
             return None
@@ -158,9 +178,9 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
     @property
     def media_image_url(self) -> str | None:
         now = self._now()
-        item_id = now.get("jellyfin_id")
-        if item_id:
-            return ARTWORK_URL_FORMAT.format(item_id=item_id, image_type="Primary")
+        item_id = now.get("jellyfin_id") or self._item_id
+        if item_id and self.coordinator.media is not None:
+            return async_artwork_url(self.hass, str(item_id), "Primary")
         return now.get("image")
 
     @property
@@ -190,6 +210,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
 
     async def async_media_stop(self) -> None:
         await self._media("media_stop")
+        self._item_id = None
 
     async def async_media_next_track(self) -> None:
         await self._media("media_next_track")
@@ -199,6 +220,114 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
 
     async def async_media_seek(self, position: float) -> None:
         await self._media("media_seek", seek_position=position)
+
+    # -- playback (FR-54, FR-55) --------------------------------------------
+
+    async def async_play_media(
+        self, media_type: str, media_id: str, **kwargs: Any
+    ) -> None:
+        """
+        Play a catalogue entry — starting the activity first if need be.
+
+        FR-55: picking a title while the media activity is not running is one
+        user action, not two. The activity is started here and the file is
+        only opened once the room has actually settled, so the play does not
+        land on a player that is still powering up.
+        """
+        if media_type in _PATH_MEDIA_TYPES or media_id.startswith("/"):
+            item = None
+            path = media_id
+        else:
+            item = await self._resolve_item(media_id)
+            if not item.path:
+                raise HomeAssistantError(
+                    f"'{item.title}' hat keinen Dateipfad in der Bibliothek "
+                    "und kann nicht abgespielt werden"
+                )
+            path = item.path
+
+        await self._ensure_media_activity()
+
+        driver = self._media_driver
+        if driver is None:
+            raise HomeAssistantError(
+                "Die aktuelle Aktivität hat keine Medienwiedergabe"
+            )
+
+        await driver.play_path(path)
+        self._item_id = item.id if item else None
+        self.async_write_ha_state()
+
+        extra = kwargs.get("extra") or {}
+        if item is not None and extra.get("resume", True):
+            await self._resume_at(driver, item)
+
+        await self.coordinator.async_request_refresh()
+
+    async def _resolve_item(self, media_id: str) -> MediaItem:
+        media = self.coordinator.media
+        if media is None:
+            raise HomeAssistantError("Keine Bibliothek verbunden")
+        try:
+            item = await media.item(media_id)
+        except MediaBackendError as err:
+            raise HomeAssistantError(str(err)) from err
+        if item is None:
+            raise HomeAssistantError(
+                f"Der Titel {media_id} ist nicht (mehr) in der Bibliothek"
+            )
+        return item
+
+    async def _ensure_media_activity(self) -> None:
+        """Make sure a media-capable activity is running, and wait for it."""
+        engine = self.coordinator.engine
+        config = self.coordinator.config
+        snapshot = engine.snapshot()
+        activity = config.activities.get(snapshot.activity)
+
+        if activity is None or not activity.media or self._media_driver is None:
+            key = next((k for k, a in config.activities.items() if a.media), None)
+            if key is None:
+                raise HomeAssistantError(
+                    "Keine Aktivität mit einer Medienquelle konfiguriert"
+                )
+            await self.coordinator.async_activate(key)
+            await self.coordinator.async_apply_light_scene(key)
+
+        await engine.wait_for_transition()
+
+        snapshot = engine.snapshot()
+        if snapshot.state is ActivityState.ERROR:
+            raise HomeAssistantError(
+                snapshot.last_error or "Die Aktivität konnte nicht gestartet werden"
+            )
+
+    async def _resume_at(self, driver: ZidooDriver, item: MediaItem) -> None:
+        """Seek to the position Jellyfin remembers (FR-49a, FR-49b).
+
+        Jellyfin is the system of record for how far a title was watched, so
+        the position travels with the catalogue entry rather than with the
+        player that happens to open the file.
+        """
+        seconds = item.resume_seconds or 0.0
+        if seconds < _MIN_RESUME_SECONDS:
+            return
+        if not await self._wait_for_playback(driver):
+            _LOGGER.debug(
+                "Wiedergabe von '%s' hat nicht rechtzeitig begonnen — "
+                "keine Fortsetzung gesetzt",
+                item.title,
+            )
+            return
+        await driver.seek(seconds)
+
+    async def _wait_for_playback(self, driver: ZidooDriver) -> bool:
+        deadline = self.hass.loop.time() + _PLAYBACK_START_TIMEOUT
+        while self.hass.loop.time() < deadline:
+            if driver.now_playing().get("state") == "playing":
+                return True
+            await asyncio.sleep(1.0)
+        return False
 
     async def async_turn_on(self) -> None:
         snapshot = self.snapshot

@@ -196,6 +196,13 @@ devices:
       power: remote.uhd8000
       media_player: media_player.uhd8000
     is_media: true
+    options:
+      # Jellyfin und der Zidoo sehen dieselbe Freigabe unter verschiedenen
+      # Mountpoints. Links steht der Pfad aus der Bibliothek, rechts der
+      # Pfad, unter dem der Player die Datei oeffnet (FR-46). Ohne passenden
+      # Eintrag sagt die Karte, welcher Pfad nicht zugeordnet werden konnte.
+      path_map:
+        /media/entertainment/: "/mnt/nfs/192.168.50.10#entertainment/"
     startup_timeout: 120
     default_startup_seconds: 25
 

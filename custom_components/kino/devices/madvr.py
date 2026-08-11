@@ -38,6 +38,11 @@ class MadvrDriver(EntityBackedDriver):
     """Video processor: power, plus the per-source profile."""
 
     required_entities = ("power",)
+    entity_roles: ClassVar[dict[str, tuple[str, ...]]] = {
+        "power": ("remote", "switch"),
+        "power_state": ("binary_sensor",),
+        "wake": ("button",),
+    }
     #: The Envy cannot enumerate its profiles, so this is a slot number the
     #: panel renders as a number field rather than a dropdown.
     setting_roles: ClassVar[dict[str, str | None]] = {"profile": None}

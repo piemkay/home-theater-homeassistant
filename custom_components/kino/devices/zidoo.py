@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
+from urllib.parse import quote
 
 from ..core.model import DeviceObservation, DeviceSpec, Power
 from .base import EntityBackedDriver
@@ -22,11 +23,25 @@ SUBTITLE_OFF_LABEL = "Aus"
 
 _PLAYING_STATES = frozenset({"playing", "paused", "buffering"})
 
+#: The Zidoo integration routes `media_content_type: "file"` to the player's
+#: ``ZidooFileControl/openFile`` endpoint, which takes the path as a *query
+#: parameter that is never encoded for us*. An unencoded `#` — and the NFS
+#: mount points are full of them — would truncate the URL at the fragment, so
+#: the path has to arrive fully percent-encoded. Verified live against the
+#: UHD8000.
+MEDIA_TYPE_FILE = "file"
+
 
 class ZidooDriver(EntityBackedDriver):
     """Media player: the Film activity's source and the Musik streamer."""
 
     required_entities = ("power", "media_player")
+    entity_roles: ClassVar[dict[str, tuple[str, ...]]] = {
+        "power": ("remote", "switch"),
+        "media_player": ("media_player",),
+        "audio_select": ("select",),
+        "subtitle_select": ("select",),
+    }
 
     def __init__(self, bridge: Bridge, spec: DeviceSpec) -> None:
         super().__init__(bridge, spec)
@@ -96,6 +111,61 @@ class ZidooDriver(EntityBackedDriver):
 
     async def async_media_command(self, service: str, **data: Any) -> None:
         await self.call("media_player", service, role="media_player", data=data)
+
+    # -- playback (FR-46, FR-54) -------------------------------------------
+
+    @property
+    def path_map(self) -> list[tuple[str, str]]:
+        """Prefix rewrites from catalogue paths to what the player can open.
+
+        Jellyfin and the Zidoo both see the same NAS share, but through
+        different mount points — `/media/entertainment/…` against
+        `/mnt/nfs/192.168.50.10#entertainment/…`. Longest prefix wins, so a
+        specific rule can override a general one.
+        """
+        raw = self.spec.options.get("path_map") or {}
+        if not isinstance(raw, Mapping):
+            return []
+        return sorted(
+            ((str(k), str(v)) for k, v in raw.items()),
+            key=lambda pair: len(pair[0]),
+            reverse=True,
+        )
+
+    def resolve_path(self, path: str) -> str | None:
+        """Translate a catalogue path, or None when no rule covers it."""
+        rules = self.path_map
+        if not rules:
+            # Nothing configured: the mounts may well coincide, and trying is
+            # more useful than refusing.
+            return path
+        for source, target in rules:
+            if path.startswith(source):
+                return f"{target}{path[len(source) :]}"
+        return None
+
+    async def play_path(self, path: str) -> None:
+        """Open a file on the player by path (FR-54)."""
+        target = self.resolve_path(path)
+        if target is None:
+            raise RuntimeError(
+                f"{self.spec.name}: für den Pfad '{path}' ist keine Zuordnung "
+                "hinterlegt — bitte im Kino-Panel unter Geräte eine "
+                "Pfad-Zuordnung eintragen"
+            )
+        _LOGGER.debug("Zidoo spielt '%s' (aus '%s')", target, path)
+        await self.call(
+            "media_player",
+            "play_media",
+            role="media_player",
+            data={
+                "media_content_type": MEDIA_TYPE_FILE,
+                "media_content_id": quote(target, safe=""),
+            },
+        )
+
+    async def seek(self, seconds: float) -> None:
+        await self.async_media_command("media_seek", seek_position=seconds)
 
     async def select_audio_track(self, label: str) -> None:
         await self._select_track("audio", label)

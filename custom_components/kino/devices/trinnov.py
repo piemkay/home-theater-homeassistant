@@ -45,6 +45,17 @@ class TrinnovDriver(EntityBackedDriver):
     """The processor. It is in every activity, so it is never the bottleneck."""
 
     required_entities = ("power", "media_player")
+    entity_roles: ClassVar[dict[str, tuple[str, ...]]] = {
+        "power": ("remote", "switch"),
+        "media_player": ("media_player",),
+        "source": ("select",),
+        "preset": ("select",),
+        "upmixer": ("select",),
+        "mute": ("switch",),
+        "volume": ("sensor", "number"),
+        "volume_number": ("number",),
+        "power_status": ("sensor",),
+    }
     setting_roles: ClassVar[dict[str, str | None]] = {
         "source": "source",
         "preset": "preset",

@@ -22,6 +22,10 @@ class GenericDriver(EntityBackedDriver):
     """Power and app selection through the standard media_player interface."""
 
     required_entities = ("media_player",)
+    entity_roles: ClassVar[dict[str, tuple[str, ...]]] = {
+        "media_player": ("media_player",),
+        "power": ("switch", "remote", "media_player"),
+    }
     setting_roles: ClassVar[dict[str, str | None]] = {"app": "media_player"}
 
     async def observe(self) -> DeviceObservation:

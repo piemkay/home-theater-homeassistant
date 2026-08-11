@@ -34,6 +34,13 @@ class EntityBackedDriver:
     #: Roles this driver needs in ``devices.<key>.entities``.
     required_entities: tuple[str, ...] = ()
 
+    #: Every role this driver understands, mapped to the Home Assistant
+    #: domains a value may legitimately come from. The admin panel builds one
+    #: searchable picker per role from this and filters the entity list to
+    #: those domains, so a role can never be wired to the wrong kind of
+    #: entity (FR-130).
+    entity_roles: ClassVar[Mapping[str, tuple[str, ...]]] = {}
+
     def __init__(self, bridge: Bridge, spec: DeviceSpec) -> None:
         self.bridge = bridge
         self.spec = spec
@@ -70,6 +77,26 @@ class EntityBackedDriver:
     def missing_entities(self) -> list[str]:
         return [
             role for role in self.required_entities if not self.spec.entities.get(role)
+        ]
+
+    def role_catalogue(self) -> list[dict[str, Any]]:
+        """Describe every wireable role, in the order the panel should show it.
+
+        Roles the driver declares come first; anything the document wires up
+        that this driver does not know about follows, so an unknown role is
+        visible and editable rather than silently dropped on the next save.
+        """
+        roles: dict[str, tuple[str, ...]] = dict(self.entity_roles)
+        for role in self.spec.entities:
+            roles.setdefault(role, ())
+        return [
+            {
+                "role": role,
+                "domains": list(domains),
+                "required": role in self.required_entities,
+                "known": role in self.entity_roles,
+            }
+            for role, domains in roles.items()
         ]
 
     async def call(

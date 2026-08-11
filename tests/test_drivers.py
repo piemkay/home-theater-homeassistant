@@ -8,6 +8,7 @@ manual implies.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -20,6 +21,7 @@ from custom_components.kino.devices.barco import (
     PHASE_OFF,
     PHASE_ON,
     PHASE_WARMING,
+    RETRY_REJECTED_AFTER,
 )
 from custom_components.kino.devices.bridge import StateSnapshot
 
@@ -31,6 +33,9 @@ class FakeBridge:
         self.states: dict[str, StateSnapshot] = {}
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
         self.clock = 0.0
+        #: Raised by the next service call, after recording it — how a real
+        #: integration rejects a command it cannot carry out right now.
+        self.raise_on_call: Exception | None = None
         for entity_id, value in (states or {}).items():
             self.set(entity_id, value)
 
@@ -49,6 +54,9 @@ class FakeBridge:
         self, domain: str, service: str, data: Mapping[str, Any]
     ) -> None:
         self.calls.append((domain, service, dict(data)))
+        if self.raise_on_call is not None:
+            error, self.raise_on_call = self.raise_on_call, None
+            raise error
 
     def now(self) -> float:
         return self.clock
@@ -236,6 +244,31 @@ class TestBarcoPower:
         assert bridge.calls == [
             ("switch", "turn_off", {"entity_id": "switch.hodr_cs_power"})
         ]
+
+    async def test_a_busy_projector_is_retried_rather_than_failing(
+        self, bridge, driver
+    ):
+        """Observed live: the projector refuses a power-on mid-transition.
+
+        `_turn_on failed - projector not ready: Ignored POWER_ON event, busy
+        transitioning to ready` used to abort the whole activity and put a red
+        error on the card seconds before the projector came up anyway.
+        """
+        bridge.raise_on_call = RuntimeError(
+            "Projector not ready: Ignored POWER_ON event, busy transitioning to ready"
+        )
+
+        await driver.start()  # must not raise
+        assert len(bridge.calls) == 1
+
+        bridge.clock += RETRY_REJECTED_AFTER + 1.0
+        await driver.observe()
+        assert len(bridge.calls) == 2
+
+    async def test_a_real_failure_still_fails(self, bridge, driver):
+        bridge.raise_on_call = RuntimeError("Connection refused")
+        with pytest.raises(RuntimeError, match="Connection refused"):
+            await driver.start()
 
 
 class TestBarcoProfile:
@@ -601,3 +634,91 @@ class TestSettingOptions:
             "Prime Video",
             "YouTube",
         ]
+
+
+#: A real file, as the Zidoo reported it while playing (`media_uri`), and the
+#: same file as Jellyfin indexes it. The `#` in the NFS mount is exactly why
+#: the path has to reach the player percent-encoded.
+ZIDOO_PATH = (
+    "/mnt/nfs/192.168.50.10#entertainment/series/House of the Dragon/"
+    "Season 3/House of the Dragon (2022) - S03E08.mkv"
+)
+LIBRARY_PATH = (
+    "/media/entertainment/series/House of the Dragon/"
+    "Season 3/House of the Dragon (2022) - S03E08.mkv"
+)
+
+ZIDOO_SPEC = DeviceSpec(
+    key="zidoo",
+    driver="zidoo",
+    name="Zidoo",
+    entities={
+        "power": "remote.uhd8000",
+        "media_player": "media_player.uhd8000",
+    },
+    is_media=True,
+    options={
+        "path_map": {"/media/entertainment/": "/mnt/nfs/192.168.50.10#entertainment/"}
+    },
+)
+
+
+class TestZidooPlayback:
+    """FR-54: opening a title on the player, verified against the UHD8000."""
+
+    @pytest.fixture
+    def driver(self, bridge):
+        bridge.set("media_player.uhd8000", "idle")
+        return build_driver(bridge, ZIDOO_SPEC)
+
+    async def test_library_path_is_rewritten_for_the_player(self, driver):
+        assert driver.resolve_path(LIBRARY_PATH) == ZIDOO_PATH
+
+    async def test_play_sends_a_fully_encoded_path(self, bridge, driver):
+        await driver.play_path(LIBRARY_PATH)
+
+        domain, service, data = bridge.calls[0]
+        assert (domain, service) == ("media_player", "play_media")
+        assert data["entity_id"] == "media_player.uhd8000"
+        assert data["media_content_type"] == "file"
+        # An unencoded `#` would truncate the player's URL at the fragment,
+        # and a space would break the query outright.
+        assert "%23entertainment" in data["media_content_id"]
+        assert " " not in data["media_content_id"]
+
+    async def test_an_unmapped_path_names_itself(self, bridge, driver):
+        with pytest.raises(RuntimeError, match=re.escape("/somewhere/else/film.mkv")):
+            await driver.play_path("/somewhere/else/film.mkv")
+        assert bridge.calls == []
+
+    async def test_without_a_map_the_path_is_used_as_is(self, bridge):
+        bridge.set("media_player.uhd8000", "idle")
+        spec = DeviceSpec(
+            key="zidoo",
+            driver="zidoo",
+            name="Zidoo",
+            entities={"media_player": "media_player.uhd8000"},
+        )
+        driver = build_driver(bridge, spec)
+
+        assert driver.resolve_path(ZIDOO_PATH) == ZIDOO_PATH
+
+    async def test_the_longest_matching_prefix_wins(self, bridge):
+        spec = DeviceSpec(
+            key="zidoo",
+            driver="zidoo",
+            name="Zidoo",
+            entities={"media_player": "media_player.uhd8000"},
+            options={
+                "path_map": {
+                    "/media/": "/mnt/general/",
+                    "/media/entertainment/": "/mnt/nfs/x#entertainment/",
+                }
+            },
+        )
+        driver = build_driver(bridge, spec)
+
+        assert driver.resolve_path("/media/entertainment/a.mkv").startswith(
+            "/mnt/nfs/x#entertainment/"
+        )
+        assert driver.resolve_path("/media/other/a.mkv") == "/mnt/general/other/a.mkv"

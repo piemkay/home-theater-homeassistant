@@ -17,11 +17,14 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 
 from .config_store import ConfigNotFoundError, ConfigStore
 from .const import DOMAIN
 from .core.model import ControlClass
 from .core.schema import KNOWN_DRIVERS, ConfigErrors, validate
+from .devices.zidoo import ZidooDriver
+from .http import async_get_signer
 from .media.base import (
     Category,
     MediaBackendError,
@@ -218,10 +221,42 @@ async def ws_state(hass, connection, msg) -> None:
     if coordinator is None:
         connection.send_error(msg["id"], "not_ready", "Kino ist nicht bereit.")
         return
-    connection.send_result(msg["id"], _state_payload(coordinator))
+    connection.send_result(msg["id"], _state_payload(hass, coordinator))
 
 
-def _state_payload(coordinator) -> dict[str, Any]:
+def _own_entities(hass: HomeAssistant, coordinator) -> dict[str, str]:
+    """Resolve Kino's own entity IDs, by unique ID rather than by guessing.
+
+    The card needs to call services on the player and read the volume, and
+    "the media_player whose entity_id contains kino" is not that entity — in
+    this house it matched a media-player *group*, whose `volume_down` walked
+    into its own members and failed. The registry knows exactly which entity
+    this integration created, so the card is told rather than left to guess.
+    """
+    registry = er.async_get(hass)
+    entry_id = coordinator.entry.entry_id
+    wanted: dict[str, tuple[str, str]] = {
+        "player": ("media_player", "player"),
+        "volume": ("number", "volume"),
+        "activity": ("select", "activity"),
+        "status": ("sensor", "status"),
+        "progress": ("sensor", "progress"),
+    }
+    for key, driver in coordinator.engine.drivers.items():
+        if isinstance(driver, ZidooDriver):
+            wanted["audioTrack"] = ("select", f"{key}_audio")
+            wanted["subtitleTrack"] = ("select", f"{key}_subtitle")
+            break
+
+    resolved: dict[str, str] = {}
+    for name, (domain, suffix) in wanted.items():
+        entity_id = registry.async_get_entity_id(domain, DOMAIN, f"{entry_id}_{suffix}")
+        if entity_id:
+            resolved[name] = entity_id
+    return resolved
+
+
+def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
     snapshot = coordinator.engine.snapshot()
     config = coordinator.config
     progress = snapshot.progress
@@ -279,6 +314,10 @@ def _state_payload(coordinator) -> dict[str, Any]:
             "stepDb": config.volume_step_db,
         },
         "offActivity": config.off_activity,
+        "entities": _own_entities(hass, coordinator),
+        # One signature covers every poster until it expires, so the browser
+        # can cache images by URL (see http.py).
+        "artworkSignature": async_get_signer(hass).signature(),
     }
 
 
@@ -406,6 +445,10 @@ def _driver_catalogue(coordinator: Any) -> dict[str, Any]:
             "name": spec.name if spec else key,
             "settings": driver.setting_options(),
             "missingEntities": driver.missing_entities(),
+            # Which roles this driver understands and what kind of entity may
+            # fill each of them, so the panel offers a filtered picker rather
+            # than a free-text field (FR-130).
+            "roles": driver.role_catalogue(),
         }
     return catalogue
 
@@ -423,14 +466,27 @@ _EDITABLE_DOMAINS = (
 )
 
 
-def _entity_catalogue(hass: HomeAssistant) -> dict[str, list[str]]:
-    """Entity IDs the editor offers when wiring a device up (FR-130)."""
-    catalogue: dict[str, list[str]] = {domain: [] for domain in _EDITABLE_DOMAINS}
-    for entity_id in hass.states.async_entity_ids():
-        domain = entity_id.split(".", 1)[0]
-        if domain in catalogue:
-            catalogue[domain].append(entity_id)
-    return {domain: sorted(ids) for domain, ids in catalogue.items()}
+def _entity_catalogue(hass: HomeAssistant) -> dict[str, list[dict[str, str]]]:
+    """Entities the editor offers when wiring a device up (FR-130).
+
+    Friendly names travel with the IDs: picking `switch.hodr_cs_power` out of
+    a list of a few hundred switches is a very different job when the list
+    reads "Hodr CS Power" as well.
+    """
+    catalogue: dict[str, list[dict[str, str]]] = {
+        domain: [] for domain in _EDITABLE_DOMAINS
+    }
+    for state in hass.states.async_all(_EDITABLE_DOMAINS):
+        catalogue[state.domain].append(
+            {
+                "id": state.entity_id,
+                "name": str(state.attributes.get("friendly_name") or state.entity_id),
+            }
+        )
+    return {
+        domain: sorted(entries, key=lambda entry: entry["name"].lower())
+        for domain, entries in catalogue.items()
+    }
 
 
 @websocket_api.websocket_command({vol.Required("type"): "kino/config/get"})

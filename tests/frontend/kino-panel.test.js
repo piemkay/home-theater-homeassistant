@@ -214,3 +214,42 @@ describe("panel escaping", () => {
     assert.equal(panel._esc(null), "");
   });
 });
+
+describe("entityOptions", () => {
+  const catalogue = {
+    switch: [
+      { id: "switch.hodr_cs_power", name: "Hodr CS Power" },
+      { id: "switch.kettle", name: "Wasserkocher" },
+    ],
+    sensor: [{ id: "sensor.hodr_cs_state", name: "Hodr CS State" }],
+    remote: [{ id: "remote.uhd8000", name: "Zidoo" }],
+  };
+
+  test("a role only ever offers entities of the domains it accepts", () => {
+    const options = panelHelpers.entityOptions(catalogue, ["switch", "remote"]);
+    assert.deepEqual(
+      options.map((o) => o.id),
+      ["switch.hodr_cs_power", "switch.kettle", "remote.uhd8000"]
+    );
+  });
+
+  test("a driver that names no domain gets everything rather than nothing", () => {
+    const options = panelHelpers.entityOptions(catalogue, []);
+    assert.equal(options.length, 4);
+  });
+
+  test("friendly names survive, because that is what you search by", () => {
+    const [first] = panelHelpers.entityOptions(catalogue, ["sensor"]);
+    assert.equal(first.name, "Hodr CS State");
+  });
+
+  test("a plain list of ids from an older backend still works", () => {
+    const options = panelHelpers.entityOptions({ scene: ["scene.dark"] }, ["scene"]);
+    assert.deepEqual(options, [{ id: "scene.dark", name: "scene.dark" }]);
+  });
+
+  test("an unknown domain contributes nothing instead of throwing", () => {
+    assert.deepEqual(panelHelpers.entityOptions(catalogue, ["light"]), []);
+    assert.deepEqual(panelHelpers.entityOptions(undefined, ["switch"]), []);
+  });
+});

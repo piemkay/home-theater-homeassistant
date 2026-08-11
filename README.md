@@ -100,6 +100,23 @@ activities:
 Adding an activity needs no Python and no new scripts. Call **`kino.reload`**
 to apply changes without restarting Home Assistant.
 
+### Playback needs one path mapping
+
+Jellyfin indexes the library through its own mount, the player opens the file
+through another. Tell the media device how one becomes the other — in the admin
+panel under *Geräte*, or directly:
+
+```yaml
+devices:
+  zidoo:
+    options:
+      path_map:
+        /media/entertainment/: "/mnt/nfs/192.168.50.10#entertainment/"
+```
+
+The longest matching prefix wins. Without a matching rule the card names the
+path it could not translate instead of failing silently.
+
 Validation names the offending activity, device and field:
 
 ```
