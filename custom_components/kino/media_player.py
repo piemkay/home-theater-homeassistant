@@ -20,7 +20,7 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -30,7 +30,8 @@ from .devices.trinnov import TrinnovDriver
 from .devices.zidoo import ZidooDriver
 from .entity import KinoEntity
 from .http import async_artwork_url
-from .media.base import MediaBackendError, MediaItem
+from .media.base import Category, MediaBackendError, MediaItem, MediaQuery
+from .media.naming import provider_ids_from_path, title_from_path
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,10 +89,11 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
 
     def __init__(self, coordinator: KinoCoordinator) -> None:
         super().__init__(coordinator, "player")
-        #: The catalogue entry this player was last asked to play. The Zidoo
-        #: knows the file, not the Jellyfin item, so remembering it is what
-        #: lets the card show the right poster.
-        self._item_id: str | None = None
+        #: The catalogue entry behind the file the player currently has open:
+        #: ``{"uri", "id", "title"}``. The Zidoo only knows the path, so this
+        #: is what supplies a poster and a title fit to read.
+        self._playing: dict[str, Any] | None = None
+        self._resolving: str | None = None
 
     # -- the device currently carrying media --------------------------------
 
@@ -159,8 +161,83 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
         driver = self._media_driver
         return driver.now_playing() if driver else {}
 
+    def _catalogue_entry(self) -> dict[str, Any] | None:
+        """Return the catalogue entry for whatever is open, if we know it."""
+        playing = self._playing
+        if playing is None or playing["uri"] != self._now().get("uri"):
+            return None
+        return playing
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._sync_catalogue_entry()
+        super()._handle_coordinator_update()
+
+    def _sync_catalogue_entry(self) -> None:
+        """Look the open file up in the catalogue when it changes.
+
+        A title started from the card comes with its entry attached. One
+        started on the player's own remote — or before a restart — arrives as
+        a bare path, and this is what turns it back into a poster and a name.
+        """
+        uri = self._now().get("uri")
+        if not uri:
+            self._playing = None
+            return
+        if (self._playing and self._playing["uri"] == uri) or self._resolving == uri:
+            return
+        if self.coordinator.media is None:
+            return
+        self._resolving = uri
+        self.hass.async_create_task(self._async_resolve(uri))
+
+    async def _async_resolve(self, uri: str) -> None:
+        item: MediaItem | None = None
+        try:
+            item = await self._lookup(uri)
+        except MediaBackendError as err:
+            _LOGGER.debug("Titel zu '%s' nicht auflösbar: %s", uri, err)
+        finally:
+            self._resolving = None
+        # Recorded even when nothing matched, so one unmatched file does not
+        # re-query the catalogue on every poll.
+        self._playing = {
+            "uri": uri,
+            "id": item.id if item else None,
+            "title": item.title if item else None,
+        }
+        self.async_write_ha_state()
+
+    async def _lookup(self, uri: str) -> MediaItem | None:
+        media = self.coordinator.media
+        title = title_from_path(uri)
+        if media is None or not title:
+            return None
+        wanted = provider_ids_from_path(uri)
+
+        candidates: list[MediaItem] = []
+        for category in (Category.MOVIES, Category.SHOWS):
+            page = await media.search(
+                MediaQuery(category=category, search=title, limit=10)
+            )
+            candidates.extend(page.items)
+            if candidates and wanted:
+                break
+
+        for item in candidates:
+            if any(item.provider_ids.get(k) == v for k, v in wanted.items()):
+                return item
+        # Without a provider ID, only an exact title counts. A near-miss puts
+        # the wrong poster on the screen, which is worse than no poster.
+        return next(
+            (i for i in candidates if i.title.casefold() == title.casefold()), None
+        )
+
     @property
     def media_title(self) -> str | None:
+        entry = self._catalogue_entry()
+        if entry and entry["title"]:
+            return entry["title"]
         return self._now().get("title")
 
     @property
@@ -178,7 +255,8 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
     @property
     def media_image_url(self) -> str | None:
         now = self._now()
-        item_id = now.get("jellyfin_id") or self._item_id
+        entry = self._catalogue_entry()
+        item_id = now.get("jellyfin_id") or (entry or {}).get("id")
         if item_id and self.coordinator.media is not None:
             return async_artwork_url(self.hass, str(item_id), "Primary")
         return now.get("image")
@@ -210,7 +288,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
 
     async def async_media_stop(self) -> None:
         await self._media("media_stop")
-        self._item_id = None
+        self._playing = None
 
     async def async_media_next_track(self) -> None:
         await self._media("media_next_track")
@@ -255,7 +333,12 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
             )
 
         await driver.play_path(path)
-        self._item_id = item.id if item else None
+        # Started from the card, so the catalogue entry needs no looking up.
+        self._playing = {
+            "uri": driver.resolve_path(path) or path,
+            "id": item.id if item else None,
+            "title": item.title if item else None,
+        }
         self.async_write_ha_state()
 
         extra = kwargs.get("extra") or {}
