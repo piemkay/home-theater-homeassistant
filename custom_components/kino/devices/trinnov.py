@@ -62,6 +62,7 @@ class TrinnovDriver(EntityBackedDriver):
         "preset": ("select",),
         "upmixer": ("select",),
         "mute": ("switch",),
+        "dim": ("switch",),
         "volume": ("sensor", "number"),
         "volume_number": ("number",),
         "power_status": ("sensor",),

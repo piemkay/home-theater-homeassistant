@@ -623,9 +623,8 @@ describe("playing sheet", () => {
       entities: { player: "media_player.kino" },
       controls: {},
       nowPlaying: null,
-      lightScenes: {},
     };
-    card._view = { dimmed: false };
+    card._view = {};
     card._hass = {
       states: {
         "media_player.kino": {
@@ -637,6 +636,53 @@ describe("playing sheet", () => {
     const html = card._renderPlayingSheet();
     assert.match(html, /data-act="stop-playing"/);
     assert.doesNotMatch(html, /data-act="transport" data-key="media_stop"/);
+  });
+});
+
+describe("dim", () => {
+  /**
+   * Dim is the Trinnov's own -20 dB switch, not a light scene — the pill
+   * mirrors and drives `controls.dim` and vanishes when none is wired.
+   */
+  const makeCard = (controls, states = {}) => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = { entities: { player: "media_player.kino" }, controls };
+    card._view = {};
+    card._hass = {
+      states: {
+        "media_player.kino": { state: "playing", attributes: {} },
+        ...states,
+      },
+    };
+    return card;
+  };
+
+  test("no dim switch wired — no Dim pill", () => {
+    const html = makeCard({})._renderVolumeRow(true);
+    assert.doesNotMatch(html, /data-act="dim"/);
+  });
+
+  test("the pill mirrors the processor's own switch state", () => {
+    const card = makeCard(
+      { dim: "switch.trinnov_dim" },
+      { "switch.trinnov_dim": { state: "on", attributes: {} } }
+    );
+    assert.match(card._renderVolumeRow(true), /data-act="dim" aria-pressed="true"/);
+    card._hass.states["switch.trinnov_dim"].state = "off";
+    assert.match(card._renderVolumeRow(true), /data-act="dim" aria-pressed="false"/);
+  });
+
+  test("toggling drives the switch, never a scene", async () => {
+    const card = makeCard(
+      { dim: "switch.trinnov_dim" },
+      { "switch.trinnov_dim": { state: "off", attributes: {} } }
+    );
+    const calls = [];
+    card._callService = async (...args) => calls.push(args);
+    await card._toggleDim();
+    assert.deepEqual(calls, [
+      ["switch", "turn_on", { entity_id: "switch.trinnov_dim" }],
+    ]);
   });
 });
 

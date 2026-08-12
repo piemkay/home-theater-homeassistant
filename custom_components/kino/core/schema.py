@@ -497,9 +497,6 @@ def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
     shutdown_scene = _scene_or_none(
         settings.get("shutdown_light_scene"), "settings.shutdown_light_scene", errors
     )
-    dim_scene = _scene_or_none(
-        settings.get("dim_light_scene"), "settings.dim_light_scene", errors
-    )
 
     # A device no activity ever mentions is dead weight and almost certainly a
     # typo; flag it rather than let it sit there doing nothing (FR-115).
@@ -521,7 +518,6 @@ def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
         volume_max_db=-20.0 if max_db is None else max_db,
         volume_step_db=2.0 if step_db is None else step_db,
         shutdown_light_scene=shutdown_scene,
-        dim_light_scene=dim_scene,
         drift_debounce_seconds=20.0 if debounce is None else debounce,
         preferred_audio_language=settings.get("preferred_audio_language"),
         preferred_subtitle_language=settings.get("preferred_subtitle_language"),

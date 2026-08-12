@@ -544,7 +544,6 @@ class KinoCard extends CardBase {
       activityMenu: false,
       musikSource: "spotify",
       refreshing: false,
-      dimmed: false,
     };
     this._library = {
       items: [],
@@ -624,6 +623,7 @@ class KinoCard extends CardBase {
       this._entity("subtitleTrack"),
       controls.preset,
       controls.upmixer,
+      controls.dim,
     ]) {
       const state = id ? states[id] : null;
       parts.push(state && `${state.state}/${(state.attributes.options || []).length}`);
@@ -939,20 +939,18 @@ class KinoCard extends CardBase {
   }
 
   /**
-   * Dim the room and back again.
-   *
-   * Both scenes come from the configuration — the dim one from
-   * `settings.dim_light_scene`, the other from the running activity — so the
-   * button does nothing surprising and disappears when nothing is set.
+   * The processor's own Dim: the Trinnov drops its output by 20 dB and
+   * brings it back. An audio feature — the lights are not involved. The
+   * switch entity arrives via `controls.dim`, so the button disappears
+   * when the processor has no dim switch wired.
    */
   async _toggleDim() {
-    const scenes = this._kino.lightScenes || {};
-    const target = this._view.dimmed ? scenes.activity : scenes.dim;
-    this._view.dimmed = !this._view.dimmed;
-    this._render();
-    if (!target) return;
+    const entityId = (this._kino.controls || {}).dim;
+    if (!entityId) return;
+    const state = this._hass.states[entityId];
+    const service = state && state.state === "on" ? "turn_off" : "turn_on";
     try {
-      await this._callService("scene", "turn_on", { entity_id: target });
+      await this._callService("switch", service, { entity_id: entityId });
     } catch (err) {
       this._actionError = err.message || String(err);
       this._render();
@@ -1625,19 +1623,20 @@ class KinoCard extends CardBase {
     return duration ? Math.min(position, duration) : position;
   }
 
-  /** Mute, the optional Dim scene, and the dB stepper. */
+  /** Mute, the Trinnov's -20 dB Dim, and the dB stepper. */
   _renderVolumeRow(withDim) {
     const player = this._playerEntity;
     const state = player ? this._hass.states[player] : null;
     const muted = state && state.attributes.is_volume_muted;
     const volumeEntity = this._volumeEntity;
     const db = volumeEntity ? this._hass.states[volumeEntity]?.state : null;
-    const dimScene = (this._kino.lightScenes || {}).dim;
+    const dimEntity = (this._kino.controls || {}).dim;
+    const dimmed = dimEntity && this._hass.states[dimEntity]?.state === "on";
     return `<div class="volrow" style="${withDim ? "justify-content:flex-start" : ""}">
       <button class="pill" data-act="mute" aria-pressed="${!!muted}">Stumm</button>
       ${
-        withDim && dimScene
-          ? `<button class="pill" data-act="dim" aria-pressed="${this._view.dimmed}">Dim</button>`
+        withDim && dimEntity
+          ? `<button class="pill" data-act="dim" aria-pressed="${!!dimmed}">Dim</button>`
           : ""
       }
       ${withDim ? '<div style="flex:1"></div>' : ""}

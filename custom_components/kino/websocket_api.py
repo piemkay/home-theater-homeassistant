@@ -293,16 +293,19 @@ def _own_entities(hass: HomeAssistant, coordinator) -> dict[str, str]:
 
 
 def _sound_controls(coordinator) -> dict[str, str]:
-    """Entities the playback view drives directly (preset, upmixer).
+    """Entities the playback view drives directly (preset, upmixer, dim).
 
     They belong to the processor, not to Kino, so the card is told which ones
-    they are instead of pattern-matching entity IDs.
+    they are instead of pattern-matching entity IDs. `dim` is the Trinnov's
+    own -20 dB switch — an audio feature, nothing to do with the lights.
     """
     key = coordinator.config.volume_device
     driver = coordinator.engine.drivers.get(key) if key else None
     entities = dict(driver.spec.entities) if driver else {}
     return {
-        role: entities[role] for role in ("preset", "upmixer") if entities.get(role)
+        role: entities[role]
+        for role in ("preset", "upmixer", "dim")
+        if entities.get(role)
     }
 
 
@@ -369,14 +372,6 @@ def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
         # The catalogue entry behind the open file, so the playback view can
         # ask for a 16:9 backdrop rather than crop a portrait poster.
         "nowPlaying": coordinator.playing_item,
-        "lightScenes": {
-            "activity": (
-                activity.light_scene
-                if (activity := config.activities.get(snapshot.activity))
-                else None
-            ),
-            "dim": config.dim_light_scene,
-        },
         # One signature covers every poster until it expires, so the browser
         # can cache images by URL (see http.py).
         "artworkSignature": async_get_signer(hass).signature(),
