@@ -361,6 +361,11 @@ class TransitionExecutor:
             step.error = f"{spec.name} hat das Ausschalten nicht bestätigt"
             raise TransitionAborted(spec.key, step.error) from err
         step.health = DeviceHealth.OFF
+        # Learned like the start durations, so the shutdown ETA reflects what
+        # this projector actually does rather than the configured worst case.
+        self._estimator.record(
+            spec.key, "stop", step.elapsed(self._time()), from_cold=True
+        )
 
     async def _wait_until(
         self,

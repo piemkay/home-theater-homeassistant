@@ -313,6 +313,96 @@ describe("playback position", () => {
   });
 });
 
+describe("device chips", () => {
+  const kino = {
+    activity: "film",
+    targetActivity: "aus",
+    offActivity: "aus",
+    progress: { percent: 20 },
+    activities: [
+      { key: "film", name: "Film", devices: ["beamer", "zidoo"] },
+      { key: "aus", name: "Aus", devices: [] },
+    ],
+    devices: [
+      { key: "beamer", name: "Beamer", health: "stopping" },
+      { key: "zidoo", name: "Zidoo", health: "off" },
+    ],
+  };
+
+  test("shutting down still shows the devices being stopped", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = kino;
+    const html = card._renderDeviceChips();
+    assert.match(html, /Beamer/);
+    assert.match(html, /Zidoo/);
+  });
+
+  test("once off, there are no chips", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = { ...kino, activity: "aus", targetActivity: null, progress: null };
+    assert.equal(card._renderDeviceChips(), "");
+  });
+});
+
+describe("entity select block", () => {
+  const card = Object.create(KinoCard.prototype);
+
+  test("filters options the device rejects, but shows the state honestly", () => {
+    // The Trinnov reports upmixer "none" but refuses it as a choice —
+    // selecting it failed with "Unknown upmixer option: none".
+    card._hass = {
+      states: {
+        "select.upmixer": {
+          state: "none",
+          attributes: { options: ["none", "auto", "dolby"] },
+        },
+      },
+    };
+    const html = card._entitySelectBlock("select.upmixer", "Upmixer", ["none"]);
+    assert.doesNotMatch(html, /value="none"/);
+    assert.match(html, /disabled selected>none</);
+    assert.match(html, /value="auto"/);
+  });
+
+  test("a selectable current state needs no orphan entry", () => {
+    card._hass = {
+      states: {
+        "select.upmixer": {
+          state: "auto",
+          attributes: { options: ["none", "auto"] },
+        },
+      },
+    };
+    const html = card._entitySelectBlock("select.upmixer", "Upmixer", ["none"]);
+    assert.doesNotMatch(html, /disabled/);
+    assert.match(html, /value="auto" selected/);
+  });
+});
+
+describe("playing sheet", () => {
+  test("'Wiedergabe beenden' closes the sheet, not just the film", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = {
+      entities: { player: "media_player.kino" },
+      controls: {},
+      nowPlaying: null,
+      lightScenes: {},
+    };
+    card._view = { dimmed: false };
+    card._hass = {
+      states: {
+        "media_player.kino": {
+          state: "playing",
+          attributes: { media_title: "X", media_duration: 100, media_position: 10 },
+        },
+      },
+    };
+    const html = card._renderPlayingSheet();
+    assert.match(html, /data-act="stop-playing"/);
+    assert.doesNotMatch(html, /data-act="transport" data-key="media_stop"/);
+  });
+});
+
 describe("re-render signature", () => {
   /**
    * A playing media_player republishes its position constantly. Rebuilding

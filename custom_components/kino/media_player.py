@@ -311,6 +311,10 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
 
     async def async_media_seek(self, position: float) -> None:
         await self._media("media_seek", seek_position=position)
+        # The driver now carries the target as a pending position; publish it
+        # at once so the next ⟲10/10⟳ computes from where this one landed
+        # instead of from the player's not-yet-updated report.
+        self.async_write_ha_state()
 
     # -- playback (FR-54, FR-55) --------------------------------------------
 

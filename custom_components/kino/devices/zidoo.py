@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any, ClassVar
 from urllib.parse import quote
 
@@ -22,6 +23,18 @@ _LOGGER = logging.getLogger(__name__)
 SUBTITLE_OFF_LABEL = "Aus"
 
 _PLAYING_STATES = frozenset({"playing", "paused", "buffering"})
+
+#: How long a just-issued seek outranks the player's own position report.
+#: The upstream integration re-reads the position only on its poll, so for a
+#: few seconds after a seek the entity still carries the old value — the
+#: progress bar snapped back, and a second ⟲10 computed from that old value
+#: landed where the first one already had (the volume double-tap bug, FR-64,
+#: in transport form).
+SEEK_CONFIRM_SECONDS = 10.0
+
+#: A position report this much newer than the seek is the player speaking
+#: for itself again — earlier ones may still predate the jump.
+SEEK_REPORT_MARGIN_SECONDS = 2.0
 
 #: The Zidoo integration routes `media_content_type: "file"` to the player's
 #: ``ZidooFileControl/openFile`` endpoint, which takes the path as a *query
@@ -49,6 +62,11 @@ class ZidooDriver(EntityBackedDriver):
         super().__init__(bridge, spec)
         self._audio_tracks: list[dict[str, Any]] = []
         self._subtitle_tracks: list[dict[str, Any]] = []
+        #: The position we last seeked to, trusted over the entity until the
+        #: player reports a position of its own (see SEEK_CONFIRM_SECONDS).
+        self._seek_position: float | None = None
+        self._seek_monotonic: float = 0.0
+        self._seek_wall: datetime | None = None
 
     async def observe(self) -> DeviceObservation:
         media = self.state_of("media_player")
@@ -96,7 +114,7 @@ class ZidooDriver(EntityBackedDriver):
         if media is None:
             return {}
         attributes = media.attributes
-        return {
+        payload = {
             "state": media.state,
             "title": attributes.get("media_title"),
             "duration": attributes.get("media_duration"),
@@ -110,8 +128,37 @@ class ZidooDriver(EntityBackedDriver):
             "audio_format": attributes.get("media_audio_format"),
             "tagline": attributes.get("media_tagline"),
         }
+        pending = self._pending_position(payload["position_updated_at"])
+        if pending is not None:
+            payload["position"] = pending
+            payload["position_updated_at"] = self._seek_wall
+        return payload
+
+    def _pending_position(self, reported_at: Any) -> float | None:
+        """The seek target, until the player reports a position of its own."""
+        if self._seek_position is None:
+            return None
+        if self.bridge.now() - self._seek_monotonic > SEEK_CONFIRM_SECONDS:
+            self._seek_position = None
+            return None
+        reported = _as_datetime(reported_at)
+        if (
+            reported is not None
+            and reported.tzinfo is not None
+            and self._seek_wall is not None
+            and (reported - self._seek_wall).total_seconds()
+            > SEEK_REPORT_MARGIN_SECONDS
+        ):
+            # The player has re-read its position since the jump; its word wins.
+            self._seek_position = None
+            return None
+        return self._seek_position
 
     async def async_media_command(self, service: str, **data: Any) -> None:
+        if service == "media_seek" and "seek_position" in data:
+            self._seek_position = float(data["seek_position"])
+            self._seek_monotonic = self.bridge.now()
+            self._seek_wall = datetime.now(timezone.utc)
         await self.call("media_player", service, role="media_player", data=data)
 
     # -- playback (FR-46, FR-54) -------------------------------------------
@@ -173,7 +220,23 @@ class ZidooDriver(EntityBackedDriver):
         await self._select_track("audio", label)
 
     async def select_subtitle_track(self, label: str) -> None:
+        # FR-62's "Aus" is the player's own off entry — every real track list
+        # carries one ("0: Off"), and the underlying select rejects a literal
+        # "Aus". Translate it so a stored setting or an old automation that
+        # still says "Aus" keeps working.
+        if label == SUBTITLE_OFF_LABEL:
+            label = self._subtitle_off_option() or label
         await self._select_track("subtitle", label)
+
+    def _subtitle_off_option(self) -> str | None:
+        state = self.state_of("subtitle_select")
+        options = list(state.attributes.get("options") or []) if state else []
+        return next(
+            (o for o in options if str(o).strip().casefold().endswith("off")),
+            None,
+        )
+
+    # -- helpers -------------------------------------------------------------
 
     async def _select_track(self, kind: str, label: str) -> None:
         role = f"{kind}_select"
@@ -191,3 +254,15 @@ class ZidooDriver(EntityBackedDriver):
             f"Zidoo: keine {kind}_select-Entity konfiguriert — "
             "Spurauswahl ist nicht verfügbar"
         )
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    """A datetime from whatever the state machine carries — or None."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None

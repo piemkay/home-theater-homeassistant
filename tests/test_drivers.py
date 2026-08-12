@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -21,10 +22,12 @@ from custom_components.kino.devices.barco import (
     PHASE_OFF,
     PHASE_ON,
     PHASE_WARMING,
+    RETRY_POWER_OFF_AFTER,
     RETRY_REJECTED_AFTER,
 )
 from custom_components.kino.devices.bridge import StateSnapshot
 from custom_components.kino.devices.trinnov import VOLUME_CONFIRM_SECONDS
+from custom_components.kino.devices.zidoo import SEEK_CONFIRM_SECONDS
 
 
 class FakeBridge:
@@ -245,6 +248,83 @@ class TestBarcoPower:
         assert bridge.calls == [
             ("switch", "turn_off", {"entity_id": "switch.hodr_cs_power"})
         ]
+
+    async def test_stop_reissues_the_off_in_the_cooling_ready_window(
+        self, bridge, driver
+    ):
+        """Observed live (2026-08-11): a second off skips the ready window.
+
+        `deconditioning` is mandatory lamp cooling and gets no extra command;
+        the ~5-minute cooling-`ready` idle afterwards is what the second off
+        cuts to nothing — the vendor app proved it by dropping the projector
+        to standby the instant its off arrived there.
+        """
+        bridge.set("sensor.hodr_cs_state", "on")
+        await driver.observe()
+
+        await driver.stop()
+        assert bridge.calls == [
+            ("switch", "turn_off", {"entity_id": "switch.hodr_cs_power"})
+        ]
+
+        bridge.set("sensor.hodr_cs_state", "deconditioning")
+        await driver.observe()
+        assert len(bridge.calls) == 1  # mandatory cooling: nothing to hurry
+
+        bridge.set("sensor.hodr_cs_state", "ready")
+        await driver.observe()
+        assert bridge.calls[-1] == (
+            "switch",
+            "turn_off",
+            {"entity_id": "switch.hodr_cs_power"},
+        )
+        assert len(bridge.calls) == 2
+
+        # Rate-limited while the window persists…
+        await driver.observe()
+        assert len(bridge.calls) == 2
+        bridge.clock += RETRY_POWER_OFF_AFTER + 1.0
+        await driver.observe()
+        assert len(bridge.calls) == 3
+
+        # …and finished for good once the projector confirms standby.
+        bridge.set("sensor.hodr_cs_state", "standby")
+        observation = await driver.observe()
+        assert observation.power is Power.OFF
+        bridge.clock += RETRY_POWER_OFF_AFTER + 1.0
+        await driver.observe()
+        assert len(bridge.calls) == 3
+
+    async def test_a_declined_second_off_does_not_abort_the_shutdown(
+        self, bridge, driver
+    ):
+        bridge.set("sensor.hodr_cs_state", "on")
+        await driver.observe()
+        await driver.stop()
+        bridge.set("sensor.hodr_cs_state", "deconditioning")
+        await driver.observe()
+        bridge.set("sensor.hodr_cs_state", "ready")
+
+        bridge.raise_on_call = RuntimeError("busy")
+        observation = await driver.observe()  # must not raise
+        assert observation.phase == PHASE_COOLING
+
+    async def test_a_new_start_cancels_the_standing_off(self, bridge, driver):
+        bridge.set("sensor.hodr_cs_state", "on")
+        await driver.observe()
+        await driver.stop()
+        bridge.set("sensor.hodr_cs_state", "deconditioning")
+        await driver.observe()
+
+        await driver.start()  # changed their mind mid-cooldown
+        bridge.set("sensor.hodr_cs_state", "ready")
+        await driver.observe()
+
+        # The ready window gets the power-*on*, not a lingering off.
+        on = ("switch", "turn_on", {"entity_id": "switch.hodr_cs_power"})
+        off = ("switch", "turn_off", {"entity_id": "switch.hodr_cs_power"})
+        assert on in bridge.calls
+        assert bridge.calls.count(off) == 1
 
     async def test_a_busy_projector_is_retried_rather_than_failing(
         self, bridge, driver
@@ -802,6 +882,25 @@ class TestZidooTrackSelects:
 
         assert bridge.calls[0][0] == "select"
 
+    async def test_aus_is_translated_to_the_players_own_off_entry(
+        self, bridge, driver
+    ):
+        """FR-62's "Aus" is the list's own off entry, not a phantom option.
+
+        The injected literal "Aus" was rejected by the underlying select with
+        "Invalid option: Aus (possible options: 0: Off, …)" — the off that
+        works has always been there.
+        """
+        await driver.select_subtitle_track("Aus")
+
+        assert bridge.calls == [
+            (
+                "input_select",
+                "select_option",
+                {"entity_id": "input_select.kino_untertitel", "option": "0: Off"},
+            )
+        ]
+
     async def test_without_a_helper_it_says_so(self, bridge):
         spec = DeviceSpec(
             key="zidoo",
@@ -814,3 +913,66 @@ class TestZidooTrackSelects:
 
         with pytest.raises(RuntimeError, match="subtitle_select"):
             await driver.select_subtitle_track("Aus")
+
+
+class TestZidooSeek:
+    """A seek must count from where the last one landed (FR-64's lesson).
+
+    The upstream integration re-reads the position only on its poll, so right
+    after a seek the entity still carries the old value — the bar snapped
+    back, and a second ⟲10 landed where the first one already had.
+    """
+
+    @pytest.fixture
+    def driver(self, bridge):
+        spec = DeviceSpec(
+            key="zidoo",
+            driver="zidoo",
+            name="Zidoo",
+            entities={
+                "power": "remote.uhd8000",
+                "media_player": "media_player.uhd8000",
+            },
+        )
+        bridge.set(
+            "media_player.uhd8000",
+            "playing",
+            media_position=100.0,
+            media_position_updated_at=datetime(
+                2026, 8, 11, 21, 0, 0, tzinfo=timezone.utc
+            ),
+        )
+        return build_driver(bridge, spec)
+
+    async def test_the_target_is_reported_until_the_player_catches_up(
+        self, bridge, driver
+    ):
+        await driver.async_media_command("media_seek", seek_position=90.0)
+
+        now = driver.now_playing()
+        assert now["position"] == 90.0
+        # The timestamp is the seek's own, so extrapolation starts from it.
+        assert now["position_updated_at"] is not None
+        assert now["position_updated_at"] != datetime(
+            2026, 8, 11, 21, 0, 0, tzinfo=timezone.utc
+        )
+
+    async def test_a_newer_report_from_the_player_wins(self, bridge, driver):
+        await driver.async_media_command("media_seek", seek_position=90.0)
+
+        bridge.set(
+            "media_player.uhd8000",
+            "playing",
+            media_position=91.0,
+            media_position_updated_at=datetime.now(timezone.utc)
+            + timedelta(seconds=5),
+        )
+        assert driver.now_playing()["position"] == 91.0
+
+    async def test_the_pending_position_expires_rather_than_lying(
+        self, bridge, driver
+    ):
+        await driver.async_media_command("media_seek", seek_position=90.0)
+
+        bridge.clock += SEEK_CONFIRM_SECONDS + 1.0
+        assert driver.now_playing()["position"] == 100.0

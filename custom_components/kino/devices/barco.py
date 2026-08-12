@@ -46,6 +46,14 @@ DECONDITIONING_SECONDS = 180.0
 #: take effect directly. If it does not, we fall back to waiting for standby.
 RETRY_POWER_ON_AFTER = 45.0
 
+#: The same window works in the other direction: left alone, the projector
+#: idles in cooling-`ready` for another ~5 minutes before standby, but a
+#: power-off issued there drops it to standby immediately (observed live
+#: 2026-08-11: `ready` → `standby` the moment a second off arrived). So the
+#: off command is held as a standing intent and re-issued once cooling
+#: reaches `ready`, instead of waiting the window out.
+RETRY_POWER_OFF_AFTER = 20.0
+
 #: The projector answers a power-on issued mid-transition with "Ignored
 #: POWER_ON event, busy transitioning to ready" and the upstream integration
 #: raises. That is a "not yet", not a failure — the standing intent re-issues
@@ -90,6 +98,10 @@ class BarcoDriver(EntityBackedDriver):
         self._want_on = False
         #: Earliest time a further power-on may be issued.
         self._next_power_on_at: float | None = None
+        #: Standing intent for the way down: a second off in the cooling
+        #: `ready` window skips the rest of it (see RETRY_POWER_OFF_AFTER).
+        self._want_off = False
+        self._next_power_off_at: float | None = None
 
     # -- phase resolution ---------------------------------------------------
 
@@ -151,6 +163,13 @@ class BarcoDriver(EntityBackedDriver):
         if self._want_on and phase not in (PHASE_ON, PHASE_WARMING):
             await self._try_power_on(raw)
 
+        if self._want_off:
+            if phase == PHASE_OFF:
+                self._want_off = False
+                self._next_power_off_at = None
+            elif raw == "ready" and phase == PHASE_COOLING:
+                await self._try_power_off()
+
         if phase == PHASE_OFF:
             # A power cycle invalidates whatever profile we thought was live.
             self._profile = None
@@ -189,6 +208,8 @@ class BarcoDriver(EntityBackedDriver):
         rather than burning five minutes waiting for standby.
         """
         self._want_on = True
+        self._want_off = False
+        self._next_power_off_at = None
         await self._try_power_on(self._raw_state())
 
     async def _try_power_on(self, raw: str | None) -> None:
@@ -218,7 +239,24 @@ class BarcoDriver(EntityBackedDriver):
         self._want_on = False
         self._next_power_on_at = None
         self._profile = None
+        self._want_off = True
+        self._next_power_off_at = None
         await self.call("switch", "turn_off", role="power")
+
+    async def _try_power_off(self) -> None:
+        now = self.bridge.now()
+        if self._next_power_off_at is not None and now < self._next_power_off_at:
+            return
+        self._next_power_off_at = now + RETRY_POWER_OFF_AFTER
+        _LOGGER.debug(
+            "Beamer ist im Kühl-ready-Fenster — zweites Ausschalten spart es ein"
+        )
+        try:
+            await self.call("switch", "turn_off", role="power")
+        except Exception as err:  # noqa: BLE001 - a refused early-off is no failure
+            # The projector finishes its cooldown on its own either way; the
+            # shutdown must not abort over a declined shortcut.
+            _LOGGER.debug("Beamer hat das zweite Ausschalten abgelehnt: %s", err)
 
     async def apply(self, settings: Mapping[str, Any]) -> None:
         profile = settings.get("profile")

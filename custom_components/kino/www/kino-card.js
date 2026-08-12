@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.1.6";
+const CARD_VERSION = "0.1.7";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -881,7 +881,13 @@ class KinoCard extends CardBase {
 
   _renderDeviceChips() {
     const k = this._kino;
-    const current = this._currentActivity;
+    // While shutting down, the target ("Aus") has no devices — but the ones
+    // being stopped are exactly what the user wants to watch, chip by chip,
+    // as each confirms it is off.
+    const current =
+      k.progress && k.targetActivity === k.offActivity
+        ? this._activityByKey(k.activity)
+        : this._currentActivity;
     if (!current || !current.devices.length) return "";
     const byKey = Object.fromEntries(k.devices.map((d) => [d.key, d]));
     const chips = current.devices
@@ -1197,7 +1203,7 @@ class KinoCard extends CardBase {
     return `<div class="sheet" style="z-index:30">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <a class="link" data-act="collapse-playing">⌄ Minimieren</a>
-        <a class="link" style="color:var(--kino-text3)" data-act="transport" data-key="media_stop">Wiedergabe beenden</a>
+        <a class="link" style="color:var(--kino-text3)" data-act="stop-playing">Wiedergabe beenden</a>
       </div>
       <div class="backdrop">
         ${art ? `<img src="${this._esc(art)}" alt="" onerror="${fallback}">` : ""}
@@ -1260,11 +1266,16 @@ class KinoCard extends CardBase {
   /** Preset and upmixer, straight off the processor's own option lists. */
   _renderSoundSelects() {
     const controls = this._kino.controls || {};
+    // The Trinnov reports "none" as its upmixer when nothing is upmixed, but
+    // refuses it as a *choice* — selecting it fails with "Unknown upmixer
+    // option". "auto" is the settable equivalent, and it is already listed.
     const blocks = [
-      [controls.preset, "Trinnov · Preset"],
-      [controls.upmixer, "Upmixer"],
+      [controls.preset, "Trinnov · Preset", []],
+      [controls.upmixer, "Upmixer", ["none"]],
     ]
-      .map(([entityId, label]) => this._entitySelectBlock(entityId, label))
+      .map(([entityId, label, hidden]) =>
+        this._entitySelectBlock(entityId, label, hidden)
+      )
       .filter(Boolean);
     if (!blocks.length) return "";
     return `<div style="display:flex;gap:10px;margin-bottom:16px">
@@ -1279,21 +1290,34 @@ class KinoCard extends CardBase {
     );
   }
 
-  /** One labelled select over a `select.*` entity, or nothing at all. */
-  _entitySelectBlock(entityId, label) {
+  /**
+   * One labelled select over a `select.*` entity, or nothing at all.
+   *
+   * `hidden` lists option values the entity reports but rejects when set —
+   * they are kept out of the menu. When the *current* state is one of them
+   * (or is otherwise not offered), it still shows, as a disabled entry: the
+   * display must not claim a setting the device does not have.
+   */
+  _entitySelectBlock(entityId, label, hidden = []) {
     if (!entityId) return "";
     const state = this._hass.states[entityId];
     if (!state || state.state === "unavailable") return "";
-    const options = (state.attributes.options || []).filter((o) => o !== "—");
+    const options = (state.attributes.options || []).filter(
+      (o) => o !== "—" && !hidden.includes(o)
+    );
     // A device that reports no list gets no empty dropdown (FR-60).
     if (!options.length) return "";
+    const current = state.state;
+    const orphan =
+      current && current !== "unknown" && !options.includes(current);
     return `<div style="margin-bottom:12px">
       <div class="label">${this._esc(label)}</div>
       <select data-field="entity-select" data-key="${entityId}">
+        ${orphan ? `<option value="" disabled selected>${this._esc(current)}</option>` : ""}
         ${options
           .map(
             (o) =>
-              `<option value="${this._esc(o)}"${state.state === o ? " selected" : ""}>${this._esc(o)}</option>`
+              `<option value="${this._esc(o)}"${current === o ? " selected" : ""}>${this._esc(o)}</option>`
           )
           .join("")}
       </select>
@@ -1475,6 +1499,13 @@ class KinoCard extends CardBase {
         break;
       case "transport":
         await this._transport(key);
+        break;
+      case "stop-playing":
+        // Ending the film is also leaving the playback view — staying on a
+        // dead transport screen helps nobody.
+        view.playingOpen = false;
+        this._render();
+        await this._transport("media_stop");
         break;
       case "vol":
         await this._stepVolume(key === "up" ? 1 : -1);

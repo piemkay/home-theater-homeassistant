@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import KinoCoordinator, KinoRuntimeData
 from .devices.bridge import StateSnapshot
-from .devices.zidoo import SUBTITLE_OFF_LABEL, ZidooDriver
+from .devices.zidoo import ZidooDriver
 from .entity import KinoEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -121,9 +121,9 @@ class KinoTrackSelect(KinoEntity, SelectEntity):
         options = [option for option in raw if option != PLACEHOLDER]
         if not options:
             return [PLACEHOLDER]
-        # Subtitles always offer an explicit "Aus" (FR-62).
-        if self._kind == "subtitle" and SUBTITLE_OFF_LABEL not in options:
-            options = [SUBTITLE_OFF_LABEL, *options]
+        # FR-62's "Aus" is the player's own off entry ("0: Off"), which every
+        # real track list carries. Injecting a literal "Aus" on top offered an
+        # option the underlying select rejects with "Invalid option: Aus".
         return options
 
     @property
