@@ -374,26 +374,34 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
                 )
             path = item.path
 
-        await self._ensure_media_activity()
+        if item is not None:
+            # The queued title stays on screen (F5): the card reads this out
+            # of the state payload for as long as the start-then-play arc
+            # runs, so the ~1 min transition never loses its subject.
+            self.coordinator.pending_item = {"id": item.id, "title": item.title}
+        try:
+            await self._ensure_media_activity()
 
-        driver = self._media_driver
-        if driver is None:
-            raise HomeAssistantError(
-                "Die aktuelle Aktivität hat keine Medienwiedergabe"
-            )
+            driver = self._media_driver
+            if driver is None:
+                raise HomeAssistantError(
+                    "Die aktuelle Aktivität hat keine Medienwiedergabe"
+                )
 
-        await driver.play_path(path)
-        # Started from the card, so the catalogue entry needs no looking up.
-        self._playing = {
-            "uri": driver.resolve_path(path) or path,
-            "id": item.id if item else None,
-            "title": item.title if item else None,
-        }
-        self.async_write_ha_state()
+            await driver.play_path(path)
+            # Started from the card, so the catalogue entry needs no looking up.
+            self._playing = {
+                "uri": driver.resolve_path(path) or path,
+                "id": item.id if item else None,
+                "title": item.title if item else None,
+            }
+            self.async_write_ha_state()
 
-        extra = kwargs.get("extra") or {}
-        if item is not None and extra.get("resume", True):
-            await self._resume_at(driver, item)
+            extra = kwargs.get("extra") or {}
+            if item is not None and extra.get("resume", True):
+                await self._resume_at(driver, item)
+        finally:
+            self.coordinator.pending_item = None
 
         await self.coordinator.async_request_refresh()
 

@@ -63,6 +63,40 @@ async def test_state_is_derived_from_devices_after_a_restart(config, drivers, cl
     assert snapshot.device_health["barco"] is DeviceHealth.READY
 
 
+async def test_idle_room_never_shows_a_starting_device(config, drivers, clock):
+    """F1: a reconnecting integration must not pulse "starting" in a dark room.
+
+    The Trinnov integration idles in a connecting loop while the processor is
+    unpowered; whatever movement it reports is only surfaced while Kino has an
+    intent for the device. Idle room ⇒ every chip grey within one poll.
+    """
+    drivers["trinnov"].power = Power.TRANSITIONING
+
+    engine = _engine(config, drivers, clock)
+    await clock.run(engine.reconcile())
+
+    snapshot = engine.snapshot()
+    assert snapshot.activity == "aus"
+    assert snapshot.device_health["trinnov"] is DeviceHealth.OFF
+
+
+async def test_a_required_device_of_the_active_activity_may_show_starting(
+    config, drivers, clock
+):
+    """The same movement is real news while the activity wants the device on."""
+    for key in ("trinnov", "zidoo"):
+        drivers[key].power = Power.ON
+    drivers["trinnov"].settings = {"source": "zidoo", "volume": -35.0}
+    engine = _engine(config, drivers, clock)
+    await clock.run(engine.reconcile())
+    assert engine.snapshot().activity == "musik"
+
+    drivers["zidoo"].power = Power.TRANSITIONING
+    await clock.run(engine.reconcile())
+
+    assert engine.snapshot().device_health["zidoo"] is DeviceHealth.STARTING
+
+
 async def test_selecting_the_active_activity_does_nothing(config, drivers, clock):
     """FR-32 / A10: repeat taps are safe and are not silently discarded."""
     engine = _engine(config, drivers, clock)

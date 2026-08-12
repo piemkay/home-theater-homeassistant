@@ -70,6 +70,10 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
         #: resolved by the media player. Room-level, so the card's state
         #: payload can carry it without going through the entity.
         self.playing_item: dict[str, Any] | None = None
+        #: The catalogue entry queued to play once the room is ready:
+        #: ``{"id", "title"}``. Held for the whole start-then-play arc so the
+        #: card keeps naming the film during the ~1 min transition (F5).
+        self.pending_item: dict[str, Any] | None = None
         #: Devices whose current drift episode has already been announced, so
         #: a standing finding fires `kino_device_drift` once — not once per
         #: poll for as long as it stands.

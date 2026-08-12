@@ -424,6 +424,7 @@ class TestTrinnov:
 
     async def test_ready_once_the_source_list_has_loaded(self, bridge, driver):
         bridge.set("media_player.trinnov_altitude_14683197", "on")
+        bridge.set("remote.trinnov_altitude_14683197", "on")
         bridge.set(
             "select.trinnov_altitude_14683197_source",
             "zidoo",
@@ -553,6 +554,7 @@ class TestTrinnovPowerStatus:
     async def test_falls_back_to_the_media_player_when_unknown(self, bridge, driver):
         """Not every Trinnov integration exposes power_status."""
         bridge.set("sensor.trinnov_altitude_14683197_power_status", "unknown")
+        bridge.set("remote.trinnov_altitude_14683197", "on")
         bridge.set("media_player.trinnov_altitude_14683197", "on")
         bridge.set(
             "select.trinnov_altitude_14683197_source", "zidoo", options=LIVE_SOURCES
@@ -561,6 +563,36 @@ class TestTrinnovPowerStatus:
         observation = await driver.observe()
 
         assert observation.power is Power.ON
+
+    async def test_reconnect_probe_while_off_is_off(self, bridge, driver):
+        """F1: the phantom "starting" that stood for hours in an idle room.
+
+        Transcribed from live history (2026-08-12, 10:01–11:10): the
+        integration's reconnect probe flips the media player to `on` and
+        power_status to `unknown` while the processor is unpowered — the
+        remote, which tracks real device power, stays `off` throughout.
+        """
+        bridge.set("sensor.trinnov_altitude_14683197_power_status", "unknown")
+        bridge.set("remote.trinnov_altitude_14683197", "off")
+        bridge.set("media_player.trinnov_altitude_14683197", "on")
+
+        observation = await driver.observe()
+
+        assert observation.power is Power.OFF
+
+    async def test_reconnect_probe_with_sources_is_still_off(self, bridge, driver):
+        """Even a loaded source list is no proof of power while the remote
+        says off — only power_status or the remote may claim otherwise."""
+        bridge.set("sensor.trinnov_altitude_14683197_power_status", "unknown")
+        bridge.set("remote.trinnov_altitude_14683197", "off")
+        bridge.set("media_player.trinnov_altitude_14683197", "on")
+        bridge.set(
+            "select.trinnov_altitude_14683197_source", "zidoo", options=LIVE_SOURCES
+        )
+
+        observation = await driver.observe()
+
+        assert observation.power is Power.OFF
 
     async def test_every_configured_activity_source_really_exists(self, bridge, driver):
         """The shipped config must not name a source the Altitude lacks."""
@@ -772,6 +804,14 @@ class TestZidooPlayback:
     async def test_library_path_is_rewritten_for_the_player(self, driver):
         assert driver.resolve_path(LIBRARY_PATH) == ZIDOO_PATH
 
+    async def test_unknown_media_state_is_not_powered(self, bridge, driver):
+        """A reconnecting integration's `unknown` is no evidence of power."""
+        bridge.set("media_player.uhd8000", "unknown")
+
+        observation = await driver.observe()
+
+        assert observation.power is Power.UNKNOWN
+
     async def test_play_sends_a_fully_encoded_path(self, bridge, driver):
         await driver.play_path(LIBRARY_PATH)
 
@@ -882,9 +922,7 @@ class TestZidooTrackSelects:
 
         assert bridge.calls[0][0] == "select"
 
-    async def test_aus_is_translated_to_the_players_own_off_entry(
-        self, bridge, driver
-    ):
+    async def test_aus_is_translated_to_the_players_own_off_entry(self, bridge, driver):
         """FR-62's "Aus" is the list's own off entry, not a phantom option.
 
         The injected literal "Aus" was rejected by the underlying select with
@@ -964,14 +1002,11 @@ class TestZidooSeek:
             "media_player.uhd8000",
             "playing",
             media_position=91.0,
-            media_position_updated_at=datetime.now(timezone.utc)
-            + timedelta(seconds=5),
+            media_position_updated_at=datetime.now(timezone.utc) + timedelta(seconds=5),
         )
         assert driver.now_playing()["position"] == 91.0
 
-    async def test_the_pending_position_expires_rather_than_lying(
-        self, bridge, driver
-    ):
+    async def test_the_pending_position_expires_rather_than_lying(self, bridge, driver):
         await driver.async_media_command("media_seek", seek_position=90.0)
 
         bridge.clock += SEEK_CONFIRM_SECONDS + 1.0

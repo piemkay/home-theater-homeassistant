@@ -78,6 +78,10 @@ class ZidooDriver(EntityBackedDriver):
             return DeviceObservation(
                 device=self.spec.key, power=Power.UNAVAILABLE, available=False
             )
+        if media.state == "unknown":
+            # A reconnecting integration reports "unknown" before it has
+            # spoken to the player — that is not evidence the Zidoo is on.
+            return DeviceObservation(device=self.spec.key, power=Power.UNKNOWN)
         power = Power.OFF if media.state in ("off", "standby") else Power.ON
         return DeviceObservation(
             device=self.spec.key,
@@ -135,7 +139,7 @@ class ZidooDriver(EntityBackedDriver):
         return payload
 
     def _pending_position(self, reported_at: Any) -> float | None:
-        """The seek target, until the player reports a position of its own."""
+        """Return the seek target, until the player reports its own position."""
         if self._seek_position is None:
             return None
         if self.bridge.now() - self._seek_monotonic > SEEK_CONFIRM_SECONDS:
@@ -257,7 +261,7 @@ class ZidooDriver(EntityBackedDriver):
 
 
 def _as_datetime(value: Any) -> datetime | None:
-    """A datetime from whatever the state machine carries — or None."""
+    """Return a datetime from whatever the state machine carries — or None."""
     if isinstance(value, datetime):
         return value
     if isinstance(value, str):

@@ -222,8 +222,10 @@ class ActivityEngine:
                     if inferred == self.config.off_activity
                     else ActivityState.ON
                 )
+            active = self.config.activities.get(self._activity)
             self._device_health = {
-                key: _health_of(obs) for key, obs in observations.items()
+                key: _health_of(obs, expected_on=bool(active and active.requires(key)))
+                for key, obs in observations.items()
             }
 
         findings = self._drift.evaluate(
@@ -452,7 +454,9 @@ class ActivityEngine:
             ) from err
 
 
-def _health_of(observation: DeviceObservation) -> DeviceHealth:
+def _health_of(
+    observation: DeviceObservation, *, expected_on: bool = True
+) -> DeviceHealth:
     if not observation.available or observation.power is Power.UNAVAILABLE:
         return DeviceHealth.UNREACHABLE
     if observation.error:
@@ -462,5 +466,9 @@ def _health_of(observation: DeviceObservation) -> DeviceHealth:
     if observation.power is Power.OFF:
         return DeviceHealth.OFF
     if observation.power is Power.TRANSITIONING:
-        return DeviceHealth.STARTING
+        # An integration that is merely reconnecting reports movement while
+        # the room expects the device off. Without an intent — a transition
+        # in flight (whose health comes from the executor) or an activity
+        # that wants the device on — "starting" is a false signal (F1).
+        return DeviceHealth.STARTING if expected_on else DeviceHealth.OFF
     return DeviceHealth.UNKNOWN

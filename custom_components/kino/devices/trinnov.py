@@ -98,6 +98,14 @@ class TrinnovDriver(EntityBackedDriver):
 
         if reported is not None:
             power = reported
+        elif remote is not None and remote.state == "off":
+            # No usable power_status, and the processor's own power entity
+            # says off. The media player may still answer — the integration's
+            # reconnect probe keeps that entity alive while the device is
+            # unpowered, for hours at a time (F1) — but a socket that answers
+            # is not a processor that is on. The remote flips to on as soon
+            # as the device genuinely runs, so nothing real is masked.
+            power = Power.OFF
         else:
             responsive = media.state in _READY_MEDIA_STATES
             power = (

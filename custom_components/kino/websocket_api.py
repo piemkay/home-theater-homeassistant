@@ -359,6 +359,9 @@ def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
             "etaSeconds": round(progress.eta_seconds),
             "bottleneck": progress.bottleneck,
             "bottleneckDevice": progress.bottleneck_device,
+            # Every device the plan touches — stops included — so the card
+            # chips the whole union, not just the target's devices (F6).
+            "devices": [key for key in config.devices if key in progress.device_health],
         },
         "volume": {
             "device": config.volume_device,
@@ -372,6 +375,8 @@ def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
         # The catalogue entry behind the open file, so the playback view can
         # ask for a 16:9 backdrop rather than crop a portrait poster.
         "nowPlaying": coordinator.playing_item,
+        # The title queued to play once the room is ready (F5).
+        "pendingItem": coordinator.pending_item,
         # One signature covers every poster until it expires, so the browser
         # can cache images by URL (see http.py).
         "artworkSignature": async_get_signer(hass).signature(),

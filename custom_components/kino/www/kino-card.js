@@ -1109,6 +1109,14 @@ class KinoCard extends CardBase {
 
   _renderDeviceChips() {
     const k = this._kino;
+    // During a transition the chips list every device the plan touches —
+    // stops included, so `film → netflix` shows the Zidoo going down (F6).
+    // The union arrives with the progress payload; outside a transition the
+    // active activity's devices are the list.
+    const progressDevices =
+      k.progress && Array.isArray(k.progress.devices) && k.progress.devices.length
+        ? k.progress.devices
+        : null;
     // While shutting down, the target ("Aus") has no devices — but the ones
     // being stopped are exactly what the user wants to watch, chip by chip,
     // as each confirms it is off.
@@ -1116,9 +1124,10 @@ class KinoCard extends CardBase {
       k.progress && k.targetActivity === k.offActivity
         ? this._activityByKey(k.activity)
         : this._currentActivity;
-    if (!current || !current.devices.length) return "";
+    const keys = progressDevices || (current ? current.devices : []);
+    if (!keys.length) return "";
     const byKey = Object.fromEntries(k.devices.map((d) => [d.key, d]));
-    const chips = current.devices
+    const chips = keys
       .map((key) => {
         const device = byKey[key] || { name: key, health: "unknown" };
         const pulsing = device.health === "starting" || device.health === "stopping";
@@ -1161,7 +1170,14 @@ class KinoCard extends CardBase {
 
   _renderProgress() {
     const p = this._kino.progress;
-    if (!p) return "";
+    const pending = this._renderPendingItem();
+    if (!p) {
+      // Between the transition finishing and playback starting there is no
+      // progress, but the queued title must not vanish in that gap (F5).
+      return pending
+        ? `<div style="padding:0 20px"><div class="progress">${pending}</div></div>`
+        : "";
+    }
     const current = this._currentActivity;
     const toOff = this._kino.targetActivity === this._kino.offActivity;
     return `<div style="padding:0 20px"><div class="progress">
@@ -1171,7 +1187,25 @@ class KinoCard extends CardBase {
       </div>
       <div class="bar"><div style="width:${p.percent}%"></div></div>
       <span class="hint">${this._esc(p.bottleneck || "Geräte werden vorbereitet…")}</span>
+      ${pending}
     </div></div>`;
+  }
+
+  /** The film that will play once the room is ready (F5). */
+  _renderPendingItem() {
+    const pending = this._kino.pendingItem;
+    if (!pending || !pending.title) return "";
+    const art = pending.id
+      ? helpers.artworkUrl(pending.id, "Primary", this._kino.artworkSignature)
+      : null;
+    return `<div class="footrow" style="margin-top:12px">
+      <div class="footthumb">
+        ${art ? `<img src="${art}" alt="" onerror="this.style.display='none'">` : ""}
+      </div>
+      <div style="flex:1;min-width:0;font-size:12px;color:var(--kino-text2)">
+        <b style="color:var(--kino-text)">${this._esc(pending.title)}</b> startet gleich…
+      </div>
+    </div>`;
   }
 
   _renderBody() {
