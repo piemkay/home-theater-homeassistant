@@ -848,14 +848,36 @@ class TestNewServerFilters:
         await _client(session).search(MediaQuery(person_ids=("p1", "p2")))
         assert session.requests[0]["params"]["PersonIds"] == "p1|p2"
 
-    async def test_min_ratings_reach_the_server(self):
+    async def test_min_community_rating_reaches_the_server(self):
         session = FakeSession(
             {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
         )
-        await _client(session).search(MediaQuery(min_rating=7.0, min_critic=80.0))
+        await _client(session).search(MediaQuery(min_rating=7.0))
         params = session.requests[0]["params"]
         assert params["MinCommunityRating"] == "7.0"
-        assert params["MinCriticRating"] == "80.0"
+        assert "MinCriticRating" not in params
+
+    async def test_min_critic_filters_through_the_scan(self):
+        """Jellyfin 10.11 accepts MinCriticRating and ignores it — so we don't
+        send it; the critics minimum is applied here instead."""
+        session = FakeSession(
+            {
+                "/Users/user-1/Items": {
+                    "Items": [
+                        _scan_movie("fresh", critic=93.0),
+                        _scan_movie("rotten", critic=40.0),
+                        _scan_movie("unscored", critic=None),
+                    ],
+                    "TotalRecordCount": 3,
+                }
+            }
+        )
+
+        page = await _client(session).search(MediaQuery(min_critic=80.0))
+
+        assert page.total == 1
+        assert "MinCriticRating" not in session.requests[0]["params"]
+        assert session.requests[1]["params"]["Ids"] == "fresh"
 
 
 class TestDetailExtras:
@@ -920,6 +942,18 @@ class TestDetailExtras:
         assert request["params"]["UserId"] == "user-1"
         assert request["params"]["Limit"] == "6"
         assert items[0].title == "10 Cloverfield Lane"
+
+    async def test_similar_trims_a_server_that_over_delivers(self):
+        """Jellyfin 10.11 hands back more than the Limit it was asked for."""
+        session = FakeSession(
+            {
+                "/Items/abc123/Similar": {
+                    "Items": [dict(MOVIE, Id=f"s{i}") for i in range(7)],
+                }
+            }
+        )
+        items = await _client(session).similar("abc123", limit=3)
+        assert [item.id for item in items] == ["s0", "s1", "s2"]
 
 
 class TestFacetCounts:

@@ -1089,7 +1089,7 @@ describe("collapsible filter sheet (0.5.0)", () => {
   });
 });
 
-describe("grid size (FR-71b)", () => {
+describe("grid size", () => {
   const item = { id: "abc", title: "Film", year: 2020 };
 
   test("the chosen size classes the grid", () => {

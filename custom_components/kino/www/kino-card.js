@@ -615,7 +615,7 @@ footer {
 .person .name { font-size: 11px; font-weight: 700; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .person .role { font-size: 10px; color: var(--kino-text3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Filter sheet: collapsible groups with a live count on every chip (F17). */
+/* Filter sheet: collapsible groups with a live count on every chip. */
 .grouphead {
   width: 100%; display: flex; align-items: center; gap: 8px; border: none;
   background: transparent; color: var(--kino-text); cursor: pointer;
@@ -635,7 +635,7 @@ footer {
 .chipcount:empty { display: none; }
 .pill.emptying { opacity: .4; }
 
-/* The CTA stays reachable however long the sheet grows (F19). */
+/* The CTA stays reachable however long the sheet grows. */
 .filtercta {
   position: sticky; bottom: -24px; z-index: 2;
   margin: 14px -20px -24px; padding: 12px 20px 20px;
@@ -668,7 +668,7 @@ footer {
 /* Desktop scrim behind a centered sheet — phone keeps the full-bleed sheet. */
 .scrim { display: none; }
 
-/* Tile sizes (FR-71b): on a phone, "Klein" fits a third poster column. */
+/* Tile sizes: on a phone, "Klein" fits a third poster column. */
 .postergrid.size-s { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .postergrid.size-s .poster .title { font-size: 11px; }
 .postergrid.size-s .poster .meta { font-size: 10px; }
@@ -787,7 +787,7 @@ const VIEW_MODE_STORAGE_KEY = "kino-card-view-mode";
 const GRID_SIZE_STORAGE_KEY = "kino-card-grid-size";
 const FILTER_COLLAPSE_STORAGE_KEY = "kino-card-filter-collapsed";
 
-// Tile sizes for the poster/thumb walls (FR-71b): "Mittel" is the classic
+// Tile sizes for the poster/thumb walls: "Mittel" is the classic
 // look, "Klein" fits one more column on a phone, "Groß" spreads out.
 const GRID_SIZES = [
   ["s", "Klein"],
@@ -912,7 +912,7 @@ class KinoCard extends CardBase {
     // The filter sheet's CTA count, kept live while filters change (F4).
     this._filterPreview = null;
     this._previewTimer = null;
-    // Per-value result counts for the filter sheet's chips (F17).
+    // Per-value result counts for the filter sheet's chips.
     this._facetCounts = null;
   }
 
@@ -1034,7 +1034,7 @@ class KinoCard extends CardBase {
   }
 
   /**
-   * Refresh the filter sheet's CTA count and the per-chip counts (F4, F17).
+   * Refresh the filter sheet's CTA count and the per-chip counts (F4).
    *
    * The results are written into the open sheet's DOM directly — a full
    * re-render here used to land mid-scroll, replace the markup under the
@@ -1259,7 +1259,7 @@ class KinoCard extends CardBase {
     this._render();
   }
 
-  /** Fetch the detail sheet's "Mehr wie dieser Titel" row (F18). */
+  /** Fetch the detail sheet's "Mehr wie dieser Titel" row. */
   async _loadSimilar(itemId) {
     try {
       const result = await this._ws({
@@ -2286,7 +2286,7 @@ class KinoCard extends CardBase {
     </div>`;
   }
 
-  /** Community star and critics tomato, side by side (F20). */
+  /** Community star and critics tomato, side by side. */
   _renderScores(item) {
     const community = item.rating
       ? `<span class="score" title="Community-Bewertung">
@@ -2298,7 +2298,7 @@ class KinoCard extends CardBase {
     return `<div class="scorerow" style="margin-top:8px">${community}${critic}</div>`;
   }
 
-  /** Besetzung & Crew, Jellyfin-style: tap a face to browse that person (F21). */
+  /** Besetzung & Crew, Jellyfin-style: tap a face to browse that person. */
   _renderPeople(item) {
     const people = item.people || [];
     if (!people.length) return "";
@@ -2328,7 +2328,7 @@ class KinoCard extends CardBase {
     </div>`;
   }
 
-  /** "Mehr wie dieser Titel" — Jellyfin's similar list, tap to drill on (F18). */
+  /** "Mehr wie dieser Titel" — Jellyfin's similar list, tap to drill on. */
   _renderSimilar() {
     const similar = this._view.similar;
     if (!similar || !similar.length) return "";
@@ -2835,7 +2835,7 @@ class KinoCard extends CardBase {
       case "genre-jump":
       case "person-jump": {
         // From the detail sheet straight into the library, with exactly this
-        // one filter active (F21).
+        // one filter active.
         const detail = view.detail;
         const fromShow = !!detail && detail.kind !== "movie";
         const filters = helpers.emptyFilters();

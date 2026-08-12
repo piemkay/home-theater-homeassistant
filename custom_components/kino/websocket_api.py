@@ -178,7 +178,7 @@ async def ws_search(hass, connection, msg) -> None:
 )
 @websocket_api.async_response
 async def ws_facet_counts(hass, connection, msg) -> None:
-    """Per filter value: the result count after tapping that chip (F17)."""
+    """Per filter value: the result count after tapping that chip."""
     media = _first_media(hass)
     if media is None:
         connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")

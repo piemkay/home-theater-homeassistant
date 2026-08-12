@@ -108,6 +108,8 @@ _LANG_SYNONYMS = {
     "msa": "may",
     "mya": "bur",
     "cym": "wel",
+    "nob": "nor",
+    "nno": "nor",
 }
 
 #: Random re-randomises on every request, so paginated pages can repeat or
@@ -273,12 +275,13 @@ class JellyfinClient:
         return self._user_id
 
     async def search(self, query: MediaQuery) -> MediaPage:
-        # Two filters Jellyfin cannot express — several genres that must ALL
-        # match, and audio-track languages — go through the scan: filter the
-        # whole catalogue by ID first, then fetch just the visible page. That
-        # keeps totals and offsets exact (the trap `_apply_client_side_filters`
-        # documents).
-        if len(query.genres) > 1 or query.audio_langs:
+        # Filters Jellyfin cannot express — several genres that must ALL
+        # match, audio-track languages, and a critics minimum (10.11 accepts
+        # MinCriticRating and then ignores it, verified live) — go through
+        # the scan: filter the whole catalogue by ID first, then fetch just
+        # the visible page. That keeps totals and offsets exact (the trap
+        # `_apply_client_side_filters` documents).
+        if len(query.genres) > 1 or query.audio_langs or query.min_critic is not None:
             return await self._search_scanned(query)
         user = self._require_user()
         params = _search_params(query)
@@ -328,7 +331,10 @@ class JellyfinClient:
             f"/Items/{quote(item_id)}/Similar",
             params={"UserId": user, "Limit": limit, "Fields": _MOVIE_FIELDS},
         )
-        return [_to_item(raw) for raw in (payload or {}).get("Items") or []]
+        items = [_to_item(raw) for raw in (payload or {}).get("Items") or []]
+        # Jellyfin 10.11 hands back more than the Limit it was asked for
+        # (verified live) — the row must not grow with the server's mood.
+        return items[:limit]
 
     async def seasons(self, series_id: str) -> Sequence[MediaItem]:
         """Return the seasons of one series, in broadcast order (F2)."""
@@ -415,7 +421,7 @@ class JellyfinClient:
         return records
 
     async def facet_counts(self, query: MediaQuery) -> dict[str, Any]:
-        """Per filter value: the result count after tapping that chip (F17).
+        """Per filter value: the result count after tapping that chip.
 
         Toggle semantics throughout — an inactive value is counted as if
         added to the current selection, an active one as if removed — so the
@@ -486,11 +492,13 @@ class JellyfinClient:
                 langs.update(record.langs)
         except MediaBackendError:
             _LOGGER.debug("Tonspur-Scan fehlgeschlagen", exc_info=True)
+        # "und" is undetermined, "zxx" is no-linguistic-content (score-only
+        # tracks) — neither is a language anyone filters for.
         return Facets(
             genres=genres,
             ratings=ratings,
             audio_languages=tuple(
-                code for code, _ in langs.most_common() if code != "und"
+                code for code, _ in langs.most_common() if code not in ("und", "zxx")
             ),
             year_min=min(years) if years else None,
             year_max=max(years) if years else None,
@@ -634,8 +642,9 @@ def _search_params(  # noqa: C901, PLR0912 - a flat translation table, one branc
         params["PersonIds"] = "|".join(query.person_ids)
     if query.min_rating is not None:
         params["MinCommunityRating"] = query.min_rating
-    if query.min_critic is not None:
-        params["MinCriticRating"] = query.min_critic
+    # No MinCriticRating here: the server accepts it and ignores it, so a
+    # critics minimum never reaches this translation — `search()` routes it
+    # through the scan.
     # Countries have no server-side parameter; they are applied client-side
     # in `_apply_client_side_filters` rather than pretended away here.
     #
