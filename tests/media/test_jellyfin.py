@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -729,3 +729,320 @@ class TestFailureModes:
         session = FakeSession()
         await _client(session).refresh()
         assert session.requests[0]["path"] == "/Library/Refresh"
+
+
+def _scan_movie(
+    movie_id: str,
+    *,
+    genres: tuple[str, ...] = (),
+    langs: tuple[str, ...] = (),
+    width: int = 3840,
+    year: int = 2020,
+    official: str | None = "FSK-16",
+    community: float | None = 7.0,
+    critic: float | None = None,
+    watched: bool = False,
+    favorite: bool = False,
+    resume_ticks: int = 0,
+) -> dict[str, Any]:
+    """One catalogue entry, shaped like the scan sees it."""
+    return {
+        "Id": movie_id,
+        "Name": movie_id,
+        "Type": "Movie",
+        "ProductionYear": year,
+        "Genres": list(genres),
+        "OfficialRating": official,
+        "CommunityRating": community,
+        "CriticRating": critic,
+        "UserData": {
+            "Played": watched,
+            "IsFavorite": favorite,
+            "PlaybackPositionTicks": resume_ticks,
+        },
+        "MediaStreams": [
+            {"Type": "Video", "Width": width},
+            *({"Type": "Audio", "Language": lang} for lang in langs),
+        ],
+    }
+
+
+class TestScanSearch:
+    """Multi-genre AND and audio languages go through the catalogue scan."""
+
+    ITEMS: ClassVar[list[dict[str, Any]]] = [
+        _scan_movie("a", genres=("Action",), langs=("ger", "eng")),
+        _scan_movie("b", genres=("Action", "Crime"), langs=("eng",)),
+        _scan_movie("c", genres=("Crime",), langs=("deu",)),
+    ]
+
+    def _session(self) -> FakeSession:
+        return FakeSession(
+            {"/Users/user-1/Items": {"Items": self.ITEMS, "TotalRecordCount": 3}}
+        )
+
+    async def test_single_genre_stays_server_side(self):
+        session = self._session()
+        await _client(session).search(MediaQuery(genres=("Action",)))
+        assert len(session.requests) == 1
+        assert session.requests[0]["params"]["Genres"] == "Action"
+
+    async def test_multiple_genres_narrow_with_and(self):
+        """Stacked genre chips mean "both", not Jellyfin's "either"."""
+        session = self._session()
+
+        page = await _client(session).search(MediaQuery(genres=("Action", "Crime")))
+
+        assert page.total == 1
+        # The scan itself must not pre-filter genres…
+        assert "Genres" not in session.requests[0]["params"]
+        # …the visible page is fetched by ID afterwards.
+        assert session.requests[1]["params"]["Ids"] == "b"
+
+    async def test_audio_language_filter_matches_any_selected_track(self):
+        session = self._session()
+
+        page = await _client(session).search(MediaQuery(audio_langs=("ger",)))
+
+        # "deu" folds onto "ger", so both German-tracked titles qualify.
+        assert page.total == 2
+        assert session.requests[1]["params"]["Ids"] == "a,c"
+
+    async def test_scan_pagination_reports_exact_totals(self):
+        session = FakeSession(
+            {
+                "/Users/user-1/Items": {
+                    "Items": [
+                        _scan_movie(f"m{i}", genres=("Action", "Crime"))
+                        for i in range(5)
+                    ],
+                    "TotalRecordCount": 5,
+                }
+            }
+        )
+
+        page = await _client(session).search(
+            MediaQuery(genres=("Action", "Crime"), limit=2, offset=2)
+        )
+
+        assert page.total == 5
+        assert page.offset == 2
+        assert page.has_more is True
+        assert session.requests[1]["params"]["Ids"] == "m2,m3"
+
+    async def test_an_empty_page_needs_no_second_request(self):
+        session = self._session()
+        page = await _client(session).search(
+            MediaQuery(genres=("Action", "Crime"), offset=10)
+        )
+        assert page.total == 1
+        assert page.items == ()
+        assert len(session.requests) == 1
+
+
+class TestNewServerFilters:
+    async def test_person_filter_is_server_side(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(person_ids=("p1", "p2")))
+        assert session.requests[0]["params"]["PersonIds"] == "p1|p2"
+
+    async def test_min_ratings_reach_the_server(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(min_rating=7.0, min_critic=80.0))
+        params = session.requests[0]["params"]
+        assert params["MinCommunityRating"] == "7.0"
+        assert params["MinCriticRating"] == "80.0"
+
+
+class TestDetailExtras:
+    async def test_critic_rating_is_mapped(self):
+        movie = dict(MOVIE, CriticRating=93)
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [movie], "TotalRecordCount": 1}}
+        )
+        page = await _client(session).search(MediaQuery())
+        assert page.items[0].critic_rating == 93
+        assert page.items[0].as_dict()["criticRating"] == 93
+
+    async def test_people_arrive_with_the_detail_only(self):
+        movie = dict(
+            MOVIE,
+            People=[
+                {
+                    "Id": "p1",
+                    "Name": "Mary Elizabeth Winstead",
+                    "Type": "Actor",
+                    "Role": "Michelle",
+                    "PrimaryImageTag": "t1",
+                },
+                {"Id": "p2", "Name": "Dan Trachtenberg", "Type": "Director"},
+                {"Name": "Ohne Id — wird verworfen", "Type": "Writer"},
+            ],
+        )
+        session = FakeSession({"/Users/user-1/Items/abc123": movie})
+
+        item = await _client(session).item("abc123")
+
+        assert "People" in session.requests[0]["params"]["Fields"]
+        assert [p.name for p in item.people] == [
+            "Mary Elizabeth Winstead",
+            "Dan Trachtenberg",
+        ]
+        first = item.as_dict()["people"][0]
+        assert first == {
+            "id": "p1",
+            "name": "Mary Elizabeth Winstead",
+            "type": "Actor",
+            "role": "Michelle",
+            "imageTag": "t1",
+        }
+
+    async def test_grid_searches_do_not_request_people(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery())
+        assert "People" not in session.requests[0]["params"]["Fields"]
+
+    async def test_similar_comes_from_the_similar_endpoint(self):
+        session = FakeSession(
+            {"/Items/abc123/Similar": {"Items": [MOVIE], "TotalRecordCount": 1}}
+        )
+
+        items = await _client(session).similar("abc123", limit=6)
+
+        request = session.requests[0]
+        assert request["path"] == "/Items/abc123/Similar"
+        assert request["params"]["UserId"] == "user-1"
+        assert request["params"]["Limit"] == "6"
+        assert items[0].title == "10 Cloverfield Lane"
+
+
+class TestFacetCounts:
+    ITEMS: ClassVar[list[dict[str, Any]]] = [
+        _scan_movie("a", genres=("Action",), official="FSK-16", langs=("eng",)),
+        _scan_movie("b", genres=("Action", "Crime"), official="FSK-18", langs=("ger",)),
+        _scan_movie("c", genres=("Crime",), official="FSK-16", langs=("ger",)),
+    ]
+
+    def _session(self) -> FakeSession:
+        return FakeSession(
+            {"/Users/user-1/Items": {"Items": self.ITEMS, "TotalRecordCount": 3}}
+        )
+
+    async def test_counts_preview_the_toggle(self):
+        """The user's example: with Action on, Crime shows the intersection."""
+        counts = await _client(self._session()).facet_counts(
+            MediaQuery(genres=("Action",))
+        )
+
+        assert counts["total"] == 2
+        assert counts["genres"]["Crime"] == 1  # Action AND Crime
+        assert counts["genres"]["Action"] == 3  # tapping Action off again
+
+    async def test_or_groups_widen(self):
+        """Age ratings stay OR — adding one grows the result."""
+        counts = await _client(self._session()).facet_counts(
+            MediaQuery(ratings=("FSK-16",))
+        )
+        assert counts["total"] == 2
+        assert counts["ratings"]["FSK-18"] == 3
+        assert counts["ratings"]["FSK-16"] == 3  # toggled off: no rating filter
+
+    async def test_tag_counts_respect_exclusivity(self):
+        session = FakeSession(
+            {
+                "/Users/user-1/Items": {
+                    "Items": [
+                        _scan_movie("uhd", width=3840),
+                        _scan_movie("hd", width=1920),
+                    ],
+                    "TotalRecordCount": 2,
+                }
+            }
+        )
+
+        counts = await _client(session).facet_counts(MediaQuery(only_hd=True))
+
+        # Tapping 4K while HD is active swaps the tier instead of demanding both.
+        assert counts["tags"]["only_4k"] == 1
+        assert counts["tags"]["only_hd"] == 2  # toggled off
+
+    async def test_language_counts_fold_synonyms(self):
+        session = FakeSession(
+            {
+                "/Users/user-1/Items": {
+                    "Items": [
+                        _scan_movie("x", langs=("deu",)),
+                        _scan_movie("y", langs=("ger", "eng")),
+                    ],
+                    "TotalRecordCount": 2,
+                }
+            }
+        )
+        counts = await _client(session).facet_counts(MediaQuery())
+        assert counts["audioLangs"]["ger"] == 2
+        assert "deu" not in counts["audioLangs"]
+
+    async def test_the_scan_is_cached_between_counts(self):
+        session = self._session()
+        client = _client(session)
+
+        await client.facet_counts(MediaQuery(genres=("Action",)))
+        await client.facet_counts(MediaQuery(genres=("Action", "Crime")))
+
+        assert len(session.requests) == 1
+
+    async def test_refresh_drops_the_scan_cache(self):
+        session = self._session()
+        client = _client(session)
+
+        await client.facet_counts(MediaQuery())
+        await client.refresh()
+        await client.facet_counts(MediaQuery())
+
+        scans = [r for r in session.requests if r["path"] == "/Users/user-1/Items"]
+        assert len(scans) == 2
+
+
+class TestFacetLanguages:
+    async def test_facets_carry_audio_languages_by_frequency(self):
+        session = FakeSession(
+            {
+                "/Items/Filters": {
+                    "Genres": ["Drama"],
+                    "OfficialRatings": ["FSK-16"],
+                    "Years": [2001, 2020],
+                },
+                "/Users/user-1/Items": {
+                    "Items": [
+                        _scan_movie("x", langs=("ger", "eng")),
+                        _scan_movie("y", langs=("ger",)),
+                        _scan_movie("z", langs=("und",)),
+                    ],
+                    "TotalRecordCount": 3,
+                },
+            }
+        )
+
+        facets = await _client(session).facets()
+
+        assert facets.audio_languages == ("ger", "eng")
+
+    async def test_a_failing_scan_does_not_break_the_facets(self):
+        class FlakySession(FakeSession):
+            async def request(self, method, url, **kwargs):
+                if "/Users/user-1/Items" in url:
+                    return FakeResponse(500, {})
+                return await super().request(method, url, **kwargs)
+
+        facets = await _client(
+            FlakySession({"/Items/Filters": {"Genres": ["Drama", "Action"]}})
+        ).facets()
+
+        assert facets.genres == ("Action", "Drama")
+        assert facets.audio_languages == ()

@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.5.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -103,6 +103,10 @@ export const helpers = {
       filters.genres.length +
       filters.countries.length +
       (filters.ratings || []).length +
+      (filters.people || []).length +
+      (filters.audioLangs || []).length +
+      (filters.minRating != null ? 1 : 0) +
+      (filters.minCritic != null ? 1 : 0) +
       (yearActive ? 1 : 0)
     );
   },
@@ -115,7 +119,11 @@ export const helpers = {
       search: search || null,
       genres: filters.genres,
       countries: filters.countries,
+      person_ids: (filters.people || []).map((p) => p.id),
+      audio_langs: filters.audioLangs || [],
       ratings: filters.ratings || [],
+      min_rating: filters.minRating ?? null,
+      min_critic: filters.minCritic ?? null,
       year_from: filters.yearFrom,
       year_to: filters.yearTo,
       only_4k: filters.tags.includes("4K"),
@@ -130,6 +138,22 @@ export const helpers = {
       sort_dir: sortDir,
       offset,
       limit,
+    };
+  },
+
+  /** A pristine filter set — the single source of that shape. */
+  emptyFilters() {
+    return {
+      tags: [],
+      genres: [],
+      countries: [],
+      ratings: [],
+      people: [],
+      audioLangs: [],
+      minRating: null,
+      minCritic: null,
+      yearFrom: null,
+      yearTo: null,
     };
   },
 
@@ -159,6 +183,79 @@ export const helpers = {
     ].find((group) => group.includes(tag));
     const cleared = exclusive ? tags.filter((t) => !exclusive.includes(t)) : tags.slice();
     return [...cleared, tag];
+  },
+
+  /** German display name for an ISO-639-2 audio-track code. */
+  langLabel(code) {
+    if (!code) return "—";
+    const names = {
+      ger: "Deutsch",
+      eng: "Englisch",
+      fre: "Französisch",
+      ita: "Italienisch",
+      spa: "Spanisch",
+      jpn: "Japanisch",
+      kor: "Koreanisch",
+      chi: "Chinesisch",
+      rus: "Russisch",
+      por: "Portugiesisch",
+      dut: "Niederländisch",
+      pol: "Polnisch",
+      swe: "Schwedisch",
+      dan: "Dänisch",
+      nor: "Norwegisch",
+      fin: "Finnisch",
+      cze: "Tschechisch",
+      tur: "Türkisch",
+      ara: "Arabisch",
+      heb: "Hebräisch",
+      hin: "Hindi",
+      tha: "Thailändisch",
+      hun: "Ungarisch",
+      ukr: "Ukrainisch",
+      vie: "Vietnamesisch",
+      rum: "Rumänisch",
+      gre: "Griechisch",
+      ice: "Isländisch",
+      per: "Persisch",
+      cat: "Katalanisch",
+      srp: "Serbisch",
+      hrv: "Kroatisch",
+      bul: "Bulgarisch",
+      slo: "Slowakisch",
+      slv: "Slowenisch",
+      est: "Estnisch",
+      lav: "Lettisch",
+      lit: "Litauisch",
+      ind: "Indonesisch",
+      may: "Malaiisch",
+      tam: "Tamil",
+      tel: "Telugu",
+      ben: "Bengalisch",
+      urd: "Urdu",
+      und: "Unbekannt",
+    };
+    return names[String(code).toLowerCase()] || String(code).toUpperCase();
+  },
+
+  /** "94 %" for a critics score, or null when there is none. */
+  criticLabel(critic) {
+    if (critic == null || Number.isNaN(Number(critic))) return null;
+    return `${Math.round(Number(critic))} %`;
+  },
+
+  /** German label for a crew credit; actors show their character instead. */
+  personRole(person) {
+    if (!person) return "";
+    const jobs = {
+      Director: "Regie",
+      Writer: "Drehbuch",
+      Producer: "Produktion",
+      Composer: "Musik",
+      GuestStar: "Gastauftritt",
+    };
+    if (person.type === "Actor") return person.role || "";
+    return jobs[person.type] || person.role || person.type || "";
   },
 
   /**
@@ -505,6 +602,46 @@ footer {
   background: linear-gradient(0deg, rgba(0,0,0,.65), transparent);
 }
 
+/* Detail sheet: community star and critics tomato in one row. */
+.scorerow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.score { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--kino-text2); }
+
+/* Cast & crew: round portraits that scroll sideways, like Jellyfin's row. */
+.personrow { display: flex; gap: 12px; overflow-x: auto; padding: 4px 0 6px; }
+.person { flex: 0 0 84px; min-width: 0; cursor: pointer; text-align: center; border: none; background: transparent; color: var(--kino-text); padding: 0; font-family: inherit; }
+.personart { position: relative; width: 72px; height: 72px; border-radius: 50%; margin: 0 auto; overflow: hidden; background: var(--kino-surface2); display: flex; align-items: center; justify-content: center; }
+.personart img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.personart .initials { font-size: 20px; font-weight: 800; color: var(--kino-text3); }
+.person .name { font-size: 11px; font-weight: 700; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person .role { font-size: 10px; color: var(--kino-text3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Filter sheet: collapsible groups with a live count on every chip (F17). */
+.grouphead {
+  width: 100%; display: flex; align-items: center; gap: 8px; border: none;
+  background: transparent; color: var(--kino-text); cursor: pointer;
+  padding: 10px 0; margin: 0; font-family: inherit; text-align: left;
+}
+.grouphead .label { margin: 0; flex: 1; }
+.groupbadge {
+  min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px;
+  background: var(--kino-gold); color: var(--kino-goldText);
+  font-size: 10px; font-weight: 800; display: flex; align-items: center;
+  justify-content: center; box-sizing: border-box;
+}
+.groupbadge:empty { display: none; }
+.grouphead .chev { color: var(--kino-text3); font-size: 11px; transition: transform .15s ease; }
+.grouphead[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.chipcount { font-weight: 600; opacity: .65; font-size: 11px; }
+.chipcount:empty { display: none; }
+.pill.emptying { opacity: .4; }
+
+/* The CTA stays reachable however long the sheet grows (F19). */
+.filtercta {
+  position: sticky; bottom: -24px; z-index: 2;
+  margin: 14px -20px -24px; padding: 12px 20px 20px;
+  background: linear-gradient(0deg, var(--kino-bg) 78%, transparent);
+}
+
 /* Detail sheet: synopsis and episode list (F2, F3). */
 .overview { font-size: 13px; color: var(--kino-text2); line-height: 1.55; margin: 0; }
 .overview.clamped {
@@ -531,11 +668,21 @@ footer {
 /* Desktop scrim behind a centered sheet — phone keeps the full-bleed sheet. */
 .scrim { display: none; }
 
+/* Tile sizes (FR-71b): on a phone, "Klein" fits a third poster column. */
+.postergrid.size-s { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.postergrid.size-s .poster .title { font-size: 11px; }
+.postergrid.size-s .poster .meta { font-size: 10px; }
+.thumbgrid.size-s { gap: 10px; }
+
 /* Tablet: the same card, denser (FR-71). */
 @media (min-width: 640px) {
   .tilegrid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .postergrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .thumbgrid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .postergrid.size-s { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); }
+  .postergrid.size-l { grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); }
+  .thumbgrid.size-s { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .thumbgrid.size-l { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
   .body { padding: 0 24px 24px; }
   /* …and shrinks to its content once there is room (F10). */
   .sortsel { flex: 0 1 auto; width: auto; }
@@ -555,6 +702,10 @@ footer {
 @media (min-width: 900px) {
   .postergrid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .thumbgrid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .postergrid.size-s { grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); }
+  .postergrid.size-l { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .thumbgrid.size-s { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  .thumbgrid.size-l { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
   /* Detail sheet: poster left, text right (F10). */
   .detailcols { display: flex; gap: 20px; align-items: flex-start; }
   .detail-poster { display: block; flex: 0 0 200px; }
@@ -578,6 +729,21 @@ const VIEW_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="current
   <rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect>
   <rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg>`;
 
+// Rotten Tomatoes: the red tomato from 60 % up, the green splat below.
+const TOMATO_FRESH_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+  <circle cx="12" cy="14" r="9" fill="#fa320a"></circle>
+  <path d="M12 2c-2 .3-3.6 1.4-4.4 2.9 1.5-.2 3 .2 4.4 1 1.4-.8 2.9-1.2 4.4-1C15.6 3.4 14 2.3 12 2z" fill="#0ac855"></path></svg>`;
+const TOMATO_ROTTEN_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+  <path fill="#0ac855" d="M12 3l1.8 3.6 3.9-1.9-.9 3.9 4.7 1-3.7 2.7 2.8 3.9-4.7-1 .1 4.8-3-3.1-3 3.1.1-4.8-4.7 1 2.8-3.9L4.5 9.6l4.7-1-.9-3.9 3.9 1.9L12 3z"></path></svg>`;
+
+/** The critics badge for one item, or "" when no score is on file. */
+function criticBadge(item) {
+  const label = helpers.criticLabel(item && item.criticRating);
+  if (!label) return "";
+  const icon = item.criticRating >= 60 ? TOMATO_FRESH_ICON : TOMATO_ROTTEN_ICON;
+  return `<span class="score" title="Kritikerwertung (Rotten Tomatoes)">${icon}${label}</span>`;
+}
+
 const SORT_OPTIONS = [
   ["added", "Neu hinzugefügt"],
   ["title", "Titel"],
@@ -591,6 +757,22 @@ const SORT_OPTIONS = [
 
 const TAGS = ["4K", "HD", "SD", "3D", "Weitersehen", "Nicht gesehen", "Gesehen", "Favoriten"];
 
+// Chip label -> the flag name `kino/library/facet_counts` keys its tag counts by.
+const TAG_FLAGS = {
+  "4K": "only_4k",
+  HD: "only_hd",
+  SD: "only_sd",
+  "3D": "only_3d",
+  Weitersehen: "only_resumable",
+  "Nicht gesehen": "only_unwatched",
+  Gesehen: "only_watched",
+  Favoriten: "only_favorites",
+};
+
+// Minimum-rating chips: community is 0–10, critics 0–100 (Rotten Tomatoes).
+const MIN_RATING_STEPS = [6, 7, 8, 9];
+const MIN_CRITIC_STEPS = [60, 70, 80, 90];
+
 // Jellyfin's six grid layouts, with Jellyfin's own German labels.
 const VIEW_MODES = [
   ["poster", "Poster"],
@@ -602,22 +784,55 @@ const VIEW_MODES = [
 ];
 
 const VIEW_MODE_STORAGE_KEY = "kino-card-view-mode";
+const GRID_SIZE_STORAGE_KEY = "kino-card-grid-size";
+const FILTER_COLLAPSE_STORAGE_KEY = "kino-card-filter-collapsed";
+
+// Tile sizes for the poster/thumb walls (FR-71b): "Mittel" is the classic
+// look, "Klein" fits one more column on a phone, "Groß" spreads out.
+const GRID_SIZES = [
+  ["s", "Klein"],
+  ["m", "Mittel"],
+  ["l", "Groß"],
+];
 
 /** localStorage is absent under the test runner and may be blocked in kiosks. */
-function readStoredViewMode() {
+function readStored(key, fallback, valid = null) {
   try {
-    const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-    return VIEW_MODES.some(([key]) => key === stored) ? stored : "poster";
+    const stored = localStorage.getItem(key);
+    if (stored == null) return fallback;
+    return valid && !valid(stored) ? fallback : stored;
   } catch (err) {
-    return "poster";
+    return fallback;
   }
 }
 
-function storeViewMode(mode) {
+function store(key, value) {
   try {
-    localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+    localStorage.setItem(key, value);
   } catch (err) {
-    /* best effort — the mode still applies for this session */
+    /* best effort — the setting still applies for this session */
+  }
+}
+
+function readStoredViewMode() {
+  return readStored(VIEW_MODE_STORAGE_KEY, "poster", (v) =>
+    VIEW_MODES.some(([key]) => key === v)
+  );
+}
+
+function readStoredGridSize() {
+  return readStored(GRID_SIZE_STORAGE_KEY, "m", (v) =>
+    GRID_SIZES.some(([key]) => key === v)
+  );
+}
+
+/** Which filter groups the user keeps folded, remembered across sessions. */
+function readStoredCollapse() {
+  try {
+    const parsed = JSON.parse(readStored(FILTER_COLLAPSE_STORAGE_KEY, "{}"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (err) {
+    return {};
   }
 }
 
@@ -658,13 +873,16 @@ class KinoCard extends CardBase {
       sort: "added",
       sortDir: null,
       viewMode: readStoredViewMode(),
-      filters: { tags: [], genres: [], countries: [], ratings: [], yearFrom: null, yearTo: null },
+      gridSize: readStoredGridSize(),
+      filters: helpers.emptyFilters(),
       filterSheet: false,
+      filterCollapsed: readStoredCollapse(),
       detailId: null,
       detail: null,
       seasons: null,
       seasonId: null,
       episodes: null,
+      similar: null,
       overviewOpen: false,
       playingOpen: false,
       powerConfirm: false,
@@ -682,11 +900,20 @@ class KinoCard extends CardBase {
     this._resume = [];
     this._recent = [];
     this._homeRowsAt = 0;
-    this._facets = { genres: [], countries: [], ratings: [], yearMin: null, yearMax: null };
+    this._facets = {
+      genres: [],
+      countries: [],
+      ratings: [],
+      audioLanguages: [],
+      yearMin: null,
+      yearMax: null,
+    };
     this._searchTimer = null;
     // The filter sheet's CTA count, kept live while filters change (F4).
     this._filterPreview = null;
     this._previewTimer = null;
+    // Per-value result counts for the filter sheet's chips (F17).
+    this._facetCounts = null;
   }
 
   static getStubConfig() {
@@ -807,11 +1034,11 @@ class KinoCard extends CardBase {
   }
 
   /**
-   * Refresh the filter sheet's CTA count (F4).
+   * Refresh the filter sheet's CTA count and the per-chip counts (F4, F17).
    *
-   * The one number on the sheet used to be the *old* total until the sheet
-   * closed — stale precisely when it mattered. A debounced count-only query
-   * (limit 1, read the total) keeps it honest while chips are toggled.
+   * The results are written into the open sheet's DOM directly — a full
+   * re-render here used to land mid-scroll, replace the markup under the
+   * finger and snap the sheet back to its recorded position.
    */
   _previewFilterCount() {
     if (!this._view.filterSheet) return;
@@ -826,14 +1053,84 @@ class KinoCard extends CardBase {
         1,
         this._view.sortDir
       );
-      try {
-        const page = await this._ws(message);
-        this._filterPreview = page.total;
-      } catch (err) {
-        this._filterPreview = null;
-      }
-      if (this._view.filterSheet) this._render();
+      const [page, counts] = await Promise.all([
+        this._ws(message).catch(() => null),
+        this._ws({ ...message, type: "kino/library/facet_counts" }).catch(() => null),
+      ]);
+      this._filterPreview = page ? page.total : null;
+      if (counts) this._facetCounts = counts;
+      if (this._view.filterSheet) this._patchFilterSheet();
     }, 250);
+  }
+
+  /** The count one chip should wear, or null while nothing is known yet. */
+  _facetCount(kind, key) {
+    const counts = this._facetCounts;
+    if (!counts) return null;
+    const group = {
+      tag: counts.tags,
+      genre: counts.genres,
+      rating: counts.ratings,
+      lang: counts.audioLangs,
+    }[kind];
+    if (!group) return null;
+    const value = group[kind === "tag" ? TAG_FLAGS[key] : key];
+    return typeof value === "number" ? value : null;
+  }
+
+  /**
+   * Write the fresh preview into the open filter sheet without rebuilding it.
+   *
+   * Chip counts, dimming of chips that would empty the grid, the group
+   * headers' active badges and the CTA label all update in place, so an
+   * ongoing scroll is never interrupted.
+   */
+  _patchFilterSheet() {
+    const sheet =
+      this._container &&
+      this._container.querySelector('.sheet[data-sheet="filter"]');
+    if (!sheet) return;
+    for (const chip of sheet.querySelectorAll("[data-count-kind]")) {
+      const count = this._facetCount(chip.dataset.countKind, chip.dataset.key);
+      const span = chip.querySelector(".chipcount");
+      if (span) span.textContent = count == null ? "" : count;
+      chip.classList.toggle(
+        "emptying",
+        count === 0 && chip.getAttribute("aria-pressed") !== "true"
+      );
+    }
+    const cta = sheet.querySelector("[data-role='filter-cta']");
+    if (cta) {
+      cta.textContent = `${this._filterPreview ?? this._library.total} Titel anzeigen`;
+    }
+    for (const head of sheet.querySelectorAll("[data-group]")) {
+      const badge = head.querySelector(".groupbadge");
+      if (badge) {
+        const active = this._activeInGroup(head.dataset.group);
+        badge.textContent = active ? String(active) : "";
+      }
+    }
+  }
+
+  /** How many selections one filter group currently holds. */
+  _activeInGroup(group) {
+    const f = this._view.filters;
+    switch (group) {
+      case "tags":
+        return f.tags.length;
+      case "genres":
+        return f.genres.length;
+      case "ratings":
+        return (f.ratings || []).length;
+      case "langs":
+        return (f.audioLangs || []).length;
+      case "score":
+        return (f.minRating != null ? 1 : 0) + (f.minCritic != null ? 1 : 0);
+      case "year":
+        return f.yearFrom != null || f.yearTo != null ? 1 : 0;
+      default:
+        return 0;
+    }
   }
 
   /* -- data ---------------------------------------------------------- */
@@ -914,6 +1211,10 @@ class KinoCard extends CardBase {
   _onScroll(event) {
     if (this._view.main !== "library" || !this._library.hasMore) return;
     const el = event.target;
+    // The capture listener hears every scroll in the card — including an
+    // open sheet's. Paging in more titles mid-scroll there rebuilt the DOM
+    // under the finger: the filter sheet stuttered and snapped back.
+    if (!el.classList || !el.classList.contains("scroller")) return;
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) {
       this._loadLibrary(true);
     }
@@ -956,6 +1257,35 @@ class KinoCard extends CardBase {
       this._actionError = err.message;
     }
     this._render();
+  }
+
+  /** Fetch the detail sheet's "Mehr wie dieser Titel" row (F18). */
+  async _loadSimilar(itemId) {
+    try {
+      const result = await this._ws({
+        type: "kino/library/similar",
+        item_id: itemId,
+        limit: 12,
+      });
+      // The person may already be two sheets further — only the still-open
+      // detail gets the row.
+      if (this._view.detailId !== itemId) return;
+      this._view.similar = result.items || [];
+    } catch (err) {
+      this._view.similar = [];
+    }
+    this._render();
+  }
+
+  /** Forget everything the open detail sheet loaded. */
+  _closeDetail() {
+    const view = this._view;
+    view.detailId = null;
+    view.detail = null;
+    view.seasons = null;
+    view.seasonId = null;
+    view.episodes = null;
+    view.similar = null;
   }
 
   async _loadResume() {
@@ -1594,12 +1924,13 @@ class KinoCard extends CardBase {
 
   _renderItems(items) {
     const mode = this._view.viewMode;
+    const size = ` size-${this._view.gridSize || "m"}`;
     const tiles = items.map((t) => this._tile(t, mode)).join("");
     if (mode === "list") return `<div class="listrows">${tiles}</div>`;
     if (mode === "banner") return `<div class="bannerlist">${tiles}</div>`;
     if (mode === "thumb" || mode === "thumbCard")
-      return `<div class="thumbgrid">${tiles}</div>`;
-    return `<div class="postergrid">${tiles}</div>`;
+      return `<div class="thumbgrid${size}">${tiles}</div>`;
+    return `<div class="postergrid${size}">${tiles}</div>`;
   }
 
   _renderLibrary() {
@@ -1608,16 +1939,24 @@ class KinoCard extends CardBase {
     const count = helpers.activeFilterCount(filters);
     const yearLabel = helpers.yearRangeLabel(filters.yearFrom, filters.yearTo);
     const chips = [
-      ...filters.tags.map((t) => ["tag", t]),
-      ...filters.genres.map((g) => ["genre", g]),
-      ...(filters.ratings || []).map((r) => ["rating", r]),
-      ...filters.countries.map((c) => ["country", c]),
-      ...(yearLabel ? [["year", yearLabel]] : []),
+      ...filters.tags.map((t) => ["tag", t, t]),
+      ...filters.genres.map((g) => ["genre", g, g]),
+      ...(filters.ratings || []).map((r) => ["rating", r, r]),
+      ...(filters.people || []).map((p) => ["person", p.id, p.name]),
+      ...(filters.audioLangs || []).map((l) => ["lang", l, helpers.langLabel(l)]),
+      ...(filters.minRating != null
+        ? [["minRating", String(filters.minRating), `★ ${filters.minRating}+`]]
+        : []),
+      ...(filters.minCritic != null
+        ? [["minCritic", String(filters.minCritic), `Kritiker ${filters.minCritic} %+`]]
+        : []),
+      ...filters.countries.map((c) => ["country", c, c]),
+      ...(yearLabel ? [["year", yearLabel, yearLabel]] : []),
     ]
       .map(
-        ([kind, value]) =>
+        ([kind, value, label]) =>
           `<button class="pill" style="height:30px;font-size:11px;background:transparent;border:1px solid var(--kino-border)"
-             data-act="remove-filter" data-kind="${kind}" data-key="${this._esc(value)}">${this._esc(value)} ✕</button>`
+             data-act="remove-filter" data-kind="${kind}" data-key="${this._esc(value)}">${this._esc(label)} ✕</button>`
       )
       .join("");
 
@@ -1693,61 +2032,147 @@ class KinoCard extends CardBase {
       ${grid}`;
   }
 
+  /** One collapsible filter group: header with active badge, foldable body. */
+  _filterGroup(groupKey, title, body) {
+    if (!body) return "";
+    const collapsed = !!(this._view.filterCollapsed || {})[groupKey];
+    const active = this._activeInGroup(groupKey);
+    return `<div>
+      <button class="grouphead" data-act="toggle-group" data-key="${groupKey}"
+        data-group="${groupKey}" aria-expanded="${!collapsed}">
+        <div class="label" style="margin:0">${title}</div>
+        <span class="groupbadge">${active || ""}</span>
+        <span class="chev">▼</span>
+      </button>
+      <div data-group-body="${groupKey}"${collapsed ? " hidden" : ""}>${body}</div>
+    </div>`;
+  }
+
   _renderFilterSheet() {
     const f = this._view.filters;
+    const chip = (kind, value, label = value, selected = false) => {
+      const count = this._facetCount(kind, value);
+      return `<button class="pill${count === 0 && !selected ? " emptying" : ""}"
+        data-act="toggle-filter" data-kind="${kind}" data-key="${this._esc(value)}"
+        data-count-kind="${kind}" aria-pressed="${selected}">${this._esc(label)}
+        <span class="chipcount">${count == null ? "" : count}</span></button>`;
+    };
     // A facet group with one lone value cannot narrow anything (F12) — but
     // it must not disappear while its only value is still selected.
-    const group = (title, values, kind, selected) =>
+    const multi = (values, kind, selected, labelFor = (v) => v) =>
       values.length > 1 || selected.length
-        ? `<div class="label">${title}</div>
-           <div class="chipwrap">
-             ${values
-               .map(
-                 (v) =>
-                   `<button class="pill" data-act="toggle-filter" data-kind="${kind}" data-key="${this._esc(v)}"
-                      aria-pressed="${selected.includes(v)}">${this._esc(v)}</button>`
-               )
-               .join("")}
-           </div>`
+        ? `<div class="chipwrap">${values
+            .map((v) => chip(kind, v, labelFor(v), selected.includes(v)))
+            .join("")}</div>`
         : "";
+
+    const scoreChips = (act, steps, current, labelFor) =>
+      `<div class="chipwrap">${steps
+        .map(
+          (step) =>
+            `<button class="pill" data-act="${act}" data-key="${step}"
+               aria-pressed="${current === step}">${labelFor(step)}</button>`
+        )
+        .join("")}</div>`;
+    const scoreBody = `
+      <div style="font-size:11px;color:var(--kino-text3);font-weight:700;margin-bottom:6px">Community</div>
+      ${scoreChips("min-rating", MIN_RATING_STEPS, f.minRating, (s) => `★ ${s}+`)}
+      <div style="font-size:11px;color:var(--kino-text3);font-weight:700;margin:2px 0 6px">Kritiker (Rotten Tomatoes)</div>
+      ${scoreChips("min-critic", MIN_CRITIC_STEPS, f.minCritic, (s) => `${s} %+`)}`;
+
     const effectiveDir = this._view.sortDir || helpers.defaultSortDir(this._view.sort);
-    return `<div class="sheet" data-sheet="filter" style="z-index:35">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
-        <a class="link" data-act="close-filters">‹ Zurück</a>
-        <h2 style="flex:1">Filter</h2>
-        <a class="link" style="color:var(--kino-text2)" data-act="reset-filters">Zurücksetzen</a>
-      </div>
-      ${group("Format &amp; Status", TAGS, "tag", f.tags)}
-      ${group("Genre", this._facets.genres || [], "genre", f.genres)}
-      ${group("Altersfreigabe", this._facets.ratings || [], "rating", f.ratings || [])}
-      ${group("Land", this._facets.countries || [], "country", f.countries)}
-      ${this._renderYearRange()}
-      <div class="label">Sortierung</div>
+    const sortBody = `
       <select data-field="sort" style="width:100%;margin-bottom:10px">
         ${SORT_OPTIONS.map(
           ([value, label]) =>
             `<option value="${value}"${this._view.sort === value ? " selected" : ""}>${label}</option>`
         ).join("")}
       </select>
-      <div class="row" style="margin-bottom:20px">
+      <div class="row" style="margin-bottom:14px">
         <button class="pill" style="flex:1;height:34px" data-act="sort-dir-set" data-key="asc"
           aria-pressed="${effectiveDir === "asc"}">Aufsteigend</button>
         <button class="pill" style="flex:1;height:34px" data-act="sort-dir-set" data-key="desc"
           aria-pressed="${effectiveDir === "desc"}">Absteigend</button>
-      </div>
-      <div class="label">Ansicht</div>
-      <div class="chipwrap">
+      </div>`;
+
+    const viewBody = `
+      <div class="chipwrap" style="margin-bottom:10px">
         ${VIEW_MODES.map(
           ([key, label]) =>
             `<button class="pill" data-act="view-mode-set" data-key="${key}"
                aria-pressed="${this._view.viewMode === key}">${label}</button>`
         ).join("")}
       </div>
-      <button class="primary" data-act="close-filters">${this._filterPreview ?? this._library.total} Titel anzeigen</button>
+      <div style="font-size:11px;color:var(--kino-text3);font-weight:700;margin-bottom:6px">Kachelgröße</div>
+      <div class="chipwrap">
+        ${GRID_SIZES.map(
+          ([key, label]) =>
+            `<button class="pill" data-act="grid-size-set" data-key="${key}"
+               aria-pressed="${this._view.gridSize === key}">${label}</button>`
+        ).join("")}
+      </div>`;
+
+    // Series carry no audio streams of their own, so the language group
+    // would only ever say "0" there — it stays a movie filter.
+    const langs =
+      this._view.category === "shows" ? [] : this._facets.audioLanguages || [];
+
+    return `<div class="sheet" data-sheet="filter" style="z-index:35">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <a class="link" data-act="close-filters">‹ Zurück</a>
+        <h2 style="flex:1">Filter</h2>
+        <a class="link" style="color:var(--kino-text2)" data-act="reset-filters">Zurücksetzen</a>
+      </div>
+      ${this._filterGroup("tags", "Format &amp; Status", multi(TAGS, "tag", f.tags))}
+      ${this._filterGroup("genres", "Genre", multi(this._facets.genres || [], "genre", f.genres))}
+      ${this._filterGroup("ratings", "Altersfreigabe", multi(this._facets.ratings || [], "rating", f.ratings || []))}
+      ${this._filterGroup("langs", "Tonspur", multi(langs, "lang", f.audioLangs || [], (v) => helpers.langLabel(v)))}
+      ${this._filterGroup("score", "Bewertung", scoreBody)}
+      ${this._filterGroup("countries", "Land", multi(this._facets.countries || [], "country", f.countries))}
+      ${this._filterGroup("year", "Erscheinungsjahr", this._renderYearRange())}
+      ${this._filterGroup("sort", "Sortierung", sortBody)}
+      ${this._filterGroup("view", "Ansicht", viewBody)}
+      <div class="filtercta">
+        <button class="primary" data-role="filter-cta" data-act="close-filters">${this._filterPreview ?? this._library.total} Titel anzeigen</button>
+      </div>
     </div>`;
   }
 
-  /** The mockup's "Erscheinungsjahr … bis …" pair, bounded by the facets. */
+  /**
+   * Re-stamp every chip's pressed state from the filters, in place.
+   *
+   * The alternative — re-rendering the sheet — replaces the DOM under an
+   * ongoing scroll and makes it stutter and jump; this loop touches only
+   * attributes.
+   */
+  _syncFilterChips() {
+    const sheet =
+      this._container &&
+      this._container.querySelector('.sheet[data-sheet="filter"]');
+    if (!sheet) return;
+    const f = this._view.filters;
+    const selected = {
+      tag: f.tags,
+      genre: f.genres,
+      rating: f.ratings || [],
+      lang: f.audioLangs || [],
+      country: f.countries,
+    };
+    for (const el of sheet.querySelectorAll('[data-act="toggle-filter"]')) {
+      const pressed = (selected[el.dataset.kind] || []).includes(el.dataset.key);
+      el.setAttribute("aria-pressed", String(pressed));
+      if (pressed) el.classList.remove("emptying");
+    }
+    for (const el of sheet.querySelectorAll('[data-act="min-rating"]')) {
+      el.setAttribute("aria-pressed", String(Number(el.dataset.key) === f.minRating));
+    }
+    for (const el of sheet.querySelectorAll('[data-act="min-critic"]')) {
+      el.setAttribute("aria-pressed", String(Number(el.dataset.key) === f.minCritic));
+    }
+    this._patchFilterSheet();
+  }
+
+  /** The mockup's "… bis …" year pair, bounded by the facets. */
   _renderYearRange() {
     const f = this._view.filters;
     const maxYear = this._facets.yearMax || new Date().getFullYear();
@@ -1760,8 +2185,7 @@ class KinoCard extends CardBase {
         .map((y) => `<option value="${y}"${selected === y ? " selected" : ""}>${y}</option>`)
         .join("");
     return `
-      <div class="label">Erscheinungsjahr</div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
         <select data-field="year-from" style="flex:1">${options(f.yearFrom)}</select>
         <span style="color:var(--kino-text3);font-size:13px">bis</span>
         <select data-field="year-to" style="flex:1">${options(f.yearTo)}</select>
@@ -1810,8 +2234,15 @@ class KinoCard extends CardBase {
               : `<h2 style="margin:14px 0 4px;font-size:20px">${this._esc(item.title)}</h2>`
           }
           <div style="font-size:12px;color:var(--kino-text2)">${this._esc(
-            [helpers.metaLine(item), item.officialRating].filter(Boolean).join(" · ")
+            [
+              item.year,
+              item.runtime ? `${item.runtime} Min` : null,
+              item.officialRating,
+            ]
+              .filter(Boolean)
+              .join(" · ")
           )}</div>
+          ${this._renderScores(item)}
           ${
             item.videoFormat
               ? `<div style="font-size:11px;color:var(--kino-text3);font-family:ui-monospace,monospace;margin-top:8px">${this._esc(
@@ -1830,7 +2261,8 @@ class KinoCard extends CardBase {
               ? `<div class="chipwrap" style="margin:12px 0 0">${item.genres
                   .map(
                     (g) =>
-                      `<span class="pill" style="display:inline-flex;align-items:center;cursor:default">${this._esc(g)}</span>`
+                      `<button class="pill" style="display:inline-flex;align-items:center" data-act="genre-jump" data-key="${this._esc(g)}"
+                         title="Alle Titel im Genre ${this._esc(g)}">${this._esc(g)}</button>`
                   )
                   .join("")}</div>`
               : ""
@@ -1847,8 +2279,62 @@ class KinoCard extends CardBase {
                        : ""
                    }`
           }
+          ${this._renderPeople(item)}
+          ${this._renderSimilar()}
         </div>
       </div>
+    </div>`;
+  }
+
+  /** Community star and critics tomato, side by side (F20). */
+  _renderScores(item) {
+    const community = item.rating
+      ? `<span class="score" title="Community-Bewertung">
+           <span style="color:var(--kino-gold)">★</span>${Number(item.rating).toFixed(1)}
+         </span>`
+      : "";
+    const critic = criticBadge(item);
+    if (!community && !critic) return "";
+    return `<div class="scorerow" style="margin-top:8px">${community}${critic}</div>`;
+  }
+
+  /** Besetzung & Crew, Jellyfin-style: tap a face to browse that person (F21). */
+  _renderPeople(item) {
+    const people = item.people || [];
+    if (!people.length) return "";
+    const sig = this._kino.artworkSignature;
+    const cards = people
+      .map((p) => {
+        const initials = p.name
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((w) => w[0] || "")
+          .join("")
+          .toUpperCase();
+        const img = p.imageTag
+          ? `<img loading="lazy" src="${helpers.artworkUrl(p.id, "Primary", sig)}" alt="" onerror="this.remove()">`
+          : "";
+        return `<button class="person" data-act="person-jump" data-key="${this._esc(p.id)}"
+          data-name="${this._esc(p.name)}" title="Alle Titel mit ${this._esc(p.name)}">
+          <div class="personart"><span class="initials">${this._esc(initials)}</span>${img}</div>
+          <div class="name">${this._esc(p.name)}</div>
+          <div class="role">${this._esc(helpers.personRole(p))}</div>
+        </button>`;
+      })
+      .join("");
+    return `<div class="section" style="margin-top:22px">
+      <h3>Besetzung &amp; Crew</h3>
+      <div class="personrow hscroll">${cards}</div>
+    </div>`;
+  }
+
+  /** "Mehr wie dieser Titel" — Jellyfin's similar list, tap to drill on (F18). */
+  _renderSimilar() {
+    const similar = this._view.similar;
+    if (!similar || !similar.length) return "";
+    return `<div class="section" style="margin-top:22px">
+      <h3>Mehr wie dieser Titel</h3>
+      <div class="posterrow hscroll">${similar.map((t) => this._poster(t, false)).join("")}</div>
     </div>`;
   }
 
@@ -2207,6 +2693,8 @@ class KinoCard extends CardBase {
         view.filterSheet = true;
         this._filterPreview = null;
         this._render();
+        // Counts and the CTA total straight away, not first after a toggle.
+        this._previewFilterCount();
         break;
       case "close-filters":
         view.filterSheet = false;
@@ -2215,32 +2703,69 @@ class KinoCard extends CardBase {
         await this._loadLibrary();
         break;
       case "reset-filters":
-        view.filters = { tags: [], genres: [], countries: [], ratings: [], yearFrom: null, yearTo: null };
+        view.filters = helpers.emptyFilters();
         this._render();
         this._previewFilterCount();
         break;
+      case "toggle-group": {
+        // Fold in place — a re-render mid-scroll is exactly what made the
+        // sheet jump.
+        const collapsed = { ...view.filterCollapsed };
+        collapsed[key] = !collapsed[key];
+        view.filterCollapsed = collapsed;
+        store(FILTER_COLLAPSE_STORAGE_KEY, JSON.stringify(collapsed));
+        target.setAttribute("aria-expanded", String(!collapsed[key]));
+        const body = this._container.querySelector(`[data-group-body="${key}"]`);
+        if (body) body.hidden = !!collapsed[key];
+        break;
+      }
+      case "min-rating":
+      case "min-critic": {
+        const field = act === "min-rating" ? "minRating" : "minCritic";
+        const value = Number(key);
+        view.filters[field] = view.filters[field] === value ? null : value;
+        this._syncFilterChips();
+        this._previewFilterCount();
+        break;
+      }
       case "toggle-filter":
       case "remove-filter": {
+        const f = view.filters;
         if (kind === "year") {
-          view.filters.yearFrom = null;
-          view.filters.yearTo = null;
+          f.yearFrom = null;
+          f.yearTo = null;
+        } else if (kind === "person") {
+          f.people = (f.people || []).filter((p) => p.id !== key);
+        } else if (kind === "minRating") {
+          f.minRating = null;
+        } else if (kind === "minCritic") {
+          f.minCritic = null;
+        } else {
+          const bucket = {
+            tag: "tags",
+            genre: "genres",
+            country: "countries",
+            rating: "ratings",
+            lang: "audioLangs",
+          }[kind];
+          const list = f[bucket] || [];
+          if (act === "toggle-filter" && bucket === "tags") {
+            // Resolution tiers and watch states are mutually exclusive.
+            f.tags = helpers.toggleTag(list, key);
+          } else {
+            f[bucket] = list.includes(key)
+              ? list.filter((v) => v !== key)
+              : [...list, key];
+          }
+        }
+        if (act === "remove-filter") {
           this._render();
           await this._loadLibrary();
-          break;
-        }
-        const bucket = { tag: "tags", genre: "genres", country: "countries", rating: "ratings" }[kind];
-        const list = view.filters[bucket] || [];
-        if (act === "toggle-filter" && bucket === "tags") {
-          // Resolution tiers and watch states are mutually exclusive.
-          view.filters.tags = helpers.toggleTag(list, key);
         } else {
-          view.filters[bucket] = list.includes(key)
-            ? list.filter((v) => v !== key)
-            : [...list, key];
+          // Attribute-only updates keep an ongoing scroll alive.
+          this._syncFilterChips();
+          this._previewFilterCount();
         }
-        this._render();
-        if (act === "remove-filter") await this._loadLibrary();
-        else this._previewFilterCount();
         break;
       }
       case "sort-dir": {
@@ -2260,13 +2785,18 @@ class KinoCard extends CardBase {
       case "view-mode": {
         const idx = VIEW_MODES.findIndex(([k]) => k === view.viewMode);
         view.viewMode = VIEW_MODES[(idx + 1) % VIEW_MODES.length][0];
-        storeViewMode(view.viewMode);
+        store(VIEW_MODE_STORAGE_KEY, view.viewMode);
         this._render();
         break;
       }
       case "view-mode-set":
         view.viewMode = key;
-        storeViewMode(view.viewMode);
+        store(VIEW_MODE_STORAGE_KEY, view.viewMode);
+        this._render();
+        break;
+      case "grid-size-set":
+        view.gridSize = key;
+        store(GRID_SIZE_STORAGE_KEY, view.gridSize);
         this._render();
         break;
       case "toggle-favorite":
@@ -2281,8 +2811,11 @@ class KinoCard extends CardBase {
         view.seasons = null;
         view.seasonId = null;
         view.episodes = null;
+        view.similar = null;
         view.overviewOpen = false;
         this._render();
+        // Runs alongside the item fetch; it re-checks the open detail ID.
+        this._loadSimilar(key);
         try {
           view.detail = await this._ws({ type: "kino/library/item", item_id: key });
         } catch (err) {
@@ -2296,13 +2829,29 @@ class KinoCard extends CardBase {
         }
         break;
       case "close-detail":
-        view.detailId = null;
-        view.detail = null;
-        view.seasons = null;
-        view.seasonId = null;
-        view.episodes = null;
+        this._closeDetail();
         this._render();
         break;
+      case "genre-jump":
+      case "person-jump": {
+        // From the detail sheet straight into the library, with exactly this
+        // one filter active (F21).
+        const detail = view.detail;
+        const fromShow = !!detail && detail.kind !== "movie";
+        const filters = helpers.emptyFilters();
+        if (act === "genre-jump") filters.genres = [key];
+        else filters.people = [{ id: key, name: target.dataset.name || "?" }];
+        this._closeDetail();
+        view.main = "library";
+        view.category = fromShow ? "shows" : "movies";
+        view.query = "";
+        view.filters = filters;
+        this._filterPreview = null;
+        this._facetCounts = null;
+        this._render();
+        await this._loadLibrary();
+        break;
+      }
       case "toggle-overview":
         view.overviewOpen = !view.overviewOpen;
         this._render();
@@ -2405,12 +2954,19 @@ class KinoCard extends CardBase {
       // A direction chosen for one field must not silently invert another.
       this._view.sortDir = null;
       this._view.sort = event.target.value;
-      this._render();
-      this._loadLibrary();
+      if (this._view.filterSheet) {
+        // The grid is invisible behind the sheet — closing it reloads anyway.
+        this._render();
+        this._previewFilterCount();
+      } else {
+        this._render();
+        this._loadLibrary();
+      }
     } else if (field === "year-from" || field === "year-to") {
       const value = event.target.value ? Number(event.target.value) : null;
       this._view.filters[field === "year-from" ? "yearFrom" : "yearTo"] = value;
-      this._render();
+      // The select shows its own new value — only the badges and counts move.
+      this._syncFilterChips();
       this._previewFilterCount();
     } else if (field === "entity-select") {
       this._callService("select", "select_option", {

@@ -10,6 +10,7 @@ from .base import (
     MediaItem,
     MediaPage,
     MediaQuery,
+    Person,
     SortOrder,
 )
 from .jellyfin import JellyfinAuthError, JellyfinClient
@@ -24,5 +25,6 @@ __all__ = [
     "MediaItem",
     "MediaPage",
     "MediaQuery",
+    "Person",
     "SortOrder",
 ]

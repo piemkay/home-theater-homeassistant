@@ -912,3 +912,286 @@ describe("re-render signature", () => {
     assert.notEqual(signatureOf({}), signatureOf({ picture: "/other.jpg" }));
   });
 });
+
+describe("new filter buckets (0.5.0)", () => {
+  const empty = helpers.emptyFilters();
+
+  test("emptyFilters carries every bucket the sheet offers", () => {
+    assert.deepEqual(empty.tags, []);
+    assert.deepEqual(empty.people, []);
+    assert.deepEqual(empty.audioLangs, []);
+    assert.equal(empty.minRating, null);
+    assert.equal(empty.minCritic, null);
+  });
+
+  test("people, languages and minimum ratings count as active filters", () => {
+    assert.equal(
+      helpers.activeFilterCount({
+        ...empty,
+        people: [{ id: "p1", name: "Gene Hackman" }],
+        audioLangs: ["ger"],
+        minRating: 7,
+        minCritic: 80,
+      }),
+      4
+    );
+  });
+
+  test("queryFromFilters translates them into the WebSocket command", () => {
+    const msg = helpers.queryFromFilters(
+      {
+        ...empty,
+        people: [{ id: "p1", name: "Gene Hackman" }],
+        audioLangs: ["ger", "eng"],
+        minRating: 7,
+        minCritic: 80,
+      },
+      "movies",
+      "",
+      "added"
+    );
+    assert.deepEqual(msg.person_ids, ["p1"]);
+    assert.deepEqual(msg.audio_langs, ["ger", "eng"]);
+    assert.equal(msg.min_rating, 7);
+    assert.equal(msg.min_critic, 80);
+  });
+
+  test("absent buckets translate to neutral values", () => {
+    const legacy = { tags: [], genres: [], countries: [], yearFrom: null, yearTo: null };
+    const msg = helpers.queryFromFilters(legacy, "movies", "", "added");
+    assert.deepEqual(msg.person_ids, []);
+    assert.deepEqual(msg.audio_langs, []);
+    assert.equal(msg.min_rating, null);
+    assert.equal(msg.min_critic, null);
+  });
+});
+
+describe("langLabel", () => {
+  test("names the household languages in German", () => {
+    assert.equal(helpers.langLabel("ger"), "Deutsch");
+    assert.equal(helpers.langLabel("eng"), "Englisch");
+    assert.equal(helpers.langLabel("jpn"), "Japanisch");
+  });
+
+  test("an unknown code still says something", () => {
+    assert.equal(helpers.langLabel("xxx"), "XXX");
+    assert.equal(helpers.langLabel(null), "—");
+  });
+});
+
+describe("criticLabel", () => {
+  test("renders a rounded percentage", () => {
+    assert.equal(helpers.criticLabel(93), "93 %");
+    assert.equal(helpers.criticLabel(59.6), "60 %");
+  });
+
+  test("says nothing when no score is on file", () => {
+    assert.equal(helpers.criticLabel(null), null);
+    assert.equal(helpers.criticLabel(undefined), null);
+    assert.equal(helpers.criticLabel("keine"), null);
+  });
+});
+
+describe("personRole", () => {
+  test("actors show their character", () => {
+    assert.equal(helpers.personRole({ type: "Actor", role: "Michelle" }), "Michelle");
+    assert.equal(helpers.personRole({ type: "Actor" }), "");
+  });
+
+  test("crew shows a German job title", () => {
+    assert.equal(helpers.personRole({ type: "Director" }), "Regie");
+    assert.equal(helpers.personRole({ type: "Writer" }), "Drehbuch");
+    assert.equal(helpers.personRole({ type: "GuestStar" }), "Gastauftritt");
+  });
+
+  test("an unknown credit falls back to what Jellyfin sent", () => {
+    assert.equal(helpers.personRole({ type: "Grip", role: "Key Grip" }), "Key Grip");
+    assert.equal(helpers.personRole(null), "");
+  });
+});
+
+describe("collapsible filter sheet (0.5.0)", () => {
+  const sheetCard = (overrides = {}) => {
+    const c = Object.create(KinoCard.prototype);
+    c._view = {
+      sort: "added",
+      sortDir: null,
+      viewMode: "poster",
+      gridSize: "m",
+      category: "movies",
+      filters: helpers.emptyFilters(),
+      filterCollapsed: {},
+      ...overrides,
+    };
+    c._facets = {
+      genres: ["Action", "Crime"],
+      countries: [],
+      ratings: ["FSK-16", "FSK-18"],
+      audioLanguages: ["ger", "eng"],
+      yearMin: 1957,
+      yearMax: 2026,
+    };
+    c._library = { total: 42 };
+    return c;
+  };
+
+  test("every facet group folds and the CTA sticks", () => {
+    const html = sheetCard()._renderFilterSheet();
+    assert.match(html, /data-act="toggle-group" data-key="genres"/);
+    assert.match(html, /data-act="toggle-group" data-key="tags"/);
+    assert.match(html, /class="filtercta"/);
+    assert.match(html, /data-role="filter-cta"/);
+    assert.match(html, /42 Titel anzeigen/);
+  });
+
+  test("a collapsed group hides its body but keeps its badge", () => {
+    const c = sheetCard({
+      filterCollapsed: { genres: true },
+      filters: { ...helpers.emptyFilters(), genres: ["Action"] },
+    });
+    const html = c._renderFilterSheet();
+    assert.match(html, /data-group-body="genres" hidden/);
+    assert.match(html, /aria-expanded="false"/);
+    // The badge says one selection is folded away in there.
+    assert.match(html, /<span class="groupbadge">1<\/span>/);
+  });
+
+  test("chips wear the counts from the preview", () => {
+    const c = sheetCard();
+    c._facetCounts = {
+      total: 2,
+      genres: { Action: 3, Crime: 0 },
+      ratings: {},
+      audioLangs: { ger: 2 },
+      tags: { only_4k: 1 },
+    };
+    const html = c._renderFilterSheet();
+    assert.match(html, /Action\s*<span class="chipcount">3<\/span>/);
+    // A value that would empty the grid is dimmed, not hidden.
+    assert.match(html, /emptying[\s\S]{0,200}?data-kind="genre" data-key="Crime"/);
+    assert.match(html, /Deutsch\s*<span class="chipcount">2<\/span>/);
+  });
+
+  test("the audio-language group exists for movies only", () => {
+    assert.match(sheetCard()._renderFilterSheet(), /Tonspur/);
+    assert.doesNotMatch(
+      sheetCard({ category: "shows" })._renderFilterSheet(),
+      /Tonspur/
+    );
+  });
+
+  test("rating thresholds and tile sizes are offered", () => {
+    const html = sheetCard()._renderFilterSheet();
+    assert.match(html, /data-act="min-rating" data-key="7"/);
+    assert.match(html, /data-act="min-critic" data-key="80"/);
+    assert.match(html, /Kachelgröße/);
+    assert.match(html, /data-act="grid-size-set" data-key="s"/);
+  });
+});
+
+describe("grid size (FR-71b)", () => {
+  const item = { id: "abc", title: "Film", year: 2020 };
+
+  test("the chosen size classes the grid", () => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = { artworkSignature: "sig" };
+    c._view = { viewMode: "poster", gridSize: "s" };
+    assert.match(c._renderItems([item]), /postergrid size-s/);
+    c._view.gridSize = "l";
+    c._view.viewMode = "thumb";
+    assert.match(c._renderItems([item]), /thumbgrid size-l/);
+  });
+
+  test("an unset size falls back to the classic look", () => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = { artworkSignature: "sig" };
+    c._view = { viewMode: "poster" };
+    assert.match(c._renderItems([item]), /postergrid size-m/);
+  });
+});
+
+describe("detail sheet extras (0.5.0)", () => {
+  const detailCard = (detail, similar = null) => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = {
+      artworkSignature: "sig",
+      activity: "film",
+      targetActivity: null,
+      offActivity: "aus",
+      progress: null,
+      activities: [
+        { key: "film", name: "Film", media: true, controlClass: "media" },
+      ],
+    };
+    c._view = {
+      detailId: detail.id,
+      detail,
+      seasons: null,
+      seasonId: null,
+      episodes: null,
+      similar,
+      overviewOpen: false,
+    };
+    return c;
+  };
+  const movie = {
+    id: "m1",
+    kind: "movie",
+    title: "Heat",
+    year: 1995,
+    runtime: 170,
+    rating: 8.3,
+    criticRating: 89,
+    officialRating: "FSK-16",
+    genres: ["Crime", "Drama"],
+    playable: true,
+    people: [
+      { id: "p1", name: "Al Pacino", type: "Actor", role: "Vincent Hanna", imageTag: "t" },
+      { id: "p2", name: "Michael Mann", type: "Director", role: null, imageTag: null },
+    ],
+  };
+
+  test("genres are buttons that jump into the library", () => {
+    const html = detailCard(movie)._renderDetailSheet();
+    assert.match(html, /data-act="genre-jump" data-key="Crime"/);
+  });
+
+  test("the critics tomato appears next to the community star", () => {
+    const html = detailCard(movie)._renderDetailSheet();
+    assert.match(html, /89 %/);
+    assert.match(html, /★<\/span>8\.3/);
+  });
+
+  test("below 60 the tomato goes rotten", () => {
+    const fresh = detailCard(movie)._renderDetailSheet();
+    const rotten = detailCard({ ...movie, criticRating: 41 })._renderDetailSheet();
+    assert.match(fresh, /circle cx="12" cy="14"/);
+    assert.doesNotMatch(rotten, /circle cx="12" cy="14"/);
+    assert.match(rotten, /41 %/);
+  });
+
+  test("cast and crew are tappable person filters", () => {
+    const html = detailCard(movie)._renderDetailSheet();
+    assert.match(html, /Besetzung &amp; Crew/);
+    assert.match(html, /data-act="person-jump" data-key="p1"/);
+    assert.match(html, /data-name="Al Pacino"/);
+    assert.match(html, /Vincent Hanna/);
+    assert.match(html, /Regie/);
+    // No portrait on file: initials stand in.
+    assert.match(html, /<span class="initials">MM<\/span>/);
+  });
+
+  test("similar titles render as open-detail posters", () => {
+    const html = detailCard(movie, [
+      { id: "s1", title: "Collateral", year: 2004 },
+    ])._renderDetailSheet();
+    assert.match(html, /Mehr wie dieser Titel/);
+    assert.match(html, /data-act="open-detail" data-key="s1"/);
+  });
+
+  test("no people, no similar — no empty sections", () => {
+    const html = detailCard({ ...movie, people: [] }, [])._renderDetailSheet();
+    assert.doesNotMatch(html, /Besetzung/);
+    assert.doesNotMatch(html, /Mehr wie dieser Titel/);
+  });
+});

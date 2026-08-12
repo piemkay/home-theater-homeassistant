@@ -12,6 +12,7 @@ and cannot reach its commands either (FR-101).
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -59,10 +60,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     hass.data[f"{DOMAIN}_ws"] = True
     websocket_api.async_register_command(hass, ws_search)
     websocket_api.async_register_command(hass, ws_item)
+    websocket_api.async_register_command(hass, ws_similar)
     websocket_api.async_register_command(hass, ws_seasons)
     websocket_api.async_register_command(hass, ws_episodes)
     websocket_api.async_register_command(hass, ws_resume)
     websocket_api.async_register_command(hass, ws_facets)
+    websocket_api.async_register_command(hass, ws_facet_counts)
     websocket_api.async_register_command(hass, ws_favorite)
     websocket_api.async_register_command(hass, ws_refresh)
     websocket_api.async_register_command(hass, ws_state)
@@ -79,29 +82,66 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_durations_reset)
 
 
+#: One schema for everything that speaks in filters — search and the
+#: facet-count preview take exactly the same query.
+_QUERY_SCHEMA = {
+    vol.Optional("category", default="movies"): str,
+    vol.Optional("search"): vol.Any(str, None),
+    vol.Optional("genres", default=[]): [str],
+    vol.Optional("countries", default=[]): [str],
+    vol.Optional("person_ids", default=[]): [str],
+    vol.Optional("audio_langs", default=[]): [str],
+    vol.Optional("year_from"): vol.Any(int, None),
+    vol.Optional("year_to"): vol.Any(int, None),
+    vol.Optional("only_4k", default=False): bool,
+    vol.Optional("only_hd", default=False): bool,
+    vol.Optional("only_sd", default=False): bool,
+    vol.Optional("only_3d", default=False): bool,
+    vol.Optional("only_unwatched", default=False): bool,
+    vol.Optional("only_watched", default=False): bool,
+    vol.Optional("only_resumable", default=False): bool,
+    vol.Optional("only_favorites", default=False): bool,
+    vol.Optional("ratings", default=[]): [str],
+    vol.Optional("min_rating"): vol.Any(vol.Coerce(float), None),
+    vol.Optional("min_critic"): vol.Any(vol.Coerce(float), None),
+    vol.Optional("sort", default="added"): str,
+    vol.Optional("sort_dir"): vol.Any(vol.In(["asc", "desc"]), None),
+    vol.Optional("limit", default=60): vol.All(int, vol.Range(1, 200)),
+    vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
+}
+
+
+def _query_from_msg(msg: Mapping[str, Any]) -> MediaQuery:
+    """Translate one validated message into a :class:`MediaQuery`."""
+    return MediaQuery(
+        category=Category(msg["category"]),
+        search=msg.get("search") or None,
+        genres=tuple(msg["genres"]),
+        countries=tuple(msg["countries"]),
+        person_ids=tuple(msg["person_ids"]),
+        audio_langs=tuple(msg["audio_langs"]),
+        year_from=msg.get("year_from"),
+        year_to=msg.get("year_to"),
+        only_4k=msg["only_4k"],
+        only_hd=msg["only_hd"],
+        only_sd=msg["only_sd"],
+        only_3d=msg["only_3d"],
+        only_unwatched=msg["only_unwatched"],
+        only_watched=msg["only_watched"],
+        only_resumable=msg["only_resumable"],
+        only_favorites=msg["only_favorites"],
+        ratings=tuple(msg["ratings"]),
+        min_rating=msg.get("min_rating"),
+        min_critic=msg.get("min_critic"),
+        sort=SortOrder(msg["sort"]),
+        sort_dir=msg.get("sort_dir"),
+        limit=msg["limit"],
+        offset=msg["offset"],
+    )
+
+
 @websocket_api.websocket_command(
-    {
-        vol.Required("type"): "kino/library/search",
-        vol.Optional("category", default="movies"): str,
-        vol.Optional("search"): vol.Any(str, None),
-        vol.Optional("genres", default=[]): [str],
-        vol.Optional("countries", default=[]): [str],
-        vol.Optional("year_from"): vol.Any(int, None),
-        vol.Optional("year_to"): vol.Any(int, None),
-        vol.Optional("only_4k", default=False): bool,
-        vol.Optional("only_hd", default=False): bool,
-        vol.Optional("only_sd", default=False): bool,
-        vol.Optional("only_3d", default=False): bool,
-        vol.Optional("only_unwatched", default=False): bool,
-        vol.Optional("only_watched", default=False): bool,
-        vol.Optional("only_resumable", default=False): bool,
-        vol.Optional("only_favorites", default=False): bool,
-        vol.Optional("ratings", default=[]): [str],
-        vol.Optional("sort", default="added"): str,
-        vol.Optional("sort_dir"): vol.Any(vol.In(["asc", "desc"]), None),
-        vol.Optional("limit", default=60): vol.All(int, vol.Range(1, 200)),
-        vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
-    }
+    {vol.Required("type"): "kino/library/search", **_QUERY_SCHEMA}
 )
 @websocket_api.async_response
 async def ws_search(hass, connection, msg) -> None:
@@ -110,27 +150,7 @@ async def ws_search(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")
         return
     try:
-        query = MediaQuery(
-            category=Category(msg["category"]),
-            search=msg.get("search") or None,
-            genres=tuple(msg["genres"]),
-            countries=tuple(msg["countries"]),
-            year_from=msg.get("year_from"),
-            year_to=msg.get("year_to"),
-            only_4k=msg["only_4k"],
-            only_hd=msg["only_hd"],
-            only_sd=msg["only_sd"],
-            only_3d=msg["only_3d"],
-            only_unwatched=msg["only_unwatched"],
-            only_watched=msg["only_watched"],
-            only_resumable=msg["only_resumable"],
-            only_favorites=msg["only_favorites"],
-            ratings=tuple(msg["ratings"]),
-            sort=SortOrder(msg["sort"]),
-            sort_dir=msg.get("sort_dir"),
-            limit=msg["limit"],
-            offset=msg["offset"],
-        )
+        query = _query_from_msg(msg)
     except ValueError as err:
         connection.send_error(msg["id"], "bad_query", str(err))
         return
@@ -154,6 +174,29 @@ async def ws_search(hass, connection, msg) -> None:
 
 
 @websocket_api.websocket_command(
+    {vol.Required("type"): "kino/library/facet_counts", **_QUERY_SCHEMA}
+)
+@websocket_api.async_response
+async def ws_facet_counts(hass, connection, msg) -> None:
+    """Per filter value: the result count after tapping that chip (F17)."""
+    media = _first_media(hass)
+    if media is None:
+        connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")
+        return
+    try:
+        query = _query_from_msg(msg)
+    except ValueError as err:
+        connection.send_error(msg["id"], "bad_query", str(err))
+        return
+    try:
+        counts = await media.facet_counts(query)
+    except MediaBackendError as err:
+        connection.send_error(msg["id"], "library_error", str(err))
+        return
+    connection.send_result(msg["id"], counts)
+
+
+@websocket_api.websocket_command(
     {vol.Required("type"): "kino/library/item", vol.Required("item_id"): str}
 )
 @websocket_api.async_response
@@ -168,6 +211,28 @@ async def ws_item(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "library_error", str(err))
         return
     connection.send_result(msg["id"], item.as_dict() if item else None)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/library/similar",
+        vol.Required("item_id"): str,
+        vol.Optional("limit", default=12): vol.All(int, vol.Range(1, 50)),
+    }
+)
+@websocket_api.async_response
+async def ws_similar(hass, connection, msg) -> None:
+    """Serve the detail sheet's "Mehr wie dieser Titel" row."""
+    media = _first_media(hass)
+    if media is None:
+        connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")
+        return
+    try:
+        items = await media.similar(msg["item_id"], msg["limit"])
+    except MediaBackendError as err:
+        connection.send_error(msg["id"], "library_error", str(err))
+        return
+    connection.send_result(msg["id"], {"items": [item.as_dict() for item in items]})
 
 
 @websocket_api.websocket_command(
@@ -251,6 +316,7 @@ async def ws_facets(hass, connection, msg) -> None:
             "genres": list(facets.genres),
             "countries": list(facets.countries),
             "ratings": list(facets.ratings),
+            "audioLanguages": list(facets.audio_languages),
             "yearMin": facets.year_min,
             "yearMax": facets.year_max,
         },

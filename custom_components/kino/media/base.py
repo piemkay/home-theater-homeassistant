@@ -39,6 +39,28 @@ class Category(str, Enum):
 
 
 @dataclass(frozen=True)
+class Person:
+    """One cast or crew credit, normalised away from Jellyfin's field names."""
+
+    id: str
+    name: str
+    #: "Actor" | "Director" | "Writer" | "Producer" | "GuestStar" | …
+    kind: str = "Actor"
+    #: The character (actors) or the job title (crew), when known.
+    role: str | None = None
+    image_tag: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type": self.kind,
+            "role": self.role,
+            "imageTag": self.image_tag,
+        }
+
+
+@dataclass(frozen=True)
 class MediaItem:
     """One catalogue entry, normalised away from Jellyfin's field names."""
 
@@ -59,6 +81,8 @@ class MediaItem:
     genres: tuple[str, ...] = ()
     countries: tuple[str, ...] = ()
     rating: float | None = None
+    #: Rotten-Tomatoes-style critics score, 0–100 (Jellyfin's CriticRating).
+    critic_rating: float | None = None
     official_rating: str | None = None
     is_4k: bool = False
     is_3d: bool = False
@@ -69,6 +93,9 @@ class MediaItem:
     resume_seconds: float | None = None
     overview: str | None = None
     tagline: str | None = None
+    #: Cast and crew, in Jellyfin's billing order. Only the single-item
+    #: detail fetch carries them — grids stay light.
+    people: tuple[Person, ...] = ()
     provider_ids: Mapping[str, str] = field(default_factory=dict)
     path: str | None = None
     image_tag: str | None = None
@@ -129,6 +156,7 @@ class MediaItem:
             "genres": list(self.genres),
             "countries": list(self.countries),
             "rating": self.rating,
+            "criticRating": self.critic_rating,
             "officialRating": self.official_rating,
             "res4k": self.is_4k,
             "is3d": self.is_3d,
@@ -138,6 +166,7 @@ class MediaItem:
             "resumeSeconds": self.resume_seconds,
             "overview": self.overview,
             "tagline": self.tagline,
+            "people": [person.as_dict() for person in self.people],
             "providerIds": dict(self.provider_ids),
             "backdropTag": self.backdrop_tag,
             "thumbTag": self.thumb_tag,
@@ -155,8 +184,15 @@ class MediaQuery:
 
     category: Category = Category.MOVIES
     search: str | None = None
+    #: Multiple genres narrow (AND): "Action + Crime" means both, matching
+    #: how a person reads stacked filter chips. Jellyfin's own parameter
+    #: widens (OR), so multi-genre queries take the scan path instead.
     genres: tuple[str, ...] = ()
     countries: tuple[str, ...] = ()
+    #: Catalogue person IDs (cast or crew) every result must credit.
+    person_ids: tuple[str, ...] = ()
+    #: ISO-639 codes; a result must carry at least one matching audio track.
+    audio_langs: tuple[str, ...] = ()
     year_from: int | None = None
     year_to: int | None = None
     only_4k: bool = False
@@ -169,6 +205,9 @@ class MediaQuery:
     only_favorites: bool = False
     only_recent: bool = False
     ratings: tuple[str, ...] = ()
+    #: Minimum community rating (0–10) and critics rating (0–100).
+    min_rating: float | None = None
+    min_critic: float | None = None
     sort: SortOrder = SortOrder.ADDED
     #: "asc" | "desc" | None — None keeps the per-field default direction.
     sort_dir: str | None = None
@@ -196,6 +235,8 @@ class Facets:
     genres: tuple[str, ...] = ()
     countries: tuple[str, ...] = ()
     ratings: tuple[str, ...] = ()
+    #: Audio-track languages present in the library, as ISO-639 codes.
+    audio_languages: tuple[str, ...] = ()
     year_min: int | None = None
     year_max: int | None = None
 
@@ -228,8 +269,14 @@ class MediaBackend(Protocol):
     async def resume(self, limit: int = 12) -> Sequence[MediaItem]:
         """Return the resume list, sourced from the catalogue (FR-49a)."""
 
+    async def similar(self, item_id: str, limit: int = 12) -> Sequence[MediaItem]:
+        """Titles the catalogue considers similar to one entry."""
+
     async def facets(self) -> Facets:
         """Available filter values."""
+
+    async def facet_counts(self, query: MediaQuery) -> Mapping[str, Any]:
+        """Per filter value: how many titles remain if it is toggled on."""
 
     async def refresh(self) -> None:
         """Force a rescan (FR-44)."""

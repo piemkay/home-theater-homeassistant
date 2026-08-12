@@ -18,7 +18,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
+from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
@@ -30,6 +33,7 @@ from .base import (
     MediaItem,
     MediaPage,
     MediaQuery,
+    Person,
     SortOrder,
 )
 
@@ -50,6 +54,7 @@ _MOVIE_FIELDS = ",".join(  # noqa: FLY002 - a long, readable field list
         "MediaSources",
         "MediaStreams",
         "CommunityRating",
+        "CriticRating",
         "UserData",
         "RunTimeTicks",
         "ProductionYear",
@@ -57,6 +62,53 @@ _MOVIE_FIELDS = ",".join(  # noqa: FLY002 - a long, readable field list
         "DateCreated",
     )
 )
+
+#: The single-item detail additionally carries cast and crew; grids do not.
+_DETAIL_FIELDS = f"{_MOVIE_FIELDS},People"
+
+#: What the filter-count scan needs per title — no images, no media sources.
+_SCAN_FIELDS = ",".join(  # noqa: FLY002 - a long, readable field list
+    (
+        "Genres",
+        "MediaStreams",
+        "ProductionYear",
+        "OfficialRating",
+        "CommunityRating",
+        "CriticRating",
+        "UserData",
+    )
+)
+
+#: Upper bound for one scan page — far above any home library, so one request
+#: really is the whole catalogue.
+_SCAN_LIMIT = 5000
+
+#: How long one scan may serve counts. Toggling chips in the filter sheet
+#: recounts several times in a few seconds; the library does not change while
+#: someone is doing that.
+_SCAN_TTL_SECONDS = 30.0
+
+#: ISO-639-2/T codes Jellyfin sometimes emits, folded onto the /B twins the
+#: rest of the library uses, so "deu" and "ger" count as one language.
+_LANG_SYNONYMS = {
+    "deu": "ger",
+    "fra": "fre",
+    "zho": "chi",
+    "ces": "cze",
+    "nld": "dut",
+    "ell": "gre",
+    "isl": "ice",
+    "fas": "per",
+    "ron": "rum",
+    "slk": "slo",
+    "sqi": "alb",
+    "hye": "arm",
+    "eus": "baq",
+    "kat": "geo",
+    "msa": "may",
+    "mya": "bur",
+    "cym": "wel",
+}
 
 #: Random re-randomises on every request, so paginated pages can repeat or
 #: skip titles — accepted; the card's grid stays usable and a refresh reshuffles.
@@ -98,6 +150,8 @@ class JellyfinClient:
         self._user_id = user_id
         self._device_id = device_id
         self._timeout = timeout
+        #: (item types, search, persons, sort) -> (monotonic time, records).
+        self._scan_cache: dict[tuple, tuple[float, list[_ScanRecord]]] = {}
 
     @property
     def user_id(self) -> str | None:
@@ -219,6 +273,13 @@ class JellyfinClient:
         return self._user_id
 
     async def search(self, query: MediaQuery) -> MediaPage:
+        # Two filters Jellyfin cannot express — several genres that must ALL
+        # match, and audio-track languages — go through the scan: filter the
+        # whole catalogue by ID first, then fetch just the visible page. That
+        # keeps totals and offsets exact (the trap `_apply_client_side_filters`
+        # documents).
+        if len(query.genres) > 1 or query.audio_langs:
+            return await self._search_scanned(query)
         user = self._require_user()
         params = _search_params(query)
         payload = await self._request("GET", f"/Users/{user}/Items", params=params)
@@ -229,14 +290,45 @@ class JellyfinClient:
         items = _apply_client_side_filters(items, query)
         return MediaPage(items=tuple(items), total=total, offset=query.offset)
 
+    async def _search_scanned(self, query: MediaQuery) -> MediaPage:
+        """Search via the catalogue scan: exact totals for Python-side filters."""
+        user = self._require_user()
+        records = await self._scan(query)
+        ids = [record.id for record in records if _matches(record, query)]
+        page_ids = ids[query.offset : query.offset + query.limit]
+        if not page_ids:
+            return MediaPage(items=(), total=len(ids), offset=query.offset)
+        payload = await self._request(
+            "GET",
+            f"/Users/{user}/Items",
+            params={"Ids": ",".join(page_ids), "Fields": _MOVIE_FIELDS},
+        )
+        by_id = {
+            item.id: item
+            for item in (_to_item(raw) for raw in (payload or {}).get("Items") or [])
+        }
+        # The Ids fetch does not promise the scan's sort order — restore it.
+        items = tuple(by_id[i] for i in page_ids if i in by_id)
+        return MediaPage(items=items, total=len(ids), offset=query.offset)
+
     async def item(self, item_id: str) -> MediaItem | None:
         user = self._require_user()
         payload = await self._request(
             "GET",
             f"/Users/{user}/Items/{quote(item_id)}",
-            params={"Fields": _MOVIE_FIELDS},
+            params={"Fields": _DETAIL_FIELDS},
         )
         return _to_item(payload) if payload else None
+
+    async def similar(self, item_id: str, limit: int = 12) -> Sequence[MediaItem]:
+        """Jellyfin's own "More Like This" list for one title."""
+        user = self._require_user()
+        payload = await self._request(
+            "GET",
+            f"/Items/{quote(item_id)}/Similar",
+            params={"UserId": user, "Limit": limit, "Fields": _MOVIE_FIELDS},
+        )
+        return [_to_item(raw) for raw in (payload or {}).get("Items") or []]
 
     async def seasons(self, series_id: str) -> Sequence[MediaItem]:
         """Return the seasons of one series, in broadcast order (F2)."""
@@ -277,6 +369,87 @@ class JellyfinClient:
         )
         return [_to_item(raw) for raw in (payload or {}).get("Items") or []]
 
+    async def _scan(self, query: MediaQuery) -> list[_ScanRecord]:
+        """One slim pass over everything the category and search term match.
+
+        Group filters (genres, ratings, languages, tags…) are deliberately
+        NOT applied here — the records must stay relaxable so `facet_counts`
+        can answer "and what if this chip were on too?" for every value.
+        A short cache keeps chip-toggling in the filter sheet at one Jellyfin
+        request instead of one per tap.
+        """
+        user = self._require_user()
+        item_types = _item_types(query.category)
+        sort_by, sort_order = _SORT_FIELDS[query.sort]
+        if query.sort_dir:
+            sort_order = "Ascending" if query.sort_dir == "asc" else "Descending"
+        key = (item_types, query.search or "", query.person_ids, sort_by, sort_order)
+
+        now = time.monotonic()
+        cached = self._scan_cache.get(key)
+        if cached and now - cached[0] < _SCAN_TTL_SECONDS:
+            return cached[1]
+
+        params: dict[str, Any] = {
+            "Recursive": True,
+            "IncludeItemTypes": item_types,
+            "SortBy": sort_by,
+            "SortOrder": sort_order,
+            "Limit": _SCAN_LIMIT,
+            "Fields": _SCAN_FIELDS,
+            "EnableImages": False,
+            "EnableTotalRecordCount": False,
+        }
+        if query.search:
+            params["SearchTerm"] = query.search
+        if query.person_ids:
+            params["PersonIds"] = "|".join(query.person_ids)
+        payload = await self._request("GET", f"/Users/{user}/Items", params=params)
+        records = [_to_record(raw) for raw in (payload or {}).get("Items") or []]
+
+        # Drop expired entries so alternating categories cannot grow the map.
+        self._scan_cache = {
+            k: v for k, v in self._scan_cache.items() if now - v[0] < _SCAN_TTL_SECONDS
+        }
+        self._scan_cache[key] = (now, records)
+        return records
+
+    async def facet_counts(self, query: MediaQuery) -> dict[str, Any]:
+        """Per filter value: the result count after tapping that chip (F17).
+
+        Toggle semantics throughout — an inactive value is counted as if
+        added to the current selection, an active one as if removed — so the
+        number on a chip always says what the grid would show next.
+        """
+        records = await self._scan(query)
+        current = [record for record in records if _matches(record, query)]
+
+        genre_values = {g for record in records for g in record.genres}
+        rating_values = {r for record in records if (r := record.official)}
+        lang_values = {lang for record in records for lang in record.langs}
+
+        def count(candidate: MediaQuery) -> int:
+            return sum(1 for record in records if _matches(record, candidate))
+
+        return {
+            "total": len(current),
+            "genres": {
+                value: count(replace(query, genres=_toggled(query.genres, value)))
+                for value in genre_values
+            },
+            "ratings": {
+                value: count(replace(query, ratings=_toggled(query.ratings, value)))
+                for value in rating_values
+            },
+            "audioLangs": {
+                value: count(
+                    replace(query, audio_langs=_toggled(query.audio_langs, value))
+                )
+                for value in lang_values
+            },
+            "tags": {flag: count(_toggle_flag(query, flag)) for flag in _TAG_FLAGS},
+        }
+
     async def facets(self) -> Facets:
         # The legacy filter endpoint carries genres, official ratings and the
         # year bounds in one round trip. If a future Jellyfin drops it, the
@@ -305,15 +478,27 @@ class JellyfinClient:
             )
         )
         years = [y for y in payload.get("Years") or [] if isinstance(y, int)]
+        # Audio languages exist nowhere in /Items/Filters — they come from the
+        # movie scan, most common first (series carry no streams of their own).
+        langs: Counter[str] = Counter()
+        try:
+            for record in await self._scan(MediaQuery()):
+                langs.update(record.langs)
+        except MediaBackendError:
+            _LOGGER.debug("Tonspur-Scan fehlgeschlagen", exc_info=True)
         return Facets(
             genres=genres,
             ratings=ratings,
+            audio_languages=tuple(
+                code for code, _ in langs.most_common() if code != "und"
+            ),
             year_min=min(years) if years else None,
             year_max=max(years) if years else None,
         )
 
     async def refresh(self) -> None:
         """Ask Jellyfin to rescan (FR-44)."""
+        self._scan_cache.clear()
         await self._request("POST", "/Library/Refresh")
 
     async def set_favorite(self, item_id: str, favorite: bool) -> None:
@@ -414,22 +599,25 @@ def _rating_sort_key(rating: str) -> tuple[int, int, str]:
     return (4, 0, value)
 
 
+def _item_types(category: Category) -> str:
+    """Which Jellyfin item types one browse category covers."""
+    # The home rows (recent, continue) should show both kinds.
+    if category is Category.SHOWS:
+        return "Series"
+    if category in (Category.RECENT, Category.CONTINUE):
+        return "Movie,Series"
+    return "Movie"
+
+
 def _search_params(  # noqa: C901, PLR0912 - a flat translation table, one branch per filter
     query: MediaQuery,
 ) -> dict[str, Any]:
     """Translate one :class:`MediaQuery` into `/Items` query parameters."""
     sort_by, sort_order = _SORT_FIELDS[query.sort]
-    # The home rows (recent, continue) should show both kinds.
-    if query.category is Category.SHOWS:
-        item_types = "Series"
-    elif query.category in (Category.RECENT, Category.CONTINUE):
-        item_types = "Movie,Series"
-    else:
-        item_types = "Movie"
     params: dict[str, Any] = {
         "Recursive": True,
         "Fields": _MOVIE_FIELDS,
-        "IncludeItemTypes": item_types,
+        "IncludeItemTypes": _item_types(query.category),
         "SortBy": sort_by,
         "SortOrder": sort_order,
         "Limit": query.limit,
@@ -438,8 +626,16 @@ def _search_params(  # noqa: C901, PLR0912 - a flat translation table, one branc
     }
     if query.search:
         params["SearchTerm"] = query.search
+    # A single genre is the same under OR and AND; several genres never reach
+    # this translation — `search()` routes them through the scan.
     if query.genres:
         params["Genres"] = "|".join(query.genres)
+    if query.person_ids:
+        params["PersonIds"] = "|".join(query.person_ids)
+    if query.min_rating is not None:
+        params["MinCommunityRating"] = query.min_rating
+    if query.min_critic is not None:
+        params["MinCriticRating"] = query.min_critic
     # Countries have no server-side parameter; they are applied client-side
     # in `_apply_client_side_filters` rather than pretended away here.
     #
@@ -530,6 +726,7 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
         genres=tuple(raw.get("Genres") or ()),
         countries=tuple(raw.get("ProductionLocations") or ()),
         rating=raw.get("CommunityRating"),
+        critic_rating=raw.get("CriticRating"),
         official_rating=raw.get("OfficialRating"),
         is_4k=bool(width and width >= 3000),
         is_3d=bool(raw.get("Video3DFormat")),
@@ -539,6 +736,7 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
         resume_seconds=resume_seconds,
         overview=raw.get("Overview"),
         tagline=taglines[0] if taglines else None,
+        people=tuple(_to_person(p) for p in raw.get("People") or () if p.get("Id")),
         provider_ids=provider_ids,
         path=path,
         image_tag=(raw.get("ImageTags") or {}).get("Primary"),
@@ -552,6 +750,166 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
             None if playable else "Keine TMDB/IMDb-ID und kein Pfad — nicht abspielbar"
         ),
     )
+
+
+def _to_person(raw: Mapping[str, Any]) -> Person:
+    return Person(
+        id=str(raw.get("Id", "")),
+        name=str(raw.get("Name") or ""),
+        kind=str(raw.get("Type") or "Actor"),
+        role=raw.get("Role") or None,
+        image_tag=raw.get("PrimaryImageTag"),
+    )
+
+
+def _normalize_lang(code: Any) -> str | None:
+    """Fold one stream's language onto a single lowercase ISO-639-2 code."""
+    if not code or not isinstance(code, str):
+        return None
+    value = code.strip().lower()
+    if not value:
+        return None
+    return _LANG_SYNONYMS.get(value, value)
+
+
+@dataclass(frozen=True)
+class _ScanRecord:
+    """One title, boiled down to what the filter predicates read."""
+
+    id: str
+    genres: frozenset[str]
+    langs: frozenset[str]
+    year: int | None
+    official: str | None
+    rating: float | None
+    critic: float | None
+    width: int | None
+    is_3d: bool
+    watched: bool
+    favorite: bool
+    resumable: bool
+
+
+def _to_record(raw: Mapping[str, Any]) -> _ScanRecord:
+    user_data = raw.get("UserData") or {}
+    width: int | None = None
+    langs: set[str] = set()
+    streams = raw.get("MediaStreams")
+    if not streams:
+        sources = raw.get("MediaSources") or []
+        streams = sources[0].get("MediaStreams", []) if sources else []
+    for stream in streams or []:
+        if stream.get("Type") == "Video" and width is None:
+            width = stream.get("Width")
+        elif stream.get("Type") == "Audio":
+            lang = _normalize_lang(stream.get("Language"))
+            if lang:
+                langs.add(lang)
+    return _ScanRecord(
+        id=str(raw.get("Id", "")),
+        genres=frozenset(raw.get("Genres") or ()),
+        langs=frozenset(langs),
+        year=raw.get("ProductionYear"),
+        official=raw.get("OfficialRating"),
+        rating=raw.get("CommunityRating"),
+        critic=raw.get("CriticRating"),
+        width=width,
+        is_3d=bool(raw.get("Video3DFormat")),
+        watched=bool(user_data.get("Played")),
+        favorite=bool(user_data.get("IsFavorite")),
+        resumable=bool(user_data.get("PlaybackPositionTicks")),
+    )
+
+
+def _matches(  # noqa: C901, PLR0912 - a flat predicate, one clause per filter
+    record: _ScanRecord, query: MediaQuery
+) -> bool:
+    """Mirror `_search_params` in Python: same filters, same semantics.
+
+    One deliberate difference — several genres must ALL match here, because
+    that is what stacked chips mean to a person; Jellyfin's parameter widens.
+    """
+    if query.genres and not set(query.genres) <= record.genres:
+        return False
+    if query.ratings and record.official not in query.ratings:
+        return False
+    if query.audio_langs and not set(query.audio_langs) & record.langs:
+        return False
+    if query.year_from is not None and (
+        record.year is None or record.year < query.year_from
+    ):
+        return False
+    if query.year_to is not None and (
+        record.year is None or record.year > query.year_to
+    ):
+        return False
+    if (query.only_4k or query.category is Category.UHD) and not (
+        record.width and record.width >= 3000
+    ):
+        return False
+    if query.only_hd and not (record.width and 1280 <= record.width < 3000):
+        return False
+    if query.only_sd and not (record.width and record.width < 1280):
+        return False
+    if query.only_3d and not record.is_3d:
+        return False
+    if (
+        query.only_unwatched or query.category is Category.UNWATCHED
+    ) and record.watched:
+        return False
+    if query.only_watched and not record.watched:
+        return False
+    if (
+        query.only_resumable or query.category is Category.CONTINUE
+    ) and not record.resumable:
+        return False
+    if query.only_favorites and not record.favorite:
+        return False
+    if query.min_rating is not None and (
+        record.rating is None or record.rating < query.min_rating
+    ):
+        return False
+    return not (
+        query.min_critic is not None
+        and (record.critic is None or record.critic < query.min_critic)
+    )
+
+
+def _toggled(current: tuple[str, ...], value: str) -> tuple[str, ...]:
+    """One multi-select chip tapped: in the set → out, out → in."""
+    if value in current:
+        return tuple(v for v in current if v != value)
+    return (*current, value)
+
+
+#: The Format-&-Status flags, with their exclusivity groups — a title has one
+#: resolution tier, and Gesehen/Nicht gesehen contradict each other. Mirrors
+#: the card's `toggleTag`.
+_TAG_FLAGS = (
+    "only_4k",
+    "only_hd",
+    "only_sd",
+    "only_3d",
+    "only_resumable",
+    "only_unwatched",
+    "only_watched",
+    "only_favorites",
+)
+_TAG_EXCLUSIVE = (
+    ("only_4k", "only_hd", "only_sd"),
+    ("only_unwatched", "only_watched"),
+)
+
+
+def _toggle_flag(query: MediaQuery, flag: str) -> MediaQuery:
+    """One Format-&-Status chip tapped, exclusivity included."""
+    turning_on = not getattr(query, flag)
+    changes: dict[str, bool] = {flag: turning_on}
+    if turning_on:
+        for group in _TAG_EXCLUSIVE:
+            if flag in group:
+                changes.update({other: False for other in group if other != flag})
+    return replace(query, **changes)
 
 
 def _stream_summary(
