@@ -207,6 +207,52 @@ describe("actionLabel", () => {
   });
 });
 
+describe("names, never keys (F7)", () => {
+  const doc = {
+    activities: { film: { name: "Bibliothek" }, aus: { name: "Aus" } },
+    devices: { barco: { name: "Beamer" } },
+  };
+
+  test("activity and device keys resolve to their display names", () => {
+    assert.equal(panelHelpers.activityName(doc, "film"), "Bibliothek");
+    assert.equal(panelHelpers.deviceName(doc, "barco"), "Beamer");
+  });
+
+  test("unknown or absent keys degrade gracefully", () => {
+    assert.equal(panelHelpers.activityName(doc, "gone"), "gone");
+    assert.equal(panelHelpers.activityName(doc, null), "—");
+    assert.equal(panelHelpers.deviceName({}, "barco"), "barco");
+  });
+});
+
+describe("countLabel (F8)", () => {
+  test("no more '1 Messungen'", () => {
+    assert.equal(panelHelpers.countLabel(1, "Messung", "Messungen"), "1 Messung");
+    assert.equal(panelHelpers.countLabel(12, "Messung", "Messungen"), "12 Messungen");
+    assert.equal(panelHelpers.countLabel(0, "Messung", "Messungen"), "0 Messungen");
+  });
+});
+
+describe("planSummary (F7/F8)", () => {
+  const names = { zidoo: "Zidoo", shield: "Shield", trinnov: "Trinnov" };
+
+  test("groups actions by verb, with display names", () => {
+    const actions = [
+      { device: "shield", kind: "start" },
+      { device: "zidoo", kind: "stop" },
+      { device: "trinnov", kind: "reconfigure" },
+    ];
+    assert.equal(
+      panelHelpers.planSummary(actions, (key) => names[key]),
+      "stoppen: Zidoo · starten: Shield · umkonfigurieren: Trinnov"
+    );
+  });
+
+  test("an empty plan says so in German", () => {
+    assert.equal(panelHelpers.planSummary([], () => ""), "nichts zu tun");
+  });
+});
+
 describe("panel escaping", () => {
   test("entity ids and names cannot inject markup", () => {
     const panel = Object.create(KinoPanel.prototype);

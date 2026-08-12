@@ -23,6 +23,17 @@ from .model import (
     TransitionPlan,
 )
 
+#: Observed power, in the language the rest of the UI speaks (F8). Reasons
+#: are read by humans in the panel's Planer tab, so they carry the activity's
+#: display name and German power words — keys stay in the Datei tab.
+_POWER_GERMAN = {
+    Power.ON: "an",
+    Power.OFF: "aus",
+    Power.TRANSITIONING: "im Übergang",
+    Power.UNAVAILABLE: "nicht erreichbar",
+    Power.UNKNOWN: "unbekannt",
+}
+
 
 def _wanted_settings(activity: ActivityDef, device_key: str) -> Mapping[str, Any]:
     req = activity.devices.get(device_key)
@@ -82,7 +93,7 @@ def plan_transition(
                     DeviceAction(
                         device=key,
                         kind=ActionKind.STOP,
-                        reason=f"not needed by '{target.key}'",
+                        reason=f"von „{target.name}“ nicht benötigt",
                         required=False,
                     )
                 )
@@ -99,7 +110,7 @@ def plan_transition(
                         device=key,
                         kind=ActionKind.RECONFIGURE,
                         settings=drift,
-                        reason="settings differ: " + ", ".join(sorted(drift)),
+                        reason="Einstellungen weichen ab: " + ", ".join(sorted(drift)),
                         required=required,
                     )
                 )
@@ -108,7 +119,7 @@ def plan_transition(
                     DeviceAction(
                         device=key,
                         kind=ActionKind.KEEP,
-                        reason="already correct",
+                        reason="bereits korrekt",
                         required=required,
                     )
                 )
@@ -121,7 +132,10 @@ def plan_transition(
                 device=key,
                 kind=ActionKind.START,
                 settings=wanted,
-                reason=f"needed by '{target.key}', observed {obs.power.value}",
+                reason=(
+                    f"von „{target.name}“ benötigt, "
+                    f"beobachtet: {_POWER_GERMAN[obs.power]}"
+                ),
                 required=required,
             )
         )

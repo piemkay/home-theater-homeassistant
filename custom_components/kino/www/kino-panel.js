@@ -176,6 +176,36 @@ export const panelHelpers = {
       }[kind] || kind
     );
   },
+
+  /** Display name for an activity key — names, never keys (F7). */
+  activityName(document, key) {
+    if (key == null || key === "") return "—";
+    return document?.activities?.[key]?.name || key;
+  },
+
+  /** Display name for a device key (F7). */
+  deviceName(document, key) {
+    return document?.devices?.[key]?.name || key;
+  },
+
+  /** "1 Messung", "12 Messungen" — no more "1 Messungen" (F8). */
+  countLabel(count, singular, plural) {
+    return `${count} ${count === 1 ? singular : plural}`;
+  },
+
+  /** German one-liner for a dry-run plan, built from display names (F7). */
+  planSummary(actions, nameFn) {
+    const parts = [];
+    for (const kind of ["stop", "start", "reconfigure", "keep"]) {
+      const names = (actions || [])
+        .filter((a) => a.kind === kind)
+        .map((a) => nameFn(a.device));
+      if (names.length) {
+        parts.push(`${panelHelpers.actionLabel(kind)}: ${names.join(", ")}`);
+      }
+    }
+    return parts.length ? parts.join(" · ") : "nichts zu tun";
+  },
 };
 
 /* ------------------------------------------------------------------ */
@@ -453,7 +483,7 @@ class KinoPanel extends PanelBase {
     try {
       this._plan = await this._ws({ type: "kino/dry_run", activity });
     } catch (err) {
-      this._plan = { summary: err.message, actions: [] };
+      this._plan = { summary: err.message, actions: [], error: true };
     }
     this._render();
   }
@@ -938,17 +968,18 @@ class KinoPanel extends PanelBase {
       .join("");
 
     // "Aktive Aktivität film" while everything shuts down reads like a lie —
-    // say what the comparison is actually against.
+    // say what the comparison is actually against. Names, never keys (F7).
     const target = this._board.targetActivity;
+    const nameOf = (key) => panelHelpers.activityName(this._document, key);
     let context;
     if (this._board.state === "off") {
       context = "Das Kino ist ausgeschaltet — erwartet ist: alle Geräte aus.";
     } else if (target && target !== this._board.activity) {
-      context = `Wechsel zu <strong>${this._esc(target)}</strong> läuft —
-        verglichen wird noch mit <strong>${this._esc(this._board.activity || "—")}</strong>.`;
+      context = `Wechsel zu <strong>${this._esc(nameOf(target))}</strong> läuft —
+        verglichen wird noch mit <strong>${this._esc(nameOf(this._board.activity))}</strong>.`;
     } else {
       context = `Beobachteter gegen erwarteten Zustand für die aktive Aktivität
-        <strong>${this._esc(this._board.activity || "—")}</strong>.`;
+        <strong>${this._esc(nameOf(this._board.activity))}</strong>.`;
     }
     return `<section>
       <h2>Gerätestatus</h2>
@@ -975,7 +1006,7 @@ class KinoPanel extends PanelBase {
       ? (this._plan.actions || [])
           .map(
             (a) => `<tr>
-              <td class="rowhead">${this._esc(a.device)}</td>
+              <td class="rowhead">${this._esc(panelHelpers.deviceName(this._document, a.device))}</td>
               <td><strong>${this._esc(panelHelpers.actionLabel(a.kind))}</strong></td>
               <td class="mono">${this._esc(
                 Object.entries(a.settings || {})
@@ -1009,7 +1040,13 @@ class KinoPanel extends PanelBase {
       </div>
       ${
         this._plan
-          ? `<p class="mono">${this._esc(this._plan.summary)}</p>
+          ? `<p class="${this._plan.error ? "bad" : ""}">${this._esc(
+              this._plan.error
+                ? this._plan.summary
+                : panelHelpers.planSummary(this._plan.actions, (key) =>
+                    panelHelpers.deviceName(this._document, key)
+                  )
+            )}</p>
              <div class="scroll"><table>
                <thead><tr><th class="rowhead">Gerät</th><th>Aktion</th><th>Einstellungen</th><th>Grund</th></tr></thead>
                <tbody>${actions}</tbody>
@@ -1024,13 +1061,15 @@ class KinoPanel extends PanelBase {
       this._loadLog();
       return '<p class="sub">Verlauf wird geladen…</p>';
     }
+    const activityName = (key) => panelHelpers.activityName(this._document, key);
+    const deviceName = (key) => panelHelpers.deviceName(this._document, key);
     const transitions = (this._log.transitions || [])
       .slice()
       .reverse()
       .map(
         (t) => `<tr>
-          <td class="rowhead">${this._esc(t.from_activity || "—")} → ${this._esc(
-            t.to_activity
+          <td class="rowhead">${this._esc(activityName(t.from_activity))} → ${this._esc(
+            activityName(t.to_activity)
           )}</td>
           <td class="${t.succeeded ? "good" : "bad"}">${
             t.succeeded ? "ok" : "Fehler"
@@ -1039,9 +1078,9 @@ class KinoPanel extends PanelBase {
           <td class="mono">${(t.steps || [])
             .map(
               (s) =>
-                `${this._esc(s.device)} ${this._esc(s.kind)} ${panelHelpers.formatDuration(
-                  s.seconds
-                )}`
+                `${this._esc(deviceName(s.device))} ${this._esc(
+                  panelHelpers.actionLabel(s.kind)
+                )} ${panelHelpers.formatDuration(s.seconds)}`
             )
             .join(" · ")}</td>
           <td class="bad">${this._esc(t.error || "")}</td>
@@ -1052,10 +1091,14 @@ class KinoPanel extends PanelBase {
     const durations = (this._log.durations || [])
       .map(
         (d) => `<tr>
-          <td class="rowhead">${this._esc(d.device)}</td>
+          <td class="rowhead">${this._esc(deviceName(d.device))}</td>
           <td>${this._esc(d.kind)} / ${this._esc(d.from)}</td>
           <td>${panelHelpers.formatDuration(d.seconds)}</td>
-          <td class="muted">${d.samples} Messungen, ${panelHelpers.formatDuration(
+          <td class="muted">${panelHelpers.countLabel(
+            d.samples,
+            "Messung",
+            "Messungen"
+          )}, ${panelHelpers.formatDuration(
             d.min_seconds
           )}–${panelHelpers.formatDuration(d.max_seconds)}</td>
         </tr>`

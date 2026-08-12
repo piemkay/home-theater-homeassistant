@@ -579,6 +579,134 @@ describe("device chips", () => {
     card._kino = { ...kino, activity: "aus", targetActivity: null, progress: null };
     assert.equal(card._renderDeviceChips(), "");
   });
+
+  test("a switch shows the union of touched devices, stops included (F6)", () => {
+    // film -> netflix: the Zidoo is being stopped and is not a device of the
+    // target activity — it must still get a chip while it goes down.
+    const card = Object.create(KinoCard.prototype);
+    card._kino = {
+      activity: "film",
+      targetActivity: "netflix",
+      offActivity: "aus",
+      progress: { percent: 40, devices: ["beamer", "zidoo", "shield"] },
+      activities: [
+        { key: "film", name: "Film", devices: ["beamer", "zidoo"] },
+        { key: "netflix", name: "Streaming", devices: ["beamer", "shield"] },
+        { key: "aus", name: "Aus", devices: [] },
+      ],
+      devices: [
+        { key: "beamer", name: "Beamer", health: "ready" },
+        { key: "zidoo", name: "Zidoo", health: "stopping" },
+        { key: "shield", name: "Shield", health: "starting" },
+      ],
+    };
+    const html = card._renderDeviceChips();
+    assert.match(html, /Zidoo/);
+    assert.match(html, /Shield/);
+    assert.match(html, /Beamer/);
+  });
+});
+
+describe("pending item (F5)", () => {
+  test("the queued title stays on screen during the transition", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = {
+      activity: "aus",
+      targetActivity: "film",
+      offActivity: "aus",
+      artworkSignature: "sig",
+      pendingItem: { id: "abc", title: "The Beekeeper" },
+      progress: { percent: 10, etaSeconds: 60, bottleneck: "Beamer startet" },
+      activities: [
+        { key: "film", name: "Film", devices: [] },
+        { key: "aus", name: "Aus", devices: [] },
+      ],
+    };
+    const html = card._renderProgress();
+    assert.match(html, /The Beekeeper/);
+    assert.match(html, /startet gleich/);
+    assert.match(html, /artwork\/abc\/Primary/);
+  });
+
+  test("the title also survives the gap when no progress is reported", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = {
+      activity: "film",
+      targetActivity: null,
+      offActivity: "aus",
+      artworkSignature: "sig",
+      pendingItem: { id: "abc", title: "The Beekeeper" },
+      progress: null,
+      activities: [{ key: "film", name: "Film", devices: [] }],
+    };
+    assert.match(card._renderProgress(), /The Beekeeper/);
+  });
+
+  test("nothing renders without a pending item", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = { pendingItem: null, progress: null };
+    assert.equal(card._renderProgress(), "");
+  });
+});
+
+describe("displayLabel (F8)", () => {
+  test("player track strings are prettified, values untouched", () => {
+    assert.equal(
+      helpers.displayLabel("0: English Dolby TrueHD with Dolby Atmos 48.0KHz"),
+      "Englisch · TrueHD Atmos"
+    );
+    assert.equal(
+      helpers.displayLabel("1: English Dolby Digital Plus with Dolby Atmos 48.0KHz"),
+      "Englisch · Dolby Digital Plus Atmos"
+    );
+    assert.equal(helpers.displayLabel("0: Off"), "Aus");
+    assert.equal(helpers.displayLabel("2: German Forced"), "Deutsch · erzwungen");
+  });
+
+  test("processor states pass through, none reads as a dash", () => {
+    assert.equal(helpers.displayLabel("none"), "—");
+    assert.equal(helpers.displayLabel(null), "—");
+    assert.equal(helpers.displayLabel("auto"), "auto");
+    assert.equal(helpers.displayLabel("Kino Referenz"), "Kino Referenz");
+  });
+
+  test("an unparseable track label still says something", () => {
+    assert.equal(helpers.displayLabel("3: Klingon"), "Klingon");
+  });
+});
+
+describe("shutdown honesty (F13)", () => {
+  const kino = {
+    state: "stopping",
+    activity: "film",
+    targetActivity: "aus",
+    offActivity: "aus",
+    progress: { percent: 10 },
+    activities: [
+      { key: "film", name: "Film", devices: [] },
+      { key: "aus", name: "Aus", devices: [] },
+    ],
+    entities: {},
+    controls: {},
+  };
+
+  test("the footer shows no dead volume row while shutting down", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = kino;
+    card._view = {};
+    const html = card._renderFooter();
+    assert.match(html, /Wird ausgeschaltet…/);
+    assert.doesNotMatch(html, /data-act="vol"/);
+  });
+
+  test("the activity chip says 'Wird ausgeschaltet…', not 'Wechsel zu Aus…'", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = kino;
+    card._view = { activityMenu: false };
+    const html = card._renderActivitySelector();
+    assert.match(html, /Wird ausgeschaltet…/);
+    assert.doesNotMatch(html, /Wechsel zu Aus/);
+  });
 });
 
 describe("entity select block", () => {
@@ -597,7 +725,8 @@ describe("entity select block", () => {
     };
     const html = card._entitySelectBlock("select.upmixer", "Upmixer", ["none"]);
     assert.doesNotMatch(html, /value="none"/);
-    assert.match(html, /disabled selected>none</);
+    // Raw `none` never reaches the screen — it reads "—" (F8).
+    assert.match(html, /disabled selected>—</);
     assert.match(html, /value="auto"/);
   });
 

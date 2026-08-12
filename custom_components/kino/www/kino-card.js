@@ -175,6 +175,68 @@ export const helpers = {
     return signature ? `${path}?sig=${encodeURIComponent(signature)}` : path;
   },
 
+  /**
+   * Human display text for a raw processor/player option string (F8).
+   *
+   * The *value* sent to the entity stays raw — only what the person reads
+   * changes: `none` → "—", `0: Off` → "Aus", `1: English Dolby TrueHD with
+   * Dolby Atmos 48.0KHz` → "Englisch · TrueHD Atmos".
+   */
+  displayLabel(raw) {
+    if (raw == null) return "—";
+    const s = String(raw).trim();
+    if (!s || s === "none" || s === "unknown") return "—";
+    const stripped = s.replace(/^\d+\s*:\s*/, "");
+    if (stripped !== s) return helpers.prettyTrack(stripped);
+    return s;
+  },
+
+  /** One player track entry, index already stripped. */
+  prettyTrack(label) {
+    if (/^off$/i.test(label)) return "Aus";
+    const languages = {
+      english: "Englisch",
+      german: "Deutsch",
+      deutsch: "Deutsch",
+      french: "Französisch",
+      spanish: "Spanisch",
+      italian: "Italienisch",
+      japanese: "Japanisch",
+      korean: "Koreanisch",
+      chinese: "Chinesisch",
+      mandarin: "Mandarin",
+      cantonese: "Kantonesisch",
+      russian: "Russisch",
+      portuguese: "Portugiesisch",
+      dutch: "Niederländisch",
+      polish: "Polnisch",
+      swedish: "Schwedisch",
+      danish: "Dänisch",
+      norwegian: "Norwegisch",
+      finnish: "Finnisch",
+      czech: "Tschechisch",
+      turkish: "Türkisch",
+      arabic: "Arabisch",
+      hebrew: "Hebräisch",
+      hindi: "Hindi",
+      thai: "Thailändisch",
+    };
+    const words = label.split(/\s+/);
+    const language = languages[(words[0] || "").toLowerCase()];
+    let rest = (language ? words.slice(1) : words).join(" ");
+    rest = rest
+      .replace(/\b\d+(\.\d+)?\s*k?hz\b/gi, "")
+      .replace(/\bdolby truehd\b/gi, "TrueHD")
+      .replace(/\bdts-hd master audio\b/gi, "DTS-HD MA")
+      .replace(/\bwith\s+dolby\s+atmos\b/gi, "Atmos")
+      .replace(/\bdolby\s+atmos\b/gi, "Atmos")
+      .replace(/\bforced\b/gi, "erzwungen")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    if (language && rest) return `${language} · ${rest}`;
+    return language || rest || label;
+  },
+
   /** Colour token for a per-device health value. */
   deviceColor(health) {
     switch (health) {
@@ -290,8 +352,13 @@ button { font-family: inherit; }
   background: var(--kino-surface2);
 }
 .tilegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.tile { padding: 16px; border-radius: 14px; text-align: left; font-size: 13px; min-height: 48px; }
+.tile {
+  padding: 14px 16px; border-radius: 14px; text-align: left; font-size: 13px; min-height: 48px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+}
+.tile .tileicon { color: var(--kino-text3); --mdc-icon-size: 20px; }
 .tile[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
+.tile[aria-pressed="true"] .tileicon { color: var(--kino-goldText); }
 .chipbtn { padding: 10px 14px; border-radius: 20px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kino-text); min-height: 40px; }
 .pill { height: 36px; padding: 0 13px; border-radius: 18px; font-size: 12px; flex-shrink: 0; }
 .pill[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
@@ -400,7 +467,7 @@ input[type="text"], select {
 .backdrop { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden; background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 10px, var(--kino-surface) 10px, var(--kino-surface) 20px); }
 .backdrop img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .dialog { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 28px; box-sizing: border-box; }
-.dialog > div { width: 100%; background: var(--kino-surface); border: 1px solid var(--kino-border); border-radius: 18px; padding: 22px; }
+.dialog > div { width: 100%; max-width: 420px; background: var(--kino-surface); border: 1px solid var(--kino-border); border-radius: 18px; padding: 22px; }
 
 footer {
   flex-shrink: 0; padding: 10px 16px 14px;
@@ -427,16 +494,45 @@ footer {
 .empty .sub { font-size: 12px; color: var(--kino-text3); margin-top: 6px; }
 .error { color: var(--kino-red); font-size: 13px; }
 
+/* The sort select fills the toolbar row on a phone… */
+.sortsel { flex: 1; min-width: 0; }
+
+/* Detail sheet: one column with a backdrop on a phone; the poster column
+   only exists on a wide screen (F10). */
+.detail-poster { display: none; }
+
+/* Desktop scrim behind a centered sheet — phone keeps the full-bleed sheet. */
+.scrim { display: none; }
+
 /* Tablet: the same card, denser (FR-71). */
 @media (min-width: 640px) {
   .tilegrid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .postergrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .thumbgrid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
   .body { padding: 0 24px 24px; }
+  /* …and shrinks to its content once there is room (F10). */
+  .sortsel { flex: 0 1 auto; width: auto; }
+}
+/* Desktop: no control wider than 720px unless it is a grid (F10). Sheets
+   become centered panels over a dimmed scrim instead of full-bleed pages. */
+@media (min-width: 760px) {
+  .maxcol { max-width: 720px; margin-inline: auto; }
+  .scrim { display: block; position: absolute; inset: 0; background: rgba(0,0,0,.55); z-index: 24; }
+  .sheet {
+    top: 20px; bottom: 20px; left: 0; right: 0;
+    width: 720px; max-width: calc(100% - 48px); margin-inline: auto;
+    border: 1px solid var(--kino-border); border-radius: 18px;
+    box-shadow: 0 24px 80px rgba(0,0,0,.55);
+  }
 }
 @media (min-width: 900px) {
   .postergrid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .thumbgrid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  /* Detail sheet: poster left, text right (F10). */
+  .detailcols { display: flex; gap: 20px; align-items: flex-start; }
+  .detail-poster { display: block; flex: 0 0 200px; }
+  .detailmain { flex: 1; min-width: 0; }
+  .detail-backdrop { display: none; }
 }
 `;
 
@@ -557,6 +653,9 @@ class KinoCard extends CardBase {
     this._homeRowsAt = 0;
     this._facets = { genres: [], countries: [], ratings: [], yearMin: null, yearMax: null };
     this._searchTimer = null;
+    // The filter sheet's CTA count, kept live while filters change (F4).
+    this._filterPreview = null;
+    this._previewTimer = null;
   }
 
   static getStubConfig() {
@@ -673,6 +772,37 @@ class KinoCard extends CardBase {
   disconnectedCallback() {
     if (this._timer) clearInterval(this._timer);
     if (this._searchTimer) clearTimeout(this._searchTimer);
+    if (this._previewTimer) clearTimeout(this._previewTimer);
+  }
+
+  /**
+   * Refresh the filter sheet's CTA count (F4).
+   *
+   * The one number on the sheet used to be the *old* total until the sheet
+   * closed — stale precisely when it mattered. A debounced count-only query
+   * (limit 1, read the total) keeps it honest while chips are toggled.
+   */
+  _previewFilterCount() {
+    if (!this._view.filterSheet) return;
+    if (this._previewTimer) clearTimeout(this._previewTimer);
+    this._previewTimer = setTimeout(async () => {
+      const message = helpers.queryFromFilters(
+        this._view.filters,
+        this._view.category,
+        this._view.query,
+        this._view.sort,
+        0,
+        1,
+        this._view.sortDir
+      );
+      try {
+        const page = await this._ws(message);
+        this._filterPreview = page.total;
+      } catch (err) {
+        this._filterPreview = null;
+      }
+      if (this._view.filterSheet) this._render();
+    }, 250);
   }
 
   /* -- data ---------------------------------------------------------- */
@@ -1009,6 +1139,8 @@ class KinoCard extends CardBase {
     const focused = this.shadowRoot.activeElement;
     const focusField = focused && focused.dataset ? focused.dataset.field : null;
     const caret = focused && focused.selectionStart != null ? focused.selectionStart : null;
+    const sheetOpen =
+      this._view.detailId || this._view.playingOpen || this._view.filterSheet;
     this._container.innerHTML = [
       this._renderHeader(),
       '<div class="scroller">',
@@ -1020,6 +1152,9 @@ class KinoCard extends CardBase {
       `<div class="body">${this._renderBody()}</div>`,
       "</div>",
       this._renderFooter(),
+      // On a desktop the sheets are centered panels; the scrim dims the card
+      // behind them (F10). On a phone it stays hidden.
+      sheetOpen ? '<div class="scrim"></div>' : "",
       this._view.detailId ? this._renderDetailSheet() : "",
       this._view.playingOpen ? this._renderPlayingSheet() : "",
       this._view.filterSheet ? this._renderFilterSheet() : "",
@@ -1086,22 +1221,33 @@ class KinoCard extends CardBase {
     const current = this._currentActivity;
     const isOff = k.activity === k.offActivity && !k.progress;
     const showGrid = isOff || (this._view.activityMenu && !k.progress);
+    // The configured mdi icons finally render (F16); two lines give the
+    // tiles some presence on a wide screen without changing the phone.
     const tiles = k.activities
       .filter((a) => a.key !== k.offActivity)
       .map(
         (a) => `<button class="tile" data-act="activate" data-key="${a.key}"
-          aria-pressed="${current && current.key === a.key}">${this._esc(a.name)}</button>`
+          aria-pressed="${current && current.key === a.key}">
+          ${a.icon ? `<ha-icon class="tileicon" icon="${this._esc(a.icon)}"></ha-icon>` : ""}
+          <span>${this._esc(a.name)}</span>
+        </button>`
       )
       .join("");
     const compact = !isOff
       ? `<button class="chipbtn" data-act="toggle-menu">
            <span>${this._esc(
-             k.progress && current ? `Wechsel zu ${current.name}…` : current ? current.name : "—"
+             k.progress && k.targetActivity === k.offActivity
+               ? "Wird ausgeschaltet…"
+               : k.progress && current
+                 ? `Wechsel zu ${current.name}…`
+                 : current
+                   ? current.name
+                   : "—"
            )}</span>
            <span style="font-size:10px;color:var(--kino-text3)">${this._view.activityMenu ? "▴" : "▾"}</span>
          </button>`
       : "";
-    return `<div style="padding:0 20px 12px">
+    return `<div class="maxcol" style="padding:0 20px 12px">
       ${compact}
       ${showGrid ? `<div class="tilegrid" style="margin-top:${compact ? 10 : 0}px">${tiles}</div>` : ""}
     </div>`;
@@ -1137,12 +1283,12 @@ class KinoCard extends CardBase {
         </div>`;
       })
       .join("");
-    return `<div class="devicechips" style="padding:0 20px">${chips}</div>`;
+    return `<div class="devicechips maxcol" style="padding:0 20px">${chips}</div>`;
   }
 
   _renderActionError() {
     if (!this._actionError) return "";
-    return `<div style="padding:0 20px"><div class="banner">
+    return `<div class="maxcol" style="padding:0 20px"><div class="banner">
       <strong>${this._esc(this._actionError)}</strong>
       <div class="row">
         <button class="ghost" data-act="dismiss-error">Verstanden</button>
@@ -1154,7 +1300,7 @@ class KinoCard extends CardBase {
     const drift = (this._kino.drift || []).filter((d) => d.classification !== "benign");
     if (!drift.length) return "";
     const finding = drift[0];
-    return `<div style="padding:0 20px"><div class="banner">
+    return `<div class="maxcol" style="padding:0 20px"><div class="banner">
       <strong>${this._esc(finding.detail)}</strong>
       <p>Die Aktivität bleibt aktiv — es wird nichts automatisch zurückgesetzt.</p>
       <div class="row">
@@ -1175,12 +1321,12 @@ class KinoCard extends CardBase {
       // Between the transition finishing and playback starting there is no
       // progress, but the queued title must not vanish in that gap (F5).
       return pending
-        ? `<div style="padding:0 20px"><div class="progress">${pending}</div></div>`
+        ? `<div class="maxcol" style="padding:0 20px"><div class="progress">${pending}</div></div>`
         : "";
     }
     const current = this._currentActivity;
     const toOff = this._kino.targetActivity === this._kino.offActivity;
-    return `<div style="padding:0 20px"><div class="progress">
+    return `<div class="maxcol" style="padding:0 20px"><div class="progress">
       <div class="head">
         <b>${this._esc(toOff ? "Kino wird ausgeschaltet" : `Wechsel zu ${current ? current.name : "…"}`)}</b>
         <span>${this._esc(helpers.formatEta(p.etaSeconds))}</span>
@@ -1220,7 +1366,7 @@ class KinoCard extends CardBase {
         // and even the play button (which powers everything on, FR-55) work
         // from here.
         this._ensureHomeRows();
-        return `
+        return `<div class="maxcol">
           <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;
                       background:var(--kino-surface);border:1px solid var(--kino-border);margin-bottom:16px">
             <span style="color:var(--kino-text3);display:flex">${POWER_ICON}</span>
@@ -1229,15 +1375,23 @@ class KinoCard extends CardBase {
               <div style="font-size:11px;color:var(--kino-text3)">Aktivität oben wählen, um zu starten — die Bibliothek ist trotzdem verfügbar.</div>
             </div>
           </div>
-          ${this._renderLibraryHome()}`;
+          ${this._renderLibraryHome()}
+        </div>`;
       case "library":
         this._ensureHomeRows();
-        return this._renderLibraryHome();
+        return `<div class="maxcol">${this._renderLibraryHome()}</div>`;
       case "musik":
-        return this._renderMusik();
+        return `<div class="maxcol">${this._renderMusik()}</div>`;
       default:
-        return `<div class="empty">
-          <p>${this._esc(current.handoffText || "Weiter auf der Fernbedienung des Geräts.")}</p>
+        // A proper card with icon and text instead of one floating line in
+        // an otherwise empty viewport (F10).
+        return `<div class="maxcol" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:14px;
+                    background:var(--kino-surface);border:1px solid var(--kino-border);box-sizing:border-box">
+          <ha-icon icon="${this._esc(current.icon || "mdi:remote-tv")}"
+            style="color:var(--kino-gold);flex-shrink:0;--mdc-icon-size:26px"></ha-icon>
+          <p style="font-size:13px;color:var(--kino-text2)">${this._esc(
+            current.handoffText || "Weiter auf der Fernbedienung des Geräts."
+          )}</p>
         </div>`;
     }
   }
@@ -1427,43 +1581,45 @@ class KinoCard extends CardBase {
     }
 
     return `
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <a class="link" data-act="back-home">‹ Zurück</a>
-        <h2 style="flex:1">Bibliothek · ${this._view.category === "shows" ? "Serien" : "Filme"}</h2>
-        <a class="link" style="color:var(--kino-text2)" data-act="force-refresh">${
-          this._view.refreshing ? "Wird aktualisiert…" : "Aktualisieren"
-        }</a>
+      <div class="maxcol">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <a class="link" data-act="back-home">‹ Zurück</a>
+          <h2 style="flex:1">Bibliothek · ${this._view.category === "shows" ? "Serien" : "Filme"}</h2>
+          <a class="link" style="color:var(--kino-text2)" data-act="force-refresh">${
+            this._view.refreshing ? "Wird aktualisiert…" : "Aktualisieren"
+          }</a>
+        </div>
+        <div class="row" style="margin-bottom:10px">
+          <button class="pill" style="flex:1;height:40px" data-act="category" data-key="movies" aria-pressed="${this._view.category === "movies"}">Filme</button>
+          <button class="pill" style="flex:1;height:40px" data-act="category" data-key="shows" aria-pressed="${this._view.category === "shows"}">Serien</button>
+        </div>
+        <input type="text" data-field="query" placeholder="Titel suchen…" value="${this._esc(this._view.query)}" style="margin-bottom:12px">
+        <div class="row" style="margin-bottom:10px">
+          <button class="pill" style="flex:0 0 auto;height:40px" data-act="open-filters" aria-pressed="${count > 0}">
+            ${count ? `Filter · ${count}` : "Filter"}
+          </button>
+          <select data-field="sort" class="sortsel">
+            ${SORT_OPTIONS.map(
+              ([value, label]) =>
+                `<option value="${value}"${this._view.sort === value ? " selected" : ""}>${label}</option>`
+            ).join("")}
+          </select>
+          <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="sort-dir"
+            aria-pressed="${!!this._view.sortDir}" title="Sortierrichtung umkehren">
+            ${(this._view.sortDir || helpers.defaultSortDir(this._view.sort)) === "asc" ? "↑" : "↓"}
+          </button>
+          <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="view-mode"
+            title="Ansicht: ${(VIEW_MODES.find(([k]) => k === this._view.viewMode) || VIEW_MODES[0])[1]}">
+            ${VIEW_ICON}
+          </button>
+        </div>
+        ${chips ? `<div class="posterrow hscroll" style="margin-bottom:10px">${chips}</div>` : ""}
+        <div style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">${
+          lib.items.length && lib.items.length < lib.total
+            ? `${lib.items.length} von ${lib.total} Titeln`
+            : `${lib.total} Titel`
+        }</div>
       </div>
-      <div class="row" style="margin-bottom:10px">
-        <button class="pill" style="flex:1;height:40px" data-act="category" data-key="movies" aria-pressed="${this._view.category === "movies"}">Filme</button>
-        <button class="pill" style="flex:1;height:40px" data-act="category" data-key="shows" aria-pressed="${this._view.category === "shows"}">Serien</button>
-      </div>
-      <input type="text" data-field="query" placeholder="Titel suchen…" value="${this._esc(this._view.query)}" style="margin-bottom:12px">
-      <div class="row" style="margin-bottom:10px">
-        <button class="pill" style="flex:0 0 auto;height:40px" data-act="open-filters" aria-pressed="${count > 0}">
-          ${count ? `Filter · ${count}` : "Filter"}
-        </button>
-        <select data-field="sort" style="flex:1;min-width:0">
-          ${SORT_OPTIONS.map(
-            ([value, label]) =>
-              `<option value="${value}"${this._view.sort === value ? " selected" : ""}>${label}</option>`
-          ).join("")}
-        </select>
-        <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="sort-dir"
-          aria-pressed="${!!this._view.sortDir}" title="Sortierrichtung umkehren">
-          ${(this._view.sortDir || helpers.defaultSortDir(this._view.sort)) === "asc" ? "↑" : "↓"}
-        </button>
-        <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="view-mode"
-          title="Ansicht: ${(VIEW_MODES.find(([k]) => k === this._view.viewMode) || VIEW_MODES[0])[1]}">
-          ${VIEW_ICON}
-        </button>
-      </div>
-      ${chips ? `<div class="posterrow hscroll" style="margin-bottom:10px">${chips}</div>` : ""}
-      <div style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">${
-        lib.items.length && lib.items.length < lib.total
-          ? `${lib.items.length} von ${lib.total} Titeln`
-          : `${lib.total} Titel`
-      }</div>
       ${grid}`;
   }
 
@@ -1515,7 +1671,7 @@ class KinoCard extends CardBase {
                aria-pressed="${this._view.viewMode === key}">${label}</button>`
         ).join("")}
       </div>
-      <button class="primary" data-act="close-filters">${this._library.total} Titel anzeigen</button>
+      <button class="primary" data-act="close-filters">${this._filterPreview ?? this._library.total} Titel anzeigen</button>
     </div>`;
   }
 
@@ -1549,6 +1705,11 @@ class KinoCard extends CardBase {
       "Backdrop",
       this._kino.artworkSignature
     );
+    const poster = helpers.artworkUrl(
+      item.id,
+      "Primary",
+      this._kino.artworkSignature
+    );
     // While no media activity runs, playing also powers the theater on
     // (FR-55) — the label must say so instead of pretending it just plays.
     const mediaActive =
@@ -1560,35 +1721,42 @@ class KinoCard extends CardBase {
           aria-pressed="${!!item.favorite}"
           title="${item.favorite ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen"}">${HEART_ICON}</button>
       </div>
-      <div class="backdrop" style="margin-top:12px">
-        <img src="${backdrop}" alt="" onerror="this.style.display='none'">
+      <div class="detailcols" style="margin-top:12px">
+        <div class="art detail-poster">
+          <img loading="lazy" src="${poster}" alt="" onerror="this.style.display='none'">
+        </div>
+        <div class="detailmain">
+          <div class="backdrop detail-backdrop">
+            <img src="${backdrop}" alt="" onerror="this.style.display='none'">
+          </div>
+          <h2 style="margin:14px 0 4px;font-size:20px">${this._esc(item.title)}</h2>
+          <div style="font-size:12px;color:var(--kino-text2)">${this._esc(
+            [helpers.metaLine(item), item.officialRating].filter(Boolean).join(" · ")
+          )}</div>
+          ${
+            item.videoFormat
+              ? `<div style="font-size:11px;color:var(--kino-text3);font-family:ui-monospace,monospace;margin-top:8px">${this._esc(
+                  [item.videoFormat, item.audioFormat].filter(Boolean).join(" · ")
+                )}</div>`
+              : ""
+          }
+          ${
+            item.tagline
+              ? `<p style="font-size:13px;color:var(--kino-text2);font-style:italic;margin:14px 0">${this._esc(item.tagline)}</p>`
+              : ""
+          }
+          ${
+            item.playable === false
+              ? `<p class="error" style="margin:14px 0">${this._esc(item.unplayableReason || "Dieser Titel ist nicht abspielbar.")}</p>`
+              : `<button class="primary" style="margin-top:18px" data-act="play" data-key="${this._esc(item.id)}">${this._esc(helpers.playLabel(item, mediaActive))}</button>
+                 ${
+                   item.continueWatching
+                     ? `<button class="ghost" style="width:100%;margin-top:8px" data-act="play-from-start" data-key="${this._esc(item.id)}">Von Anfang abspielen</button>`
+                     : ""
+                 }`
+          }
+        </div>
       </div>
-      <h2 style="margin:14px 0 4px;font-size:20px">${this._esc(item.title)}</h2>
-      <div style="font-size:12px;color:var(--kino-text2)">${this._esc(
-        [helpers.metaLine(item), item.officialRating].filter(Boolean).join(" · ")
-      )}</div>
-      ${
-        item.videoFormat
-          ? `<div style="font-size:11px;color:var(--kino-text3);font-family:ui-monospace,monospace;margin-top:8px">${this._esc(
-              [item.videoFormat, item.audioFormat].filter(Boolean).join(" · ")
-            )}</div>`
-          : ""
-      }
-      ${
-        item.tagline
-          ? `<p style="font-size:13px;color:var(--kino-text2);font-style:italic;margin:14px 0">${this._esc(item.tagline)}</p>`
-          : ""
-      }
-      ${
-        item.playable === false
-          ? `<p class="error" style="margin:14px 0">${this._esc(item.unplayableReason || "Dieser Titel ist nicht abspielbar.")}</p>`
-          : `<button class="primary" style="margin-top:18px" data-act="play" data-key="${this._esc(item.id)}">${this._esc(helpers.playLabel(item, mediaActive))}</button>
-             ${
-               item.continueWatching
-                 ? `<button class="ghost" style="width:100%;margin-top:8px" data-act="play-from-start" data-key="${this._esc(item.id)}">Von Anfang abspielen</button>`
-                 : ""
-             }`
-      }
     </div>`;
   }
 
@@ -1686,9 +1854,11 @@ class KinoCard extends CardBase {
     // The Trinnov reports "none" as its upmixer when nothing is upmixed, but
     // refuses it as a *choice* — selecting it fails with "Unknown upmixer
     // option". "auto" is the settable equivalent, and it is already listed.
+    // Labels name the function, not the brand (F9): the second user does not
+    // know what a Trinnov is.
     const blocks = [
-      [controls.preset, "Trinnov · Preset", []],
-      [controls.upmixer, "Upmixer", ["none"]],
+      [controls.preset, "Klang", []],
+      [controls.upmixer, "Raumklang", ["none"]],
     ]
       .map(([entityId, label, hidden]) =>
         this._entitySelectBlock(entityId, label, hidden)
@@ -1727,14 +1897,16 @@ class KinoCard extends CardBase {
     const current = state.state;
     const orphan =
       current && current !== "unknown" && !options.includes(current);
+    // Values stay raw — they are what the entity accepts. Only the visible
+    // text is prettified (F8): "0: Off" reads "Aus", "none" reads "—".
     return `<div style="margin-bottom:12px">
       <div class="label">${this._esc(label)}</div>
       <select data-field="entity-select" data-key="${entityId}">
-        ${orphan ? `<option value="" disabled selected>${this._esc(current)}</option>` : ""}
+        ${orphan ? `<option value="" disabled selected>${this._esc(helpers.displayLabel(current))}</option>` : ""}
         ${options
           .map(
             (o) =>
-              `<option value="${this._esc(o)}"${current === o ? " selected" : ""}>${this._esc(o)}</option>`
+              `<option value="${this._esc(o)}"${current === o ? " selected" : ""}>${this._esc(helpers.displayLabel(o))}</option>`
           )
           .join("")}
       </select>
@@ -1757,6 +1929,17 @@ class KinoCard extends CardBase {
   _renderFooter() {
     const k = this._kino;
     if (k.state === "off" || this._view.detailId || this._view.playingOpen) return "";
+    // While shutting down there is nothing to hear and nothing to adjust —
+    // a dead volume row ("—") would only pretend otherwise (F13).
+    if (k.progress && k.targetActivity === k.offActivity) {
+      return `<footer>
+        <div class="footrow">
+          <div style="flex:1;font-size:12px;font-weight:700;color:var(--kino-text2)">
+            Wird ausgeschaltet…
+          </div>
+        </div>
+      </footer>`;
+    }
     const player = this._playerEntity;
     const state = player ? this._hass.states[player] : null;
     const playing = state && ["playing", "paused"].includes(state.state);
@@ -1860,16 +2043,19 @@ class KinoCard extends CardBase {
         break;
       case "open-filters":
         view.filterSheet = true;
+        this._filterPreview = null;
         this._render();
         break;
       case "close-filters":
         view.filterSheet = false;
+        this._filterPreview = null;
         this._render();
         await this._loadLibrary();
         break;
       case "reset-filters":
         view.filters = { tags: [], genres: [], countries: [], ratings: [], yearFrom: null, yearTo: null };
         this._render();
+        this._previewFilterCount();
         break;
       case "toggle-filter":
       case "remove-filter": {
@@ -1892,6 +2078,7 @@ class KinoCard extends CardBase {
         }
         this._render();
         if (act === "remove-filter") await this._loadLibrary();
+        else this._previewFilterCount();
         break;
       }
       case "sort-dir": {
@@ -2040,6 +2227,7 @@ class KinoCard extends CardBase {
       const value = event.target.value ? Number(event.target.value) : null;
       this._view.filters[field === "year-from" ? "yearFrom" : "yearTo"] = value;
       this._render();
+      this._previewFilterCount();
     } else if (field === "entity-select") {
       this._callService("select", "select_option", {
         entity_id: event.target.dataset.key,
