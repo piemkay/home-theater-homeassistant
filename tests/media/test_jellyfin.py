@@ -8,7 +8,7 @@ Fixtures mirror the shapes the live server at jellyfin.local.7labs.dev
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -350,7 +350,7 @@ class TestQuerying:
         await _client(session).search(MediaQuery(year_from=2020))
         years = session.requests[0]["params"]["Years"].split(",")
         assert years[0] == "2020"
-        assert years[-1] == str(datetime.now().year)
+        assert years[-1] == str(datetime.now(tz=timezone.utc).year)
 
     async def test_open_ended_year_to_starts_at_1900(self):
         session = FakeSession(

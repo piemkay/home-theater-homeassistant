@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
@@ -353,7 +353,9 @@ def _param(value: Any) -> str:
     return str(value)
 
 
-def _search_params(query: MediaQuery) -> dict[str, Any]:
+def _search_params(  # noqa: C901, PLR0912 - a flat translation table, one branch per filter
+    query: MediaQuery,
+) -> dict[str, Any]:
     """Translate one :class:`MediaQuery` into `/Items` query parameters."""
     sort_by, sort_order = _SORT_FIELDS[query.sort]
     # The home rows (recent, continue) should show both kinds.
@@ -424,7 +426,7 @@ def _year_range(start: int | None, end: int | None) -> list[int]:
     if start is None and end is None:
         return []
     low = start if start is not None else 1900
-    high = end if end is not None else datetime.now().year
+    high = end if end is not None else datetime.now(tz=timezone.utc).year
     if high < low or high - low > 150:
         return []
     return list(range(low, high + 1))

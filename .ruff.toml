@@ -26,10 +26,12 @@ ignore = [
     "TC002",
     "TC003",
     "UP042",   # `str, Enum` keeps core/ importable on Python 3.10
+    "UP017",   # `datetime.UTC` needs 3.11; the test matrix still runs 3.10
     "COM812",  # Conflicts with the formatter
     "ISC001",  # Conflicts with the formatter
     "FBT001",  # Boolean flags are idiomatic in the driver/report APIs
     "FBT002",
+    "FBT003",  # ... and their call sites follow the same idiom
     "PLR0913", # Wide keyword-only constructors are deliberate
     "ANN401",  # `Any` is correct at the Home Assistant boundary
     "RUF001",  # German typography uses en dashes deliberately

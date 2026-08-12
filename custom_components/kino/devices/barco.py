@@ -152,7 +152,7 @@ class BarcoDriver(EntityBackedDriver):
 
     # -- DeviceDriver protocol ---------------------------------------------
 
-    async def observe(self) -> DeviceObservation:
+    async def observe(self) -> DeviceObservation:  # noqa: C901 - one flat pass over the projector's phase table
         raw = self._raw_state()
         phase = self._resolve_phase(raw)
         if raw != self._last_raw:
