@@ -18,8 +18,10 @@ from .frontend import PANEL_MODULE_URL
 _LOGGER = logging.getLogger(__name__)
 
 PANEL_URL_PATH = "kino"
-PANEL_TITLE = "Kino"
-PANEL_ICON = "mdi:theater"
+# Not plain "Kino": the dashboard already claims that name, and two identical
+# sidebar entries are indistinguishable even for the admin (F15).
+PANEL_TITLE = "Kino Admin"
+PANEL_ICON = "mdi:movie-edit"
 PANEL_COMPONENT = "kino-panel"
 
 _REGISTERED = f"{DOMAIN}_panel"

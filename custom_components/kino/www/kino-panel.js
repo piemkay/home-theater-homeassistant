@@ -311,6 +311,24 @@ input[type="checkbox"] { width: auto; min-height: 0; }
 .bad { color: var(--kino-red); }
 .good { color: var(--kino-teal); }
 
+.menucard {
+  position: absolute; z-index: 6; margin-top: 4px;
+  background: var(--kino-surface); border: 1px solid var(--kino-border);
+  border-radius: 10px; padding: 6px; display: flex; flex-direction: column;
+  gap: 4px; min-width: 150px; box-shadow: 0 12px 32px rgba(0,0,0,.45);
+}
+.menucard button { text-align: left; }
+
+.dialogwrap {
+  position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  box-sizing: border-box;
+}
+.dialogwrap > div {
+  width: 100%; max-width: 420px; background: var(--kino-surface);
+  border: 1px solid var(--kino-border); border-radius: 14px; padding: 20px;
+}
+
 .errors {
   border: 1px solid var(--kino-red); background: oklch(0.65 0.19 25 / 0.12);
   border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
@@ -357,6 +375,10 @@ class KinoPanel extends PanelBase {
     this._plannerTarget = "";
     this._saving = false;
     this._rawText = "";
+    //: Which activity column's ⋯ menu is open (F11).
+    this._columnMenu = null;
+    //: The styled dialog replacing prompt()/confirm() (F14).
+    this._dialog = null;
   }
 
   set hass(hass) {
@@ -565,7 +587,49 @@ class KinoPanel extends PanelBase {
         ${this._renderNotice()}
         ${this._renderErrors()}
         ${this._renderTab()}
-      </main>`;
+      </main>
+      ${this._renderDialog()}`;
+  }
+
+  /** The card-style dialog that replaced prompt()/confirm() (F14). */
+  _renderDialog() {
+    const d = this._dialog;
+    if (!d) return "";
+    let title;
+    let body = "";
+    let confirmLabel = "OK";
+    let danger = false;
+    if (d.kind === "add-activity") {
+      title = "Neue Aktivität";
+      body = '<input data-field="dialog-input" placeholder="Name der Aktivität">';
+      confirmLabel = "Anlegen";
+    } else if (d.kind === "delete-activity") {
+      title = `Aktivität „${this._esc(
+        panelHelpers.activityName(this._document, d.key)
+      )}“ löschen?`;
+      body =
+        '<p class="sub" style="margin:0">Die Spalte und ihre Geräteeinstellungen werden entfernt. Wirksam wird das erst mit „Speichern“.</p>';
+      confirmLabel = "Löschen";
+      danger = true;
+    } else if (d.kind === "reset-durations") {
+      title = d.key
+        ? `Gelernte Dauern für „${this._esc(
+            panelHelpers.deviceName(this._document, d.key)
+          )}“ zurücksetzen?`
+        : "Alle gelernten Dauern zurücksetzen?";
+      body =
+        '<p class="sub" style="margin:0">Die Restzeit-Anzeige beginnt danach wieder bei den konfigurierten Standardwerten.</p>';
+      confirmLabel = "Zurücksetzen";
+      danger = true;
+    }
+    return `<div class="dialogwrap" data-act="dialog-cancel"><div data-act="dialog-noop">
+      <h3 style="margin:0 0 10px;font-size:15px">${title}</h3>
+      ${body}
+      <div class="actions" style="margin-top:16px;justify-content:flex-end">
+        <button class="ghost" data-act="dialog-cancel">Abbrechen</button>
+        <button class="${danger ? "danger" : "primary"}" data-act="dialog-confirm">${confirmLabel}</button>
+      </div>
+    </div></div>`;
   }
 
   _renderNotice() {
@@ -576,14 +640,33 @@ class KinoPanel extends PanelBase {
 
   _renderErrors() {
     if (!this._errors.length) return "";
+    // Grouped under the activity or device they belong to, so ten errors in
+    // one column read as one problem, not ten (WS-4 paydown).
+    const grouped = panelHelpers.errorsByPath(this._errors);
+    const scopeLabel = (scope) => {
+      const [head, key] = scope.split(".");
+      if (head === "activities" && key) {
+        return `Aktivität „${this._esc(panelHelpers.activityName(this._document, key))}“`;
+      }
+      if (head === "devices" && key) {
+        return `Gerät „${this._esc(panelHelpers.deviceName(this._document, key))}“`;
+      }
+      return `<code>${this._esc(scope)}</code>`;
+    };
     return `<div class="errors">
-      <strong>${this._errors.length} Fehler in der Konfiguration</strong>
-      <ul>${this._errors
+      <strong>${this._errors.length} ${this._errors.length === 1 ? "Fehler" : "Fehler"} in der Konfiguration</strong>
+      ${Object.entries(grouped)
         .map(
-          (e) =>
-            `<li><code>${this._esc(e.path)}</code> — ${this._esc(e.message)}</li>`
+          ([scope, errors]) => `
+        <div style="margin-top:10px;font-size:12px;font-weight:700">${scopeLabel(scope)}</div>
+        <ul>${errors
+          .map(
+            (e) =>
+              `<li><code>${this._esc(e.path)}</code> — ${this._esc(e.message)}</li>`
+          )
+          .join("")}</ul>`
         )
-        .join("")}</ul>
+        .join("")}
     </div>`;
   }
 
@@ -612,19 +695,27 @@ class KinoPanel extends PanelBase {
     const devices = panelHelpers.deviceKeys(doc);
     const offActivity = doc.settings?.off_activity || "aus";
 
+    // One quiet ⋯ per column: destructive actions live behind it instead of
+    // a standing red ✕ on every activity (F11).
     const header = activities
       .map(
         (key) => `<th>
           <div class="cellhead">
             <input data-field="activity-name" data-activity="${key}"
               value="${this._esc(doc.activities[key].name || key)}">
+            <button class="ghost" style="min-height:30px;padding:2px 9px"
+              data-act="column-menu" data-key="${key}" title="Aktionen">⋯</button>
           </div>
           <div class="mono muted">${this._esc(key)}</div>
-          <div class="actions" style="margin-top:6px">
-            <button class="ghost" data-act="duplicate-activity" data-key="${key}" title="Duplizieren">⧉</button>
-            <button class="danger" data-act="delete-activity" data-key="${key}"
-              ${key === offActivity ? "disabled" : ""} title="Löschen">✕</button>
-          </div>
+          ${
+            this._columnMenu === key
+              ? `<div class="menucard">
+                  <button class="ghost" data-act="duplicate-activity" data-key="${key}">⧉ Duplizieren</button>
+                  <button class="danger" data-act="delete-activity" data-key="${key}"
+                    ${key === offActivity ? "disabled" : ""}>✕ Löschen</button>
+                </div>`
+              : ""
+          }
         </th>`
       )
       .join("");
@@ -730,20 +821,25 @@ class KinoPanel extends PanelBase {
       .map(([name, described]) => {
         const value = requirement.settings[name];
         if (described.type === "number") {
+          // A bare number reads like a mystery; the volume is dB (F11).
+          const unit = name === "volume" ? "dB" : null;
           return `<div class="setting"><span>${name}</span>
-            <input type="number" step="0.5" data-field="device-setting"
-              data-activity="${activityKey}" data-device="${deviceKey}"
-              data-setting="${name}" value="${
-                value == null ? "" : this._esc(value)
-              }"></div>`;
+            <div style="display:flex;align-items:center;gap:6px">
+              <input type="number" step="0.5" data-field="device-setting"
+                data-activity="${activityKey}" data-device="${deviceKey}"
+                data-setting="${name}" value="${
+                  value == null ? "" : this._esc(value)
+                }">${unit ? `<span class="muted" style="font-size:11px">${unit}</span>` : ""}
+            </div></div>`;
         }
         const options = described.options || [];
         if (!options.length) {
-          // FR-112 says never free-text — but an off device has no list, so
-          // say why rather than silently offering nothing.
+          // FR-112 says never free-text — but an off device has no list. A
+          // compact chip says so once; the sentence lives in the tooltip
+          // instead of repeating across half the matrix (F11).
           return `<div class="setting"><span>${name}</span>
-            <span class="muted">Gerät aus — Werte nicht abrufbar${
-              value ? `, gesetzt: ${this._esc(value)}` : ""
+            <span class="pill muted" title="Gerät aus — Werte nicht abrufbar. Der gesetzte Wert wird beim Start angewendet.">aus · ${
+              value ? `gesetzt: ${this._esc(value)}` : "—"
             }</span></div>`;
         }
         return `<div class="setting"><span>${name}</span>
@@ -1101,6 +1197,8 @@ class KinoPanel extends PanelBase {
           )}, ${panelHelpers.formatDuration(
             d.min_seconds
           )}–${panelHelpers.formatDuration(d.max_seconds)}</td>
+          <td><button class="ghost" data-act="reset-durations"
+            data-key="${this._esc(d.device)}">Zurücksetzen</button></td>
         </tr>`
       )
       .join("");
@@ -1123,8 +1221,8 @@ class KinoPanel extends PanelBase {
         <button class="danger" data-act="reset-durations">Alle zurücksetzen</button>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th class="rowhead">Gerät</th><th>Art</th><th>Schätzung</th><th>Streuung</th></tr></thead>
-        <tbody>${durations || '<tr><td colspan="4" class="muted">Noch nichts gelernt.</td></tr>'}</tbody>
+        <thead><tr><th class="rowhead">Gerät</th><th>Art</th><th>Schätzung</th><th>Streuung</th><th></th></tr></thead>
+        <tbody>${durations || '<tr><td colspan="5" class="muted">Noch nichts gelernt.</td></tr>'}</tbody>
       </table></div>
     </section>`;
   }
@@ -1177,30 +1275,60 @@ class KinoPanel extends PanelBase {
       case "revert":
         this._revert();
         break;
-      case "add-activity": {
-        const name = prompt("Name der neuen Aktivität?");
-        if (!name) return;
-        const newKey = panelHelpers.uniqueKey(
-          this._document,
-          panelHelpers.slugify(name)
-        );
-        this._document.activities[newKey] = panelHelpers.blankActivity(name);
+      case "add-activity":
+        this._dialog = { kind: "add-activity" };
         this._render();
         break;
-      }
+      case "column-menu":
+        this._columnMenu = this._columnMenu === key ? null : key;
+        this._render();
+        break;
       case "duplicate-activity": {
         const source = this._document.activities[key];
         const newKey = panelHelpers.uniqueKey(this._document, `${key}_kopie`);
         this._document.activities[newKey] = panelHelpers.clone(source);
         this._document.activities[newKey].name = `${source.name || key} (Kopie)`;
+        this._columnMenu = null;
         this._render();
         break;
       }
       case "delete-activity":
-        if (!confirm(`Aktivität "${key}" löschen?`)) return;
-        delete this._document.activities[key];
+        this._columnMenu = null;
+        this._dialog = { kind: "delete-activity", key };
         this._render();
         break;
+      case "dialog-cancel":
+        this._dialog = null;
+        this._render();
+        break;
+      case "dialog-noop":
+        break;
+      case "dialog-confirm": {
+        const dialog = this._dialog;
+        const input = this._root.querySelector('[data-field="dialog-input"]');
+        this._dialog = null;
+        if (!dialog) break;
+        if (dialog.kind === "add-activity") {
+          const name = input && input.value.trim();
+          if (!name) {
+            this._render();
+            break;
+          }
+          const newKey = panelHelpers.uniqueKey(
+            this._document,
+            panelHelpers.slugify(name)
+          );
+          this._document.activities[newKey] = panelHelpers.blankActivity(name);
+          this._render();
+        } else if (dialog.kind === "delete-activity") {
+          delete this._document.activities[dialog.key];
+          this._render();
+        } else if (dialog.kind === "reset-durations") {
+          this._render();
+          await this._resetDurations(dialog.key || null);
+        }
+        break;
+      }
       case "dry-run":
         await this._dryRun(key);
         break;
@@ -1214,8 +1342,8 @@ class KinoPanel extends PanelBase {
         await this._deviceTest(key, mode);
         break;
       case "reset-durations":
-        if (!confirm("Alle gelernten Dauern zurücksetzen?")) return;
-        await this._resetDurations(null);
+        this._dialog = { kind: "reset-durations", key: key || null };
+        this._render();
         break;
       case "path-map-add":
         this._pathMap(key)[""] = "";
