@@ -677,7 +677,15 @@ async def ws_device_board(hass, connection, msg) -> None:
             }
         )
 
-    connection.send_result(msg["id"], {"activity": snapshot.activity, "devices": rows})
+    connection.send_result(
+        msg["id"],
+        {
+            "activity": snapshot.activity,
+            "targetActivity": snapshot.target_activity,
+            "state": snapshot.state.value,
+            "devices": rows,
+        },
+    )
 
 
 @websocket_api.websocket_command(

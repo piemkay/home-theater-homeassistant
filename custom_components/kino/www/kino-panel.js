@@ -937,11 +937,23 @@ class KinoPanel extends PanelBase {
       })
       .join("");
 
+    // "Aktive Aktivität film" while everything shuts down reads like a lie —
+    // say what the comparison is actually against.
+    const target = this._board.targetActivity;
+    let context;
+    if (this._board.state === "off") {
+      context = "Das Kino ist ausgeschaltet — erwartet ist: alle Geräte aus.";
+    } else if (target && target !== this._board.activity) {
+      context = `Wechsel zu <strong>${this._esc(target)}</strong> läuft —
+        verglichen wird noch mit <strong>${this._esc(this._board.activity || "—")}</strong>.`;
+    } else {
+      context = `Beobachteter gegen erwarteten Zustand für die aktive Aktivität
+        <strong>${this._esc(this._board.activity || "—")}</strong>.`;
+    }
     return `<section>
       <h2>Gerätestatus</h2>
       <p class="sub">
-        Beobachteter gegen erwarteten Zustand für die aktive Aktivität
-        <strong>${this._esc(this._board.activity || "—")}</strong>.
+        ${context}
         Start und Stopp wirken nur auf dieses eine Gerät.
       </p>
       <div class="actions" style="margin-bottom:12px">

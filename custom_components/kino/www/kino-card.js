@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.2.1";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -37,11 +37,18 @@ export const helpers = {
     return `noch ca. ${minutes} Min.`;
   },
 
-  /** dB value -> display string, or "Stumm" when muted. */
+  /**
+   * dB value -> display string, or "Stumm" when muted.
+   *
+   * During power transitions the entity's state is the literal string
+   * "unknown", which `Number.isNaN` does not coerce — hence the explicit
+   * `Number()` before the check, so no "NaN dB" ever reaches the screen.
+   */
   formatVolume(db, muted) {
     if (muted) return "Stumm";
-    if (db == null || Number.isNaN(db)) return "—";
-    return `${Number(db).toFixed(1)} dB`;
+    const value = Number(db);
+    if (db == null || db === "" || Number.isNaN(value)) return "—";
+    return `${value.toFixed(1)} dB`;
   },
 
   /** The meta line under a poster: `2016 · 106 Min · ★7.2`. */
@@ -114,6 +121,15 @@ export const helpers = {
   /** The direction each sort field uses when the user has not chosen one. */
   defaultSortDir(sort) {
     return sort === "title" ? "asc" : "desc";
+  },
+
+  /** Chip label for the year range, or null when none is set. */
+  yearRangeLabel(yearFrom, yearTo) {
+    if (yearFrom == null && yearTo == null) return null;
+    if (yearFrom != null && yearTo != null) {
+      return yearFrom === yearTo ? String(yearFrom) : `${yearFrom}–${yearTo}`;
+    }
+    return yearFrom != null ? `ab ${yearFrom}` : `bis ${yearTo}`;
   },
 
   /**
@@ -1315,11 +1331,13 @@ class KinoCard extends CardBase {
     const lib = this._library;
     const filters = this._view.filters;
     const count = helpers.activeFilterCount(filters);
+    const yearLabel = helpers.yearRangeLabel(filters.yearFrom, filters.yearTo);
     const chips = [
       ...filters.tags.map((t) => ["tag", t]),
       ...filters.genres.map((g) => ["genre", g]),
       ...(filters.ratings || []).map((r) => ["rating", r]),
       ...filters.countries.map((c) => ["country", c]),
+      ...(yearLabel ? [["year", yearLabel]] : []),
     ]
       .map(
         ([kind, value]) =>
@@ -1802,6 +1820,13 @@ class KinoCard extends CardBase {
         break;
       case "toggle-filter":
       case "remove-filter": {
+        if (kind === "year") {
+          view.filters.yearFrom = null;
+          view.filters.yearTo = null;
+          this._render();
+          await this._loadLibrary();
+          break;
+        }
         const bucket = { tag: "tags", genre: "genres", country: "countries", rating: "ratings" }[kind];
         const list = view.filters[bucket] || [];
         if (act === "toggle-filter" && bucket === "tags") {

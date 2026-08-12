@@ -57,6 +57,24 @@ describe("formatVolume", () => {
   test("unknown volume is not rendered as 0 dB", () => {
     assert.equal(helpers.formatVolume(null, false), "—");
   });
+
+  test("a transitioning entity's 'unknown' state never prints NaN dB", () => {
+    // Number.isNaN("unknown") is false — the value must be coerced first.
+    assert.equal(helpers.formatVolume("unknown", false), "—");
+    assert.equal(helpers.formatVolume("unavailable", false), "—");
+    assert.equal(helpers.formatVolume("", false), "—");
+    assert.equal(helpers.formatVolume("-30.0", false), "-30.0 dB");
+  });
+});
+
+describe("yearRangeLabel", () => {
+  test("labels every shape of range", () => {
+    assert.equal(helpers.yearRangeLabel(null, null), null);
+    assert.equal(helpers.yearRangeLabel(2020, 2024), "2020–2024");
+    assert.equal(helpers.yearRangeLabel(2020, 2020), "2020");
+    assert.equal(helpers.yearRangeLabel(2020, null), "ab 2020");
+    assert.equal(helpers.yearRangeLabel(null, 1999), "bis 1999");
+  });
 });
 
 describe("metaLine", () => {
