@@ -675,6 +675,47 @@ describe("displayLabel (F8)", () => {
   });
 });
 
+describe("episode naming (F2)", () => {
+  const episode = {
+    id: "ep1",
+    title: "Der Drachenritt",
+    kind: "episode",
+    seriesName: "House of the Dragon",
+    episodeCode: "S03E08",
+    year: 2026,
+    runtime: 56,
+  };
+
+  test("an episode row is recognised by its series", () => {
+    assert.equal(helpers.itemTitle(episode), "House of the Dragon");
+    assert.equal(helpers.itemMeta(episode), "S03E08 · Der Drachenritt");
+  });
+
+  test("movies keep their own title and meta", () => {
+    const movie = { id: "m", title: "Heat", kind: "movie", year: 1995, runtime: 170, rating: 8.3 };
+    assert.equal(helpers.itemTitle(movie), "Heat");
+    assert.equal(helpers.itemMeta(movie), "1995 · 170 Min · ★8.3");
+  });
+});
+
+describe("single-value facet groups (F12)", () => {
+  test("a group with one lone value is not offered", () => {
+    const c = Object.create(KinoCard.prototype);
+    c._view = {
+      sort: "added",
+      sortDir: null,
+      viewMode: "poster",
+      filters: { tags: [], genres: [], countries: [], ratings: [], yearFrom: null, yearTo: null },
+    };
+    c._facets = { genres: ["Drama", "Action"], countries: ["Deutschland"], ratings: ["FSK-16"], yearMin: 1957, yearMax: 2026 };
+    c._library = { total: 42 };
+    const html = c._renderFilterSheet();
+    assert.match(html, /Drama/);
+    assert.doesNotMatch(html, /Deutschland/);
+    assert.doesNotMatch(html, /FSK-16/);
+  });
+});
+
 describe("shutdown honesty (F13)", () => {
   const kino = {
     state: "stopping",

@@ -484,6 +484,141 @@ class TestFacets:
         assert facets.year_min is None
         assert facets.year_max is None
 
+    async def test_ratings_sort_by_system_then_rank(self):
+        """F12: Jellyfin's alphabetical order put FSK-18 before FSK-6."""
+        session = FakeSession(
+            {
+                "/Items/Filters": {
+                    "OfficialRatings": [
+                        "18",
+                        "FSK-0",
+                        "FSK-12",
+                        "FSK-16",
+                        "FSK-18",
+                        "FSK-6",
+                        "G",
+                        "MA 15+",
+                        "NR",
+                        "PG",
+                        "PG-13",
+                        "R",
+                        "TV-14",
+                        "TV-MA",
+                    ]
+                }
+            }
+        )
+
+        facets = await _client(session).facets()
+
+        assert facets.ratings == (
+            "FSK-0",
+            "FSK-6",
+            "FSK-12",
+            "FSK-16",
+            "FSK-18",
+            "G",
+            "PG",
+            "PG-13",
+            "R",
+            "NR",
+            "TV-14",
+            "TV-MA",
+            "MA 15+",
+            "18",
+        )
+
+
+SERIES = {
+    "Id": "series1",
+    "Name": "House of the Dragon",
+    "Type": "Series",
+    "ProductionYear": 2022,
+    "Genres": ["Drama", "Fantasy"],
+    "Overview": "Das Haus Targaryen auf dem Höhepunkt seiner Macht.",
+    "UserData": {"Played": False, "UnplayedItemCount": 13},
+    "ImageTags": {"Primary": "tagS"},
+}
+
+SEASON = {
+    "Id": "season3",
+    "Name": "Staffel 3",
+    "Type": "Season",
+    "IndexNumber": 3,
+    "SeriesName": "House of the Dragon",
+    "UserData": {"Played": False, "UnplayedItemCount": 5},
+}
+
+EPISODE = {
+    "Id": "ep308",
+    "Name": "Der Drachenritt",
+    "Type": "Episode",
+    "IndexNumber": 8,
+    "ParentIndexNumber": 3,
+    "SeriesName": "House of the Dragon",
+    "RunTimeTicks": 33_600_000_000,  # 56 minutes
+    "Overview": "Ein Bote überbringt eine Nachricht.",
+    "Path": "/mnt/nfs/series/HotD/S03E08.mkv",
+    "UserData": {"Played": False, "PlaybackPositionTicks": 11_472_000_000},
+}
+
+
+class TestSeries:
+    """F2: the series drill-down — seasons, episodes, and their naming."""
+
+    async def test_seasons_come_from_the_shows_endpoint(self):
+        session = FakeSession({"/Shows/series1/Seasons": {"Items": [SEASON]}})
+
+        seasons = await _client(session).seasons("series1")
+
+        request = session.requests[0]
+        assert request["path"] == "/Shows/series1/Seasons"
+        assert request["params"]["UserId"] == "user-1"
+        assert len(seasons) == 1
+        season = seasons[0]
+        assert season.kind == "season"
+        assert season.title == "Staffel 3"
+        assert season.index_number == 3
+        assert season.unplayed_count == 5
+
+    async def test_episodes_are_scoped_to_a_season(self):
+        session = FakeSession({"/Shows/series1/Episodes": {"Items": [EPISODE]}})
+
+        episodes = await _client(session).episodes("series1", "season3")
+
+        request = session.requests[0]
+        assert request["path"] == "/Shows/series1/Episodes"
+        assert request["params"]["SeasonId"] == "season3"
+        episode = episodes[0]
+        assert episode.kind == "episode"
+        assert episode.series_name == "House of the Dragon"
+        assert episode.episode_code == "S03E08"
+        assert episode.runtime_minutes == 56
+        assert episode.resume_seconds == pytest.approx(1147.2)
+        assert episode.playable  # it has a path
+
+    async def test_an_episode_is_recognised_by_its_series(self):
+        session = FakeSession({"/Shows/series1/Episodes": {"Items": [EPISODE]}})
+
+        episode = (await _client(session).episodes("series1"))[0]
+
+        assert episode.display_title == "House of the Dragon · S03E08"
+        payload = episode.as_dict()
+        assert payload["seriesName"] == "House of the Dragon"
+        assert payload["episodeCode"] == "S03E08"
+
+    async def test_a_series_entry_stays_a_show(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [SERIES], "TotalRecordCount": 1}}
+        )
+
+        page = await _client(session).search(MediaQuery(category=Category.SHOWS))
+
+        show = page.items[0]
+        assert show.kind == "show"
+        assert show.unplayed_count == 13
+        assert show.display_title == "House of the Dragon"
+
 
 class TestAuth:
     async def test_token_is_sent_in_the_authorization_header(self):

@@ -59,6 +59,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     hass.data[f"{DOMAIN}_ws"] = True
     websocket_api.async_register_command(hass, ws_search)
     websocket_api.async_register_command(hass, ws_item)
+    websocket_api.async_register_command(hass, ws_seasons)
+    websocket_api.async_register_command(hass, ws_episodes)
     websocket_api.async_register_command(hass, ws_resume)
     websocket_api.async_register_command(hass, ws_facets)
     websocket_api.async_register_command(hass, ws_favorite)
@@ -166,6 +168,49 @@ async def ws_item(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "library_error", str(err))
         return
     connection.send_result(msg["id"], item.as_dict() if item else None)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/library/seasons",
+        vol.Required("series_id"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_seasons(hass, connection, msg) -> None:
+    """Return the season strip of the series drill-down (F2)."""
+    media = _first_media(hass)
+    if media is None:
+        connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")
+        return
+    try:
+        items = await media.seasons(msg["series_id"])
+    except MediaBackendError as err:
+        connection.send_error(msg["id"], "library_error", str(err))
+        return
+    connection.send_result(msg["id"], {"items": [item.as_dict() for item in items]})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/library/episodes",
+        vol.Required("series_id"): str,
+        vol.Optional("season_id"): vol.Any(str, None),
+    }
+)
+@websocket_api.async_response
+async def ws_episodes(hass, connection, msg) -> None:
+    """Return the episode list of one season (F2)."""
+    media = _first_media(hass)
+    if media is None:
+        connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")
+        return
+    try:
+        items = await media.episodes(msg["series_id"], msg.get("season_id"))
+    except MediaBackendError as err:
+        connection.send_error(msg["id"], "library_error", str(err))
+        return
+    connection.send_result(msg["id"], {"items": [item.as_dict() for item in items]})
 
 
 @websocket_api.websocket_command(

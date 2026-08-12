@@ -248,7 +248,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
         self._playing = {
             "uri": uri,
             "id": item.id if item else None,
-            "title": item.title if item else None,
+            "title": item.display_title if item else None,
         }
         self.coordinator.playing_item = self._playing
         self.async_write_ha_state()
@@ -378,7 +378,10 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
             # The queued title stays on screen (F5): the card reads this out
             # of the state payload for as long as the start-then-play arc
             # runs, so the ~1 min transition never loses its subject.
-            self.coordinator.pending_item = {"id": item.id, "title": item.title}
+            self.coordinator.pending_item = {
+                "id": item.id,
+                "title": item.display_title,
+            }
         try:
             await self._ensure_media_activity()
 
@@ -393,7 +396,7 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
             self._playing = {
                 "uri": driver.resolve_path(path) or path,
                 "id": item.id if item else None,
-                "title": item.title if item else None,
+                "title": item.display_title if item else None,
             }
             self.async_write_ha_state()
 

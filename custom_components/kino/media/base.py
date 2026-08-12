@@ -44,7 +44,16 @@ class MediaItem:
 
     id: str
     title: str
+    #: "movie" | "show" | "season" | "episode"
     kind: str = "movie"
+    #: Series context, set on seasons and episodes (FR-50a / F2).
+    series_name: str | None = None
+    #: Episode number within its season, or a season's own number.
+    index_number: int | None = None
+    #: The season an episode belongs to.
+    parent_index: int | None = None
+    #: Unwatched episodes below this entry (seasons and series carry it).
+    unplayed_count: int | None = None
     year: int | None = None
     runtime_minutes: int | None = None
     genres: tuple[str, ...] = ()
@@ -81,11 +90,40 @@ class MediaItem:
     def tmdb_id(self) -> str | None:
         return self.provider_ids.get("Tmdb")
 
+    @property
+    def episode_code(self) -> str | None:
+        """Return "S03E08" for an episode, or None."""
+        if self.kind != "episode" or self.index_number is None:
+            return None
+        season = self.parent_index if self.parent_index is not None else 1
+        return f"S{season:02d}E{self.index_number:02d}"
+
+    @property
+    def display_title(self) -> str:
+        """Return the name a footer or a progress card should show.
+
+        An episode's own title ("Der Drachenritt") says nothing without its
+        series; the series plus the code is what a person recognises.
+        """
+        if self.kind == "episode" and self.series_name:
+            code = self.episode_code
+            return (
+                f"{self.series_name} · {code}"
+                if code
+                else f"{self.series_name} · {self.title}"
+            )
+        return self.title
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "title": self.title,
             "kind": self.kind,
+            "seriesName": self.series_name,
+            "indexNumber": self.index_number,
+            "parentIndex": self.parent_index,
+            "unplayedCount": self.unplayed_count,
+            "episodeCode": self.episode_code,
             "year": self.year,
             "runtime": self.runtime_minutes,
             "genres": list(self.genres),
@@ -178,6 +216,14 @@ class MediaBackend(Protocol):
 
     async def item(self, item_id: str) -> MediaItem | None:
         """Full detail for one entry."""
+
+    async def seasons(self, series_id: str) -> Sequence[MediaItem]:
+        """Return the seasons of one series, in order (F2)."""
+
+    async def episodes(
+        self, series_id: str, season_id: str | None = None
+    ) -> Sequence[MediaItem]:
+        """Return the episodes of one series or one season, in order (F2)."""
 
     async def resume(self, limit: int = 12) -> Sequence[MediaItem]:
         """Return the resume list, sourced from the catalogue (FR-49a)."""

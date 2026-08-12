@@ -60,6 +60,21 @@ export const helpers = {
     return bits.join(" · ");
   },
 
+  /** Grid/row title: an episode is recognised by its series, not by
+   *  "Regen des Feuers" alone (F2). */
+  itemTitle(item) {
+    if (item && item.kind === "episode" && item.seriesName) return item.seriesName;
+    return item ? item.title : "";
+  },
+
+  /** Grid/row meta: episodes carry their code and own title. */
+  itemMeta(item) {
+    if (item && item.kind === "episode" && item.episodeCode) {
+      return [item.episodeCode, item.title].filter(Boolean).join(" · ");
+    }
+    return helpers.metaLine(item);
+  },
+
   /**
    * Play button label: resume position or a plain start. When no media
    * activity is running the button also powers the theater on (FR-55),
@@ -490,6 +505,18 @@ footer {
   background: linear-gradient(0deg, rgba(0,0,0,.65), transparent);
 }
 
+/* Detail sheet: synopsis and episode list (F2, F3). */
+.overview { font-size: 13px; color: var(--kino-text2); line-height: 1.55; margin: 0; }
+.overview.clamped {
+  display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4;
+  -webkit-box-orient: vertical; overflow: hidden; cursor: pointer;
+}
+.eprow { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--kino-border); cursor: pointer; }
+.eprow .epthumb { width: 128px; flex-shrink: 0; border-radius: 8px; }
+.eprow .title { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eprow .meta { font-size: 11px; color: var(--kino-text3); margin-top: 2px; }
+.eprow .seen { color: var(--kino-teal); font-weight: 800; font-size: 13px; }
+
 .empty { text-align: center; padding: 40px 12px; color: var(--kino-text2); }
 .empty .sub { font-size: 12px; color: var(--kino-text3); margin-top: 6px; }
 .error { color: var(--kino-red); font-size: 13px; }
@@ -635,6 +662,10 @@ class KinoCard extends CardBase {
       filterSheet: false,
       detailId: null,
       detail: null,
+      seasons: null,
+      seasonId: null,
+      episodes: null,
+      overviewOpen: false,
       playingOpen: false,
       powerConfirm: false,
       activityMenu: false,
@@ -886,6 +917,45 @@ class KinoCard extends CardBase {
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) {
       this._loadLibrary(true);
     }
+  }
+
+  /** Load the season strip of one series, then its most relevant season (F2). */
+  async _loadSeasons(seriesId) {
+    try {
+      const result = await this._ws({
+        type: "kino/library/seasons",
+        series_id: seriesId,
+      });
+      this._view.seasons = result.items || [];
+      // Start where the person left off: the first season that still has
+      // something unwatched, otherwise the first season.
+      const active =
+        this._view.seasons.find((s) => s.unplayedCount) || this._view.seasons[0];
+      this._view.seasonId = active ? active.id : null;
+    } catch (err) {
+      this._view.seasons = [];
+      this._actionError = err.message;
+    }
+    this._render();
+    if (this._view.seasonId) await this._loadEpisodes();
+  }
+
+  async _loadEpisodes() {
+    const seriesId = this._view.detailId;
+    this._view.episodes = null;
+    this._render();
+    try {
+      const result = await this._ws({
+        type: "kino/library/episodes",
+        series_id: seriesId,
+        season_id: this._view.seasonId,
+      });
+      this._view.episodes = result.items || [];
+    } catch (err) {
+      this._view.episodes = [];
+      this._actionError = err.message;
+    }
+    this._render();
   }
 
   async _loadResume() {
@@ -1464,8 +1534,8 @@ class KinoCard extends CardBase {
         <img loading="lazy" src="${src}" alt="" onerror="this.style.display='none'">
         ${this._artOverlays(item, showResume)}
       </div>
-      <div class="title">${this._esc(item.title)}</div>
-      <div class="meta">${this._esc(helpers.metaLine(item))}</div>
+      <div class="title">${this._esc(helpers.itemTitle(item))}</div>
+      <div class="meta">${this._esc(helpers.itemMeta(item))}</div>
     </div>`;
   }
 
@@ -1487,8 +1557,8 @@ class KinoCard extends CardBase {
             : ""
         }</div>
         <div style="flex:1;min-width:0">
-          <div class="title">${this._esc(item.title)}</div>
-          <div class="meta">${this._esc(helpers.metaLine(item))}</div>
+          <div class="title">${this._esc(helpers.itemTitle(item))}</div>
+          <div class="meta">${this._esc(helpers.itemMeta(item))}</div>
         </div>
         <div class="flags">
           ${item.res4k ? '<span class="badge">4K</span>' : ""}
@@ -1517,8 +1587,8 @@ class KinoCard extends CardBase {
         ${img}
         ${this._artOverlays(item, true)}
       </div>
-      <div class="title">${this._esc(item.title)}</div>
-      <div class="meta">${this._esc(helpers.metaLine(item))}</div>
+      <div class="title">${this._esc(helpers.itemTitle(item))}</div>
+      <div class="meta">${this._esc(helpers.itemMeta(item))}</div>
     </div>`;
   }
 
@@ -1625,8 +1695,10 @@ class KinoCard extends CardBase {
 
   _renderFilterSheet() {
     const f = this._view.filters;
+    // A facet group with one lone value cannot narrow anything (F12) — but
+    // it must not disappear while its only value is still selected.
     const group = (title, values, kind, selected) =>
-      values.length
+      values.length > 1 || selected.length
         ? `<div class="label">${title}</div>
            <div class="chipwrap">
              ${values
@@ -1729,7 +1801,14 @@ class KinoCard extends CardBase {
           <div class="backdrop detail-backdrop">
             <img src="${backdrop}" alt="" onerror="this.style.display='none'">
           </div>
-          <h2 style="margin:14px 0 4px;font-size:20px">${this._esc(item.title)}</h2>
+          ${
+            item.kind === "episode" && item.seriesName
+              ? `<div style="font-size:12px;color:var(--kino-text3);margin-top:14px">${this._esc(item.seriesName)}</div>
+                 <h2 style="margin:2px 0 4px;font-size:20px">${this._esc(
+                   [item.episodeCode, item.title].filter(Boolean).join(" · ")
+                 )}</h2>`
+              : `<h2 style="margin:14px 0 4px;font-size:20px">${this._esc(item.title)}</h2>`
+          }
           <div style="font-size:12px;color:var(--kino-text2)">${this._esc(
             [helpers.metaLine(item), item.officialRating].filter(Boolean).join(" · ")
           )}</div>
@@ -1742,20 +1821,103 @@ class KinoCard extends CardBase {
           }
           ${
             item.tagline
-              ? `<p style="font-size:13px;color:var(--kino-text2);font-style:italic;margin:14px 0">${this._esc(item.tagline)}</p>`
+              ? `<p style="font-size:13px;color:var(--kino-text2);font-style:italic;margin:14px 0 0">${this._esc(item.tagline)}</p>`
+              : ""
+          }
+          ${this._renderOverview(item)}
+          ${
+            (item.genres || []).length
+              ? `<div class="chipwrap" style="margin:12px 0 0">${item.genres
+                  .map(
+                    (g) =>
+                      `<span class="pill" style="display:inline-flex;align-items:center;cursor:default">${this._esc(g)}</span>`
+                  )
+                  .join("")}</div>`
               : ""
           }
           ${
-            item.playable === false
-              ? `<p class="error" style="margin:14px 0">${this._esc(item.unplayableReason || "Dieser Titel ist nicht abspielbar.")}</p>`
-              : `<button class="primary" style="margin-top:18px" data-act="play" data-key="${this._esc(item.id)}">${this._esc(helpers.playLabel(item, mediaActive))}</button>
-                 ${
-                   item.continueWatching
-                     ? `<button class="ghost" style="width:100%;margin-top:8px" data-act="play-from-start" data-key="${this._esc(item.id)}">Von Anfang abspielen</button>`
-                     : ""
-                 }`
+            item.kind === "show"
+              ? this._renderSeriesBody()
+              : item.playable === false
+                ? `<p class="error" style="margin:14px 0">${this._esc(item.unplayableReason || "Dieser Titel ist nicht abspielbar.")}</p>`
+                : `<button class="primary" style="margin-top:18px" data-act="play" data-key="${this._esc(item.id)}">${this._esc(helpers.playLabel(item, mediaActive))}</button>
+                   ${
+                     item.continueWatching
+                       ? `<button class="ghost" style="width:100%;margin-top:8px" data-act="play-from-start" data-key="${this._esc(item.id)}">Von Anfang abspielen</button>`
+                       : ""
+                   }`
           }
         </div>
+      </div>
+    </div>`;
+  }
+
+  /** The synopsis, clamped to ~4 lines with a "mehr" toggle (F3). */
+  _renderOverview(item) {
+    if (!item.overview) return "";
+    const long = item.overview.length > 220;
+    const open = !!this._view.overviewOpen;
+    return `<div style="margin:14px 0 0">
+      <p class="overview${long && !open ? " clamped" : ""}" data-act="toggle-overview">${this._esc(item.overview)}</p>
+      ${long ? `<a class="link" data-act="toggle-overview" style="display:inline-block;margin-top:4px">${open ? "weniger" : "mehr"}</a>` : ""}
+    </div>`;
+  }
+
+  /** Season strip and episode list of the series drill-down (F2). */
+  _renderSeriesBody() {
+    const seasons = this._view.seasons;
+    if (!seasons) {
+      return '<p style="padding:18px 0;color:var(--kino-text3);font-size:13px">Staffeln werden geladen…</p>';
+    }
+    if (!seasons.length) {
+      return '<p style="padding:18px 0;color:var(--kino-text3);font-size:13px">Keine Staffeln gefunden.</p>';
+    }
+    const strip = `<div class="posterrow hscroll" style="margin:16px 0 6px">${seasons
+      .map(
+        (s) => `<button class="pill" data-act="select-season" data-key="${this._esc(s.id)}"
+          aria-pressed="${s.id === this._view.seasonId}">${this._esc(s.title)}${
+            s.unplayedCount ? ` · ${s.unplayedCount}` : ""
+          }</button>`
+      )
+      .join("")}</div>`;
+    const episodes = this._view.episodes;
+    let list;
+    if (!episodes) {
+      list = '<p style="padding:12px 0;color:var(--kino-text3);font-size:13px">Folgen werden geladen…</p>';
+    } else if (!episodes.length) {
+      list = '<p style="padding:12px 0;color:var(--kino-text3);font-size:13px">Keine Folgen in dieser Staffel.</p>';
+    } else {
+      list = `<div>${episodes.map((ep) => this._episodeRow(ep)).join("")}</div>`;
+    }
+    return strip + list;
+  }
+
+  /** One tappable episode row: thumb, code · title, runtime, tick, resume. */
+  _episodeRow(ep) {
+    const src = helpers.artworkUrl(ep.id, "Primary", this._kino.artworkSignature);
+    const resumable = ep.continueWatching && ep.resumeSeconds;
+    const meta = [
+      ep.runtime ? `${ep.runtime} Min` : null,
+      resumable ? `Fortsetzen bei ${helpers.formatTime(ep.resumeSeconds)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `<div class="eprow" data-act="play-episode" data-key="${this._esc(ep.id)}">
+      <div class="art wide epthumb">
+        <img loading="lazy" src="${src}" alt="" onerror="this.style.display='none'">
+        ${
+          ep.continueWatching
+            ? `<div class="resume"><div style="width:${ep.continueWatching}%"></div></div>`
+            : ""
+        }
+      </div>
+      <div style="flex:1;min-width:0">
+        <div class="title">${this._esc([ep.episodeCode, ep.title].filter(Boolean).join(" · "))}</div>
+        <div class="meta">${this._esc(meta)}</div>
+      </div>
+      <div class="flags" style="display:flex;align-items:center;gap:8px">
+        ${ep.watched ? '<span class="seen" title="Gesehen">✓</span>' : ""}
+        <span class="round" style="display:flex;align-items:center;justify-content:center">▶</span>
       </div>
     </div>`;
   }
@@ -2116,6 +2278,10 @@ class KinoCard extends CardBase {
       case "open-detail":
         view.detailId = key;
         view.detail = null;
+        view.seasons = null;
+        view.seasonId = null;
+        view.episodes = null;
+        view.overviewOpen = false;
         this._render();
         try {
           view.detail = await this._ws({ type: "kino/library/item", item_id: key });
@@ -2124,11 +2290,29 @@ class KinoCard extends CardBase {
           this._actionError = err.message;
         }
         this._render();
+        // A show browses on: season strip, then that season's episodes (F2).
+        if (view.detail && view.detail.kind === "show") {
+          await this._loadSeasons(view.detail.id);
+        }
         break;
       case "close-detail":
         view.detailId = null;
         view.detail = null;
+        view.seasons = null;
+        view.seasonId = null;
+        view.episodes = null;
         this._render();
+        break;
+      case "toggle-overview":
+        view.overviewOpen = !view.overviewOpen;
+        this._render();
+        break;
+      case "select-season":
+        view.seasonId = key;
+        await this._loadEpisodes();
+        break;
+      case "play-episode":
+        await this._play(key, false);
         break;
       case "play":
       case "play-from-start":

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
@@ -237,6 +238,32 @@ class JellyfinClient:
         )
         return _to_item(payload) if payload else None
 
+    async def seasons(self, series_id: str) -> Sequence[MediaItem]:
+        """Return the seasons of one series, in broadcast order (F2)."""
+        user = self._require_user()
+        payload = await self._request(
+            "GET",
+            f"/Shows/{quote(series_id)}/Seasons",
+            params={"UserId": user, "Fields": _MOVIE_FIELDS},
+        )
+        return [_to_item(raw) for raw in (payload or {}).get("Items") or []]
+
+    async def episodes(
+        self, series_id: str, season_id: str | None = None
+    ) -> Sequence[MediaItem]:
+        """Return the episodes of one series or one season, in order (F2)."""
+        user = self._require_user()
+        payload = await self._request(
+            "GET",
+            f"/Shows/{quote(series_id)}/Episodes",
+            params={
+                "UserId": user,
+                "SeasonId": season_id,
+                "Fields": _MOVIE_FIELDS,
+            },
+        )
+        return [_to_item(raw) for raw in (payload or {}).get("Items") or []]
+
     async def resume(self, limit: int = 12) -> Sequence[MediaItem]:
         user = self._require_user()
         payload = await self._request(
@@ -266,8 +293,17 @@ class JellyfinClient:
             },
         )
         payload = payload or {}
-        genres = tuple(sorted(g for g in payload.get("Genres") or [] if g))
-        ratings = tuple(sorted(r for r in payload.get("OfficialRatings") or [] if r))
+        genres = tuple(
+            sorted((g for g in payload.get("Genres") or [] if g), key=str.casefold)
+        )
+        # Jellyfin returns ratings alphabetically ("FSK-18" before "FSK-6").
+        # Sort by system first, then by rank within it (F12).
+        ratings = tuple(
+            sorted(
+                (r for r in payload.get("OfficialRatings") or [] if r),
+                key=_rating_sort_key,
+            )
+        )
         years = [y for y in payload.get("Years") or [] if isinstance(y, int)]
         return Facets(
             genres=genres,
@@ -351,6 +387,31 @@ def _param(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+#: Rank tables for rating systems that carry no number of their own.
+_MPAA_ORDER = {"G": 0, "PG": 1, "PG-13": 2, "R": 3, "NC-17": 4, "NR": 5}
+_TV_ORDER = {"TV-Y": 0, "TV-Y7": 1, "TV-G": 2, "TV-PG": 3, "TV-14": 4, "TV-MA": 5}
+
+
+def _rating_sort_key(rating: str) -> tuple[int, int, str]:
+    """Order age ratings by system, then by rank within it (F12).
+
+    FSK first — this is a German house — then MPAA, then TV, then anything
+    else that carries a number, then the rest alphabetically.
+    """
+    value = rating.strip()
+    fsk = re.match(r"(?i)^FSK[- ]?(\d+)$", value)
+    if fsk:
+        return (0, int(fsk.group(1)), value)
+    if value in _MPAA_ORDER:
+        return (1, _MPAA_ORDER[value], value)
+    if value in _TV_ORDER:
+        return (2, _TV_ORDER[value], value)
+    numbered = re.search(r"(\d+)", value)
+    if numbered:
+        return (3, int(numbered.group(1)), value)
+    return (4, 0, value)
 
 
 def _search_params(  # noqa: C901, PLR0912 - a flat translation table, one branch per filter
@@ -451,11 +512,19 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
     # first because it survives a mount-point change; path is the fallback.
     playable = bool(provider_ids.get("Tmdb") or provider_ids.get("Imdb") or path)
     taglines = raw.get("Taglines") or []
+    kind = {"Series": "show", "Season": "season", "Episode": "episode"}.get(
+        str(raw.get("Type")), "movie"
+    )
+    unplayed = user_data.get("UnplayedItemCount")
 
     return MediaItem(
         id=str(raw.get("Id", "")),
         title=str(raw.get("Name") or "Ohne Titel"),
-        kind="show" if raw.get("Type") == "Series" else "movie",
+        kind=kind,
+        series_name=raw.get("SeriesName"),
+        index_number=raw.get("IndexNumber"),
+        parent_index=raw.get("ParentIndexNumber"),
+        unplayed_count=int(unplayed) if isinstance(unplayed, int) else None,
         year=raw.get("ProductionYear"),
         runtime_minutes=runtime,
         genres=tuple(raw.get("Genres") or ()),
