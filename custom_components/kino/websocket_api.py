@@ -61,6 +61,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_item)
     websocket_api.async_register_command(hass, ws_resume)
     websocket_api.async_register_command(hass, ws_facets)
+    websocket_api.async_register_command(hass, ws_favorite)
     websocket_api.async_register_command(hass, ws_refresh)
     websocket_api.async_register_command(hass, ws_state)
     websocket_api.async_register_command(hass, ws_activate)
@@ -87,9 +88,15 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         vol.Optional("year_to"): vol.Any(int, None),
         vol.Optional("only_4k", default=False): bool,
         vol.Optional("only_hd", default=False): bool,
+        vol.Optional("only_sd", default=False): bool,
+        vol.Optional("only_3d", default=False): bool,
         vol.Optional("only_unwatched", default=False): bool,
+        vol.Optional("only_watched", default=False): bool,
         vol.Optional("only_resumable", default=False): bool,
+        vol.Optional("only_favorites", default=False): bool,
+        vol.Optional("ratings", default=[]): [str],
         vol.Optional("sort", default="added"): str,
+        vol.Optional("sort_dir"): vol.Any(vol.In(["asc", "desc"]), None),
         vol.Optional("limit", default=60): vol.All(int, vol.Range(1, 200)),
         vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
     }
@@ -110,9 +117,15 @@ async def ws_search(hass, connection, msg) -> None:
             year_to=msg.get("year_to"),
             only_4k=msg["only_4k"],
             only_hd=msg["only_hd"],
+            only_sd=msg["only_sd"],
+            only_3d=msg["only_3d"],
             only_unwatched=msg["only_unwatched"],
+            only_watched=msg["only_watched"],
             only_resumable=msg["only_resumable"],
+            only_favorites=msg["only_favorites"],
+            ratings=tuple(msg["ratings"]),
             sort=SortOrder(msg["sort"]),
+            sort_dir=msg.get("sort_dir"),
             limit=msg["limit"],
             offset=msg["offset"],
         )
@@ -192,10 +205,33 @@ async def ws_facets(hass, connection, msg) -> None:
         {
             "genres": list(facets.genres),
             "countries": list(facets.countries),
+            "ratings": list(facets.ratings),
             "yearMin": facets.year_min,
             "yearMax": facets.year_max,
         },
     )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/library/favorite",
+        vol.Required("item_id"): str,
+        vol.Required("favorite"): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_favorite(hass, connection, msg) -> None:
+    """Write a favourite back to the catalogue — a household action, like play."""
+    media = _first_media(hass)
+    if media is None:
+        connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")
+        return
+    try:
+        await media.set_favorite(msg["item_id"], msg["favorite"])
+    except MediaBackendError as err:
+        connection.send_error(msg["id"], "library_error", str(err))
+        return
+    connection.send_result(msg["id"], {"ok": True, "favorite": msg["favorite"]})
 
 
 @websocket_api.websocket_command({vol.Required("type"): "kino/library/refresh"})

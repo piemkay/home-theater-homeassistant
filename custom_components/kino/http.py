@@ -26,7 +26,7 @@ from .media.base import MediaBackendError
 
 _LOGGER = logging.getLogger(__name__)
 
-_ALLOWED_IMAGE_TYPES = frozenset({"Primary", "Backdrop", "Thumb", "Logo"})
+_ALLOWED_IMAGE_TYPES = frozenset({"Primary", "Backdrop", "Thumb", "Banner", "Logo"})
 
 #: Posters are immutable for a given item; let the browser keep them so the
 #: grid stays smooth on a phone (D8, NFR-1).

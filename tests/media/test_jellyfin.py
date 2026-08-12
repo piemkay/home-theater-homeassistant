@@ -8,6 +8,7 @@ Fixtures mirror the shapes the live server at jellyfin.local.7labs.dev
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -194,6 +195,42 @@ class TestNormalisation:
         item = (await _client(session).search(MediaQuery())).items[0]
         assert item.playable is True
 
+    async def test_favorite_rating_3d_and_image_tags_are_mapped(self):
+        raw = dict(
+            MOVIE,
+            OfficialRating="FSK-16",
+            Video3DFormat="HalfSideBySide",
+            ImageTags={"Primary": "tag1", "Thumb": "thumb1", "Banner": "banner1"},
+            BackdropImageTags=["bd1"],
+            UserData=dict(MOVIE["UserData"], IsFavorite=True),
+        )
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [raw], "TotalRecordCount": 1}}
+        )
+
+        item = (await _client(session).search(MediaQuery())).items[0]
+
+        assert item.is_favorite is True
+        assert item.official_rating == "FSK-16"
+        assert item.is_3d is True
+        assert item.thumb_tag == "thumb1"
+        assert item.banner_tag == "banner1"
+        payload = item.as_dict()
+        assert payload["favorite"] is True
+        assert payload["officialRating"] == "FSK-16"
+        assert payload["is3d"] is True
+        assert payload["thumbTag"] == "thumb1"
+        assert payload["bannerTag"] == "banner1"
+        assert payload["backdropTag"] == "bd1"
+
+    async def test_favorite_defaults_to_false(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [MOVIE], "TotalRecordCount": 1}}
+        )
+        item = (await _client(session).search(MediaQuery())).items[0]
+        assert item.is_favorite is False
+        assert item.is_3d is False
+
 
 class TestQuerying:
     async def test_search_term_and_sort_reach_the_server(self):
@@ -234,6 +271,64 @@ class TestQuerying:
         )
         assert session.requests[0]["params"]["Filters"] == "IsUnplayed,IsResumable"
 
+    async def test_watched_and_favorites_join_the_filter_list(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(
+            MediaQuery(only_watched=True, only_favorites=True, only_resumable=True)
+        )
+        assert (
+            session.requests[0]["params"]["Filters"]
+            == "IsPlayed,IsResumable,IsFavorite"
+        )
+
+    async def test_new_sort_fields_reach_the_server(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        client = _client(session)
+        expectations = {
+            SortOrder.RUNTIME: ("Runtime", "Descending"),
+            SortOrder.LAST_PLAYED: ("DatePlayed", "Descending"),
+            SortOrder.RANDOM: ("Random", "Ascending"),
+            SortOrder.CRITICS: ("CriticRating", "Descending"),
+        }
+        for sort, (sort_by, sort_order) in expectations.items():
+            session.requests.clear()
+            await client.search(MediaQuery(sort=sort))
+            params = session.requests[0]["params"]
+            assert params["SortBy"] == sort_by
+            assert params["SortOrder"] == sort_order
+
+    async def test_sort_dir_overrides_the_field_default(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(sort=SortOrder.YEAR, sort_dir="asc"))
+        assert session.requests[0]["params"]["SortOrder"] == "Ascending"
+
+    async def test_sort_dir_also_wins_over_the_recent_override(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(
+            MediaQuery(category=Category.RECENT, sort_dir="asc")
+        )
+        params = session.requests[0]["params"]
+        assert params["SortBy"] == "DateCreated"
+        assert params["SortOrder"] == "Ascending"
+
+    async def test_recent_and_continue_include_both_item_kinds(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        client = _client(session)
+        for category in (Category.RECENT, Category.CONTINUE):
+            session.requests.clear()
+            await client.search(MediaQuery(category=category))
+            assert session.requests[0]["params"]["IncludeItemTypes"] == "Movie,Series"
+
     async def test_year_range_is_expanded(self):
         session = FakeSession(
             {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
@@ -248,6 +343,24 @@ class TestQuerying:
         await _client(session).search(MediaQuery(year_from=1800, year_to=2026))
         assert "Years" not in session.requests[0]["params"]
 
+    async def test_open_ended_year_from_runs_to_the_current_year(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(year_from=2020))
+        years = session.requests[0]["params"]["Years"].split(",")
+        assert years[0] == "2020"
+        assert years[-1] == str(datetime.now().year)
+
+    async def test_open_ended_year_to_starts_at_1900(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(year_to=1950))
+        years = session.requests[0]["params"]["Years"].split(",")
+        assert years[0] == "1900"
+        assert years[-1] == "1950"
+
     async def test_4k_filter_is_server_side(self):
         """A client-side cut after pagination skipped and repeated titles."""
         session = FakeSession(
@@ -256,14 +369,38 @@ class TestQuerying:
         await _client(session).search(MediaQuery(only_4k=True))
         assert session.requests[0]["params"]["MinWidth"] == "3000"
 
-    async def test_hd_filter_is_server_side(self):
+    async def test_hd_filter_is_a_width_window(self):
+        """HD means HD: sub-720p rips belong to the SD tier, not this one."""
         session = FakeSession(
             {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
         )
         await _client(session).search(MediaQuery(only_hd=True))
         params = session.requests[0]["params"]
         assert params["MaxWidth"] == "2999"
+        assert params["MinWidth"] == "1280"
+
+    async def test_sd_filter_is_server_side(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(only_sd=True))
+        params = session.requests[0]["params"]
+        assert params["MaxWidth"] == "1279"
         assert "MinWidth" not in params
+
+    async def test_3d_filter_is_server_side(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(only_3d=True))
+        assert session.requests[0]["params"]["Is3D"] == "true"
+
+    async def test_official_ratings_are_pipe_joined(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(ratings=("FSK-12", "FSK-16")))
+        assert session.requests[0]["params"]["OfficialRatings"] == "FSK-12|FSK-16"
 
     async def test_uhd_category_filters_like_the_4k_tag(self):
         session = FakeSession(
@@ -291,6 +428,61 @@ class TestQuerying:
         assert page.total == 50
         assert page.has_more is True
         assert session.requests[0]["params"]["StartIndex"] == "0"
+
+
+class TestFavorites:
+    async def test_marking_posts_to_the_favorites_endpoint(self):
+        session = FakeSession()
+        await _client(session).set_favorite("abc123", True)
+        request = session.requests[0]
+        assert request["method"] == "POST"
+        assert request["path"] == "/Users/user-1/FavoriteItems/abc123"
+
+    async def test_unmarking_deletes(self):
+        session = FakeSession()
+        await _client(session).set_favorite("abc123", False)
+        request = session.requests[0]
+        assert request["method"] == "DELETE"
+        assert request["path"] == "/Users/user-1/FavoriteItems/abc123"
+
+    async def test_favorites_need_a_connected_user(self):
+        client = JellyfinClient(
+            FakeSession(), base_url="https://x", token="t", user_id=None
+        )
+        with pytest.raises(JellyfinAuthError):
+            await client.set_favorite("abc123", True)
+
+
+class TestFacets:
+    async def test_filters_endpoint_supplies_genres_ratings_and_years(self):
+        session = FakeSession(
+            {
+                "/Items/Filters": {
+                    "Genres": ["Thriller", "Drama", ""],
+                    "OfficialRatings": ["FSK-16", "FSK-12", ""],
+                    "Years": [2016, 1999, 2022],
+                }
+            }
+        )
+
+        facets = await _client(session).facets()
+
+        request = session.requests[0]
+        assert request["path"] == "/Items/Filters"
+        assert request["params"]["UserId"] == "user-1"
+        assert request["params"]["IncludeItemTypes"] == "Movie,Series"
+        assert facets.genres == ("Drama", "Thriller")
+        assert facets.ratings == ("FSK-12", "FSK-16")
+        assert facets.year_min == 1999
+        assert facets.year_max == 2022
+
+    async def test_empty_library_yields_empty_facets(self):
+        session = FakeSession({"/Items/Filters": {}})
+        facets = await _client(session).facets()
+        assert facets.genres == ()
+        assert facets.ratings == ()
+        assert facets.year_min is None
+        assert facets.year_max is None
 
 
 class TestAuth:

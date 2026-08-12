@@ -334,7 +334,9 @@ carries migration warnings. **Streamystats** is the fallback if Jellystat won't 
 - **FR-40** The media source SHALL sit behind an **internal interface**. Jellyfin is the chosen
   implementation, not an assumption baked into the card or the activity engine.
 - **FR-41** Jellyfin SHALL be reachable independently of the theater's power state; browse,
-  search and filter SHALL work with everything off.
+  search and filter SHALL work with everything off. The card SHALL show the library home in
+  its off state, and the detail view's play button SHALL read as "start the theater and play"
+  (the FR-55 flow) rather than pretending playback alone is possible.
 - **FR-42** Artwork SHALL be served from Jellyfin. The integration SHALL NOT build a thumbnail
   cache of its own.
 - **FR-43** No transcoding path SHALL be relied upon — Jellyfin never touches the video.
@@ -437,8 +439,18 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
 - **FR-52** **Advanced filtering** SHALL be available and combinable. Baseline:
   watched/unwatched, resolution, recently added. Further facets (genre, collection, year,
   rating, runtime, audio format) are **subject to the API spike** — included if the Zidoo API
-  supports them, explicitly dropped if not.
-- **FR-53** Sorting SHALL be available (title, year, date added, at minimum).
+  supports them, explicitly dropped if not. Shipped: watched/unwatched/resumable, favorites,
+  resolution tiers (4K/HD/SD, mutually exclusive) plus 3D, genres, FSK parental ratings
+  (`OfficialRatings`), and a year from–to range. Countries stay dormant — Jellyfin has no
+  server-side parameter and a client-side cut breaks pagination.
+- **FR-53** Sorting SHALL be available (title, year, date added, at minimum). Shipped: title,
+  year, date added, community rating, runtime, last played, critics rating and random, each
+  with an ascending/descending override (per-field default direction otherwise). Random
+  re-randomises per page — repeats under infinite scroll are accepted.
+- **FR-53a** Favorites SHALL round-trip: `IsFavorite` is read with every item, surfaced in the
+  card, and written back to Jellyfin via `kino/library/favorite`
+  (`POST`/`DELETE /Users/{userId}/FavoriteItems/{itemId}`) — per Jellyfin account, not per
+  HA user.
 - **FR-54** Playback SHALL be startable from any browse or search result in **one tap**.
 - **FR-55** Selecting a title while the Film activity is not running SHALL **start the activity
   and then play** — a single user action, with progress shown throughout.
@@ -478,8 +490,12 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
 
 - **FR-70** A custom Lovelace card SHALL provide in one place: activity selection, poster grid,
   search field, filter and sort controls, detail view with play button, and a "Weitersehen" row.
+  The library home additionally carries a "Zuletzt hinzugefügt" row.
 - **FR-71** The card SHALL be **responsive**: a one-handed single-column layout on a phone,
   a denser multi-column grid on a tablet. Same card, same code, breakpoint-driven.
+- **FR-71a** The grid SHALL offer Jellyfin's six view modes (Poster, Posterkarte, Vorschau,
+  Vorschaukarte, Banner, Liste), persisted per browser in localStorage. Banner falls back
+  Banner→Backdrop→Primary since movie banner art is rare.
 - **FR-72** Primary actions SHALL be thumb-reachable on a phone; no horizontal scrolling;
   no tap targets below platform minimums.
 - **FR-73** The card SHALL show theater status, the active activity and transition progress

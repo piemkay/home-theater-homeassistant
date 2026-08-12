@@ -21,6 +21,10 @@ class SortOrder(str, Enum):
     TITLE = "title"
     YEAR = "year"
     RATING = "rating"
+    RUNTIME = "runtime"
+    LAST_PLAYED = "played"
+    RANDOM = "random"
+    CRITICS = "critics"
 
 
 class Category(str, Enum):
@@ -46,7 +50,10 @@ class MediaItem:
     genres: tuple[str, ...] = ()
     countries: tuple[str, ...] = ()
     rating: float | None = None
+    official_rating: str | None = None
     is_4k: bool = False
+    is_3d: bool = False
+    is_favorite: bool = False
     watched: bool = False
     #: 0-100, or None when there is nothing to resume.
     resume_percent: float | None = None
@@ -57,6 +64,8 @@ class MediaItem:
     path: str | None = None
     image_tag: str | None = None
     backdrop_tag: str | None = None
+    thumb_tag: str | None = None
+    banner_tag: str | None = None
     video_format: str | None = None
     audio_format: str | None = None
     #: False when nothing playable could be matched — surfaced, never hidden
@@ -82,13 +91,19 @@ class MediaItem:
             "genres": list(self.genres),
             "countries": list(self.countries),
             "rating": self.rating,
+            "officialRating": self.official_rating,
             "res4k": self.is_4k,
+            "is3d": self.is_3d,
+            "favorite": self.is_favorite,
             "watched": self.watched,
             "continueWatching": self.resume_percent,
             "resumeSeconds": self.resume_seconds,
             "overview": self.overview,
             "tagline": self.tagline,
             "providerIds": dict(self.provider_ids),
+            "backdropTag": self.backdrop_tag,
+            "thumbTag": self.thumb_tag,
+            "bannerTag": self.banner_tag,
             "videoFormat": self.video_format,
             "audioFormat": self.audio_format,
             "playable": self.playable,
@@ -108,10 +123,17 @@ class MediaQuery:
     year_to: int | None = None
     only_4k: bool = False
     only_hd: bool = False
+    only_sd: bool = False
+    only_3d: bool = False
     only_unwatched: bool = False
+    only_watched: bool = False
     only_resumable: bool = False
+    only_favorites: bool = False
     only_recent: bool = False
+    ratings: tuple[str, ...] = ()
     sort: SortOrder = SortOrder.ADDED
+    #: "asc" | "desc" | None — None keeps the per-field default direction.
+    sort_dir: str | None = None
     limit: int = 60
     offset: int = 0
 
@@ -135,6 +157,7 @@ class Facets:
 
     genres: tuple[str, ...] = ()
     countries: tuple[str, ...] = ()
+    ratings: tuple[str, ...] = ()
     year_min: int | None = None
     year_max: int | None = None
 
@@ -164,6 +187,9 @@ class MediaBackend(Protocol):
 
     async def refresh(self) -> None:
         """Force a rescan (FR-44)."""
+
+    async def set_favorite(self, item_id: str, favorite: bool) -> None:
+        """Mark or unmark one entry as a favourite, in the catalogue."""
 
     async def artwork(self, item_id: str, image_type: str) -> tuple[bytes, str]:
         """Raw image bytes plus content type, for the proxy (FR-42a)."""

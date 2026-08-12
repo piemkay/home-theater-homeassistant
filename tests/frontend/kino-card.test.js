@@ -87,10 +87,88 @@ describe("playLabel", () => {
       "Wiedergabe starten"
     );
   });
+
+  test("says the theater will be started when no media activity runs", () => {
+    assert.equal(helpers.playLabel({}, false), "Kino starten und wiedergeben");
+    assert.equal(
+      helpers.playLabel({ continueWatching: 30, resumeSeconds: 1908 }, false),
+      "Kino starten und fortsetzen (31:48)"
+    );
+  });
+});
+
+describe("defaultSortDir", () => {
+  test("titles read A to Z, everything else newest/biggest first", () => {
+    assert.equal(helpers.defaultSortDir("title"), "asc");
+    assert.equal(helpers.defaultSortDir("added"), "desc");
+    assert.equal(helpers.defaultSortDir("year"), "desc");
+    assert.equal(helpers.defaultSortDir("rating"), "desc");
+    assert.equal(helpers.defaultSortDir("runtime"), "desc");
+    assert.equal(helpers.defaultSortDir("played"), "desc");
+    assert.equal(helpers.defaultSortDir("critics"), "desc");
+    assert.equal(helpers.defaultSortDir("random"), "desc");
+  });
+});
+
+describe("toggleTag", () => {
+  test("plain toggling adds and removes", () => {
+    assert.deepEqual(helpers.toggleTag([], "Favoriten"), ["Favoriten"]);
+    assert.deepEqual(helpers.toggleTag(["Favoriten"], "Favoriten"), []);
+  });
+
+  test("a title has one resolution tier", () => {
+    assert.deepEqual(helpers.toggleTag(["4K"], "HD"), ["HD"]);
+    assert.deepEqual(helpers.toggleTag(["HD"], "SD"), ["SD"]);
+    assert.deepEqual(helpers.toggleTag(["SD", "Favoriten"], "4K"), ["Favoriten", "4K"]);
+  });
+
+  test("Gesehen and Nicht gesehen contradict each other", () => {
+    assert.deepEqual(helpers.toggleTag(["Nicht gesehen"], "Gesehen"), ["Gesehen"]);
+    assert.deepEqual(helpers.toggleTag(["Gesehen"], "Nicht gesehen"), ["Nicht gesehen"]);
+  });
+
+  test("independent tags stack with exclusive ones", () => {
+    assert.deepEqual(helpers.toggleTag(["4K", "Weitersehen"], "3D"), [
+      "4K",
+      "Weitersehen",
+      "3D",
+    ]);
+  });
+});
+
+describe("artworkTypeFor", () => {
+  test("poster modes and the list always use the primary image", () => {
+    for (const mode of ["poster", "posterCard", "list"]) {
+      assert.deepEqual(helpers.artworkTypeFor({}, mode), ["Primary", null]);
+    }
+  });
+
+  test("thumb modes prefer a real thumb and fall back to the backdrop", () => {
+    assert.deepEqual(helpers.artworkTypeFor({ thumbTag: "t" }, "thumb"), [
+      "Thumb",
+      "Primary",
+    ]);
+    assert.deepEqual(helpers.artworkTypeFor({}, "thumbCard"), ["Backdrop", "Primary"]);
+  });
+
+  test("banner prefers a real banner and degrades twice", () => {
+    assert.deepEqual(helpers.artworkTypeFor({ bannerTag: "b" }, "banner"), [
+      "Banner",
+      "Backdrop",
+    ]);
+    assert.deepEqual(helpers.artworkTypeFor({}, "banner"), ["Backdrop", "Primary"]);
+  });
 });
 
 describe("activeFilterCount", () => {
-  const empty = { tags: [], genres: [], countries: [], yearFrom: null, yearTo: null };
+  const empty = {
+    tags: [],
+    genres: [],
+    countries: [],
+    ratings: [],
+    yearFrom: null,
+    yearTo: null,
+  };
 
   test("is zero when nothing is applied", () => {
     assert.equal(helpers.activeFilterCount(empty), 0);
@@ -103,8 +181,9 @@ describe("activeFilterCount", () => {
         tags: ["4K"],
         genres: ["Drama", "Thriller"],
         countries: ["Deutschland"],
+        ratings: ["FSK-16"],
       }),
-      4
+      5
     );
   });
 
@@ -117,10 +196,20 @@ describe("activeFilterCount", () => {
 });
 
 describe("queryFromFilters", () => {
+  const none = {
+    tags: [],
+    genres: [],
+    countries: [],
+    ratings: [],
+    yearFrom: null,
+    yearTo: null,
+  };
   const filters = {
+    ...none,
     tags: ["4K", "Nicht gesehen"],
     genres: ["Drama"],
     countries: ["Deutschland"],
+    ratings: ["FSK-16"],
     yearFrom: 2020,
     yearTo: 2024,
   };
@@ -132,36 +221,54 @@ describe("queryFromFilters", () => {
     assert.equal(msg.category, "movies");
     assert.equal(msg.search, "nord");
     assert.equal(msg.sort, "year");
+    assert.equal(msg.sort_dir, null);
     assert.equal(msg.only_4k, true);
     assert.equal(msg.only_hd, false);
+    assert.equal(msg.only_sd, false);
+    assert.equal(msg.only_3d, false);
     assert.equal(msg.only_unwatched, true);
+    assert.equal(msg.only_watched, false);
     assert.equal(msg.only_resumable, false);
+    assert.equal(msg.only_favorites, false);
     assert.deepEqual(msg.genres, ["Drama"]);
     assert.deepEqual(msg.countries, ["Deutschland"]);
+    assert.deepEqual(msg.ratings, ["FSK-16"]);
     assert.equal(msg.year_from, 2020);
     assert.equal(msg.year_to, 2024);
   });
 
-  test("sends null rather than an empty search string", () => {
+  test("translates the new status chips", () => {
     const msg = helpers.queryFromFilters(
-      { tags: [], genres: [], countries: [], yearFrom: null, yearTo: null },
-      "shows",
+      { ...none, tags: ["SD", "3D", "Gesehen", "Favoriten"] },
+      "movies",
       "",
       "added"
     );
+    assert.equal(msg.only_sd, true);
+    assert.equal(msg.only_3d, true);
+    assert.equal(msg.only_watched, true);
+    assert.equal(msg.only_favorites, true);
+  });
+
+  test("carries an explicit sort direction", () => {
+    const msg = helpers.queryFromFilters(none, "movies", "", "title", 0, 60, "desc");
+    assert.equal(msg.sort_dir, "desc");
+  });
+
+  test("sends null rather than an empty search string", () => {
+    const msg = helpers.queryFromFilters(none, "shows", "", "added");
     assert.equal(msg.search, null);
     assert.equal(msg.category, "shows");
   });
 
+  test("survives an old filters object without a ratings bucket", () => {
+    const legacy = { tags: [], genres: [], countries: [], yearFrom: null, yearTo: null };
+    assert.deepEqual(helpers.queryFromFilters(legacy, "movies", "", "added").ratings, []);
+    assert.equal(helpers.activeFilterCount(legacy), 0);
+  });
+
   test("paginates", () => {
-    const msg = helpers.queryFromFilters(
-      { tags: [], genres: [], countries: [], yearFrom: null, yearTo: null },
-      "movies",
-      "",
-      "added",
-      60,
-      30
-    );
+    const msg = helpers.queryFromFilters(none, "movies", "", "added", 60, 30);
     assert.equal(msg.offset, 60);
     assert.equal(msg.limit, 30);
   });
@@ -310,6 +417,99 @@ describe("playback position", () => {
       card._position({ state: "playing", attributes: { media_position: 42 } }),
       42
     );
+  });
+});
+
+describe("off-state body", () => {
+  const card = () => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = {
+      activity: "aus",
+      targetActivity: null,
+      offActivity: "aus",
+      progress: null,
+      activities: [{ key: "aus", name: "Aus", controlClass: "off" }],
+    };
+    c._view = { main: "home" };
+    c._library = { items: [], total: 0 };
+    c._resume = [];
+    c._recent = [{ id: "r1", title: "Neu", year: 2026 }];
+    c._homeRowsAt = Date.now(); // suppress the fetch — no hass in this test
+    return c;
+  };
+
+  test("the library home is reachable while the theater is off (FR-41)", () => {
+    const html = card()._renderBody();
+    assert.match(html, /Kino ist ausgeschaltet/);
+    assert.match(html, /data-act="open-library"/);
+    assert.match(html, /Zuletzt hinzugefügt/);
+  });
+
+  test("an open library view survives regardless of power", () => {
+    const c = card();
+    c._view = {
+      main: "library",
+      category: "movies",
+      query: "",
+      sort: "added",
+      sortDir: null,
+      viewMode: "poster",
+      filters: { tags: [], genres: [], countries: [], ratings: [], yearFrom: null, yearTo: null },
+    };
+    c._library = { items: [], total: 0, hasMore: false, loading: true, error: null };
+    assert.match(c._renderBody(), /Wird geladen/);
+  });
+});
+
+describe("view modes", () => {
+  const card = () => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = { artworkSignature: "sig" };
+    c._view = { viewMode: "poster" };
+    return c;
+  };
+  const item = {
+    id: "abc",
+    title: "Film",
+    year: 2020,
+    res4k: true,
+    favorite: true,
+    watched: true,
+    continueWatching: 40,
+  };
+
+  test("every mode renders the item as an open-detail target", () => {
+    const c = card();
+    for (const mode of ["poster", "posterCard", "thumb", "thumbCard", "banner", "list"]) {
+      c._view.viewMode = mode;
+      const html = c._renderItems([item]);
+      assert.match(html, /data-act="open-detail"/, mode);
+      assert.match(html, /data-key="abc"/, mode);
+    }
+  });
+
+  test("card modes carry the card frame, bare modes do not", () => {
+    const c = card();
+    c._view.viewMode = "posterCard";
+    assert.match(c._renderItems([item]), /tilecard/);
+    c._view.viewMode = "poster";
+    assert.doesNotMatch(c._renderItems([item]), /tilecard/);
+  });
+
+  test("a banner without banner art falls back and gets a caption", () => {
+    const c = card();
+    c._view.viewMode = "banner";
+    const html = c._renderItems([item]);
+    assert.match(html, /\/api\/kino\/artwork\/abc\/Backdrop/);
+    assert.match(html, /class="caption">Film</);
+  });
+
+  test("the list row shows the watched and favorite flags", () => {
+    const c = card();
+    c._view.viewMode = "list";
+    const html = c._renderItems([item]);
+    assert.match(html, /class="seen"/);
+    assert.match(html, /class="fav"/);
   });
 });
 

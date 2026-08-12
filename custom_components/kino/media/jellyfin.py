@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -56,11 +57,17 @@ _MOVIE_FIELDS = ",".join(  # noqa: FLY002 - a long, readable field list
     )
 )
 
+#: Random re-randomises on every request, so paginated pages can repeat or
+#: skip titles — accepted; the card's grid stays usable and a refresh reshuffles.
 _SORT_FIELDS: dict[SortOrder, tuple[str, str]] = {
     SortOrder.ADDED: ("DateCreated", "Descending"),
     SortOrder.TITLE: ("SortName", "Ascending"),
     SortOrder.YEAR: ("ProductionYear", "Descending"),
     SortOrder.RATING: ("CommunityRating", "Descending"),
+    SortOrder.RUNTIME: ("Runtime", "Descending"),
+    SortOrder.LAST_PLAYED: ("DatePlayed", "Descending"),
+    SortOrder.RANDOM: ("Random", "Ascending"),
+    SortOrder.CRITICS: ("CriticRating", "Descending"),
 }
 
 #: 1 tick = 100 ns.
@@ -244,18 +251,40 @@ class JellyfinClient:
         return [_to_item(raw) for raw in (payload or {}).get("Items") or []]
 
     async def facets(self) -> Facets:
+        # The legacy filter endpoint carries genres, official ratings and the
+        # year bounds in one round trip. If a future Jellyfin drops it, the
+        # replacement is `/Items/Filters2` (different shape: NameGuidPair
+        # lists instead of plain strings).
         user = self._require_user()
         payload = await self._request(
-            "GET", "/Genres", params={"UserId": user, "Recursive": True}
+            "GET",
+            "/Items/Filters",
+            params={
+                "UserId": user,
+                "IncludeItemTypes": "Movie,Series",
+                "Recursive": True,
+            },
         )
-        genres = tuple(
-            sorted(g.get("Name", "") for g in (payload or {}).get("Items") or [])
+        payload = payload or {}
+        genres = tuple(sorted(g for g in payload.get("Genres") or [] if g))
+        ratings = tuple(sorted(r for r in payload.get("OfficialRatings") or [] if r))
+        years = [y for y in payload.get("Years") or [] if isinstance(y, int)]
+        return Facets(
+            genres=genres,
+            ratings=ratings,
+            year_min=min(years) if years else None,
+            year_max=max(years) if years else None,
         )
-        return Facets(genres=tuple(g for g in genres if g))
 
     async def refresh(self) -> None:
         """Ask Jellyfin to rescan (FR-44)."""
         await self._request("POST", "/Library/Refresh")
+
+    async def set_favorite(self, item_id: str, favorite: bool) -> None:
+        """Mark or unmark a favourite for the connected user."""
+        user = self._require_user()
+        method = "POST" if favorite else "DELETE"
+        await self._request(method, f"/Users/{user}/FavoriteItems/{quote(item_id)}")
 
     async def artwork(
         self, item_id: str, image_type: str = "Primary"
@@ -327,10 +356,17 @@ def _param(value: Any) -> str:
 def _search_params(query: MediaQuery) -> dict[str, Any]:
     """Translate one :class:`MediaQuery` into `/Items` query parameters."""
     sort_by, sort_order = _SORT_FIELDS[query.sort]
+    # The home rows (recent, continue) should show both kinds.
+    if query.category is Category.SHOWS:
+        item_types = "Series"
+    elif query.category in (Category.RECENT, Category.CONTINUE):
+        item_types = "Movie,Series"
+    else:
+        item_types = "Movie"
     params: dict[str, Any] = {
         "Recursive": True,
         "Fields": _MOVIE_FIELDS,
-        "IncludeItemTypes": "Series" if query.category is Category.SHOWS else "Movie",
+        "IncludeItemTypes": item_types,
         "SortBy": sort_by,
         "SortOrder": sort_order,
         "Limit": query.limit,
@@ -344,13 +380,21 @@ def _search_params(query: MediaQuery) -> dict[str, Any]:
     # Countries have no server-side parameter; they are applied client-side
     # in `_apply_client_side_filters` rather than pretended away here.
     #
-    # 4K/HD go server-side (`is_4k` is width >= 3000): a client-side cut
-    # after pagination made page sizes lie and the card's next offset —
-    # computed from what it kept — skip or repeat titles.
+    # Resolution goes server-side (`is_4k` is width >= 3000): a client-side
+    # cut after pagination made page sizes lie and the card's next offset —
+    # computed from what it kept — skip or repeat titles. The three tiers are
+    # a single-select in the card; Jellyfin cannot OR width windows.
     if query.only_4k or query.category is Category.UHD:
         params["MinWidth"] = 3000
     if query.only_hd:
+        params["MinWidth"] = 1280
         params["MaxWidth"] = 2999
+    if query.only_sd:
+        params["MaxWidth"] = 1279
+    if query.only_3d:
+        params["Is3D"] = True
+    if query.ratings:
+        params["OfficialRatings"] = "|".join(query.ratings)
     years = _year_range(query.year_from, query.year_to)
     if years:
         params["Years"] = ",".join(str(y) for y in years)
@@ -358,22 +402,30 @@ def _search_params(query: MediaQuery) -> dict[str, Any]:
     filters = []
     if query.only_unwatched or query.category is Category.UNWATCHED:
         filters.append("IsUnplayed")
+    if query.only_watched:
+        filters.append("IsPlayed")
     if query.only_resumable or query.category is Category.CONTINUE:
         filters.append("IsResumable")
+    if query.only_favorites:
+        filters.append("IsFavorite")
     if filters:
         params["Filters"] = ",".join(filters)
     if query.category is Category.RECENT or query.only_recent:
         params["SortBy"] = "DateCreated"
         params["SortOrder"] = "Descending"
+    # The explicit direction wins everywhere, including the recent override.
+    if query.sort_dir:
+        params["SortOrder"] = "Ascending" if query.sort_dir == "asc" else "Descending"
     return params
 
 
 def _year_range(start: int | None, end: int | None) -> list[int]:
+    """`Years` wants an explicit list; open ends get sensible defaults."""
     if start is None and end is None:
         return []
-    low = start or end
-    high = end or start
-    if low is None or high is None or high < low or high - low > 150:
+    low = start if start is not None else 1900
+    high = end if end is not None else datetime.now().year
+    if high < low or high - low > 150:
         return []
     return list(range(low, high + 1))
 
@@ -407,7 +459,10 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
         genres=tuple(raw.get("Genres") or ()),
         countries=tuple(raw.get("ProductionLocations") or ()),
         rating=raw.get("CommunityRating"),
+        official_rating=raw.get("OfficialRating"),
         is_4k=bool(width and width >= 3000),
+        is_3d=bool(raw.get("Video3DFormat")),
+        is_favorite=bool(user_data.get("IsFavorite")),
         watched=bool(user_data.get("Played")),
         resume_percent=round(resume_percent, 1) if resume_percent else None,
         resume_seconds=resume_seconds,
@@ -417,6 +472,8 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
         path=path,
         image_tag=(raw.get("ImageTags") or {}).get("Primary"),
         backdrop_tag=next(iter(raw.get("BackdropImageTags") or []), None),
+        thumb_tag=(raw.get("ImageTags") or {}).get("Thumb"),
+        banner_tag=(raw.get("ImageTags") or {}).get("Banner"),
         video_format=video_format,
         audio_format=audio_format,
         playable=playable,
