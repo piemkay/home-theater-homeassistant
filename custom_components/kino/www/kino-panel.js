@@ -1366,9 +1366,13 @@ class KinoPanel extends PanelBase {
             : "faint";
       const idleButUnneeded =
         board.state === "on" && !device.requiredByActivity && device.power === "off";
+      // Some drivers report the power value again as their phase — saying
+      // "off (off)" helps nobody.
+      const phase =
+        device.phase && device.phase !== device.power ? ` (${device.phase})` : "";
       const powerLabel = idleButUnneeded
         ? `wird von „${nameOf(board.activity)}“ nicht benötigt`
-        : `Zustand: ${device.power}${device.phase ? ` (${device.phase})` : ""}`;
+        : `Zustand: ${device.power}${phase}`;
 
       const keys = new Set([
         ...Object.keys(device.expected || {}),
