@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:oklch(0.11 0.012 265);display:flex;justify-content:center;padding:24px 0}
+  a{color:oklch(0.78 0.15 75)}
+  a:hover{color:oklch(0.85 0.15 75)}
+  @keyframes kino-pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+  .kino-hscroll::-webkit-scrollbar{display:none}
+</style>
+</helmet>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="393px,852px">
+<div style="width:100%;height:100%;display:flex;flex-direction:column;position:relative;font-family:'Manrope',system-ui,sans-serif;--bg:oklch(0.15 0.015 265);--surface:oklch(0.205 0.016 265);--surface2:oklch(0.25 0.017 265);--border:oklch(1 0 0 / 0.08);--text:oklch(0.97 0.005 265);--text2:oklch(0.72 0.01 265);--text3:oklch(0.5 0.01 265);--gold:oklch(0.78 0.15 75);--goldText:oklch(0.18 0.03 75);--teal:oklch(0.72 0.12 190);--red:oklch(0.65 0.19 25);background:var(--bg);color:var(--text);padding-top:54px;box-sizing:border-box">
+
+  <div style="padding:8px 20px 10px;display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:40px;box-sizing:border-box">
+    <sc-if value="{{ pushed }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ goBack }}" style="width:32px;height:32px;border-radius:16px;border:none;background:var(--surface2);color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 4 7 12 15 20"></polyline></svg>
+      </button>
+    </sc-if>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span style="font-weight:800;font-size:15px;letter-spacing:1.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ headerTitle }}</span>
+        <sc-if value="{{ isRoot }}" hint-placeholder-val="{{ true }}">
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:var(--surface2);color:var(--text2);letter-spacing:0.5px">ADMIN</span>
+        </sc-if>
+      </div>
+      <sc-if value="{{ hasHeaderSub }}" hint-placeholder-val="{{ false }}">
+        <div style="font-family:ui-monospace,monospace;font-size:10.5px;color:var(--text3)">{{ headerSub }}</div>
+      </sc-if>
+    </div>
+    <sc-if value="{{ dirty }}" hint-placeholder-val="{{ false }}">
+      <span style="font-size:11px;color:var(--gold);font-weight:700;white-space:nowrap">● Ungespeichert</span>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ hasNotice }}" hint-placeholder-val="{{ false }}">
+    <div style="margin:0 20px 10px;padding:10px 14px;border-radius:12px;font-size:12.5px;font-weight:600;background:{{ noticeBg }};border:1px solid {{ noticeBorder }};color:var(--text)">{{ noticeText }}</div>
+  </sc-if>
+
+  <div style="flex:1;overflow-y:auto;min-height:0;scrollbar-width:none" class="kino-hscroll">
+
+    <sc-if value="{{ screenActivities }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Aktivitäten" style="padding:2px 20px 24px">
+        <p style="margin:0 0 14px;font-size:12px;color:var(--text2);line-height:1.5">Jede Aktivität einzeln bearbeiten. Werte kommen aus den echten Geräten. Änderungen greifen nach dem Speichern ohne Neustart.</p>
+        <sc-if value="{{ showErrors }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-bottom:14px;padding:12px 14px;border-radius:12px;border:1px solid var(--red);background:oklch(0.65 0.19 25 / 0.12)">
+            <strong style="font-size:12.5px">2 Fehler in der Konfiguration</strong>
+            <div style="margin-top:8px;font-size:12px;font-weight:700">Aktivität „Bibliothek“</div>
+            <div style="font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.5"><span style="font-family:ui-monospace,monospace">devices.beamer</span> — unbekanntes Gerät ‚beamer‘ (definiert: barco, madvr, shield, trinnov, zidoo)</div>
+            <div style="margin-top:8px;font-size:12px;font-weight:700">Gerät „Trinnov“</div>
+            <div style="font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.5"><span style="font-family:ui-monospace,monospace">startup_timout</span> — unbekanntes Feld</div>
+          </div>
+        </sc-if>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ activityList }}" as="a" hint-placeholder-count="5">
+            <button onClick="{{ a.open }}" style="display:flex;align-items:center;gap:12px;padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;text-align:left;font-family:'Manrope',system-ui,sans-serif;width:100%;box-sizing:border-box">
+              <span style="width:38px;height:38px;border-radius:11px;background:var(--surface2);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0">{{ a.glyph }}</span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="display:flex;align-items:baseline;gap:8px"><span style="font-weight:800;font-size:14px">{{ a.name }}</span><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:var(--text3)">{{ a.key }}</span></span>
+                <span style="font-size:11.5px;color:var(--text2)">{{ a.summary }}</span>
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.5 0.01 265)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><polyline points="9 4 17 12 9 20"></polyline></svg>
+            </button>
+          </sc-for>
+        </div>
+        <button onClick="{{ addActivity }}" style="margin-top:14px;width:100%;padding:13px;border-radius:12px;border:1px dashed var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">+ Aktivität</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ screenActivityEdit }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Aktivität bearbeiten" style="padding:2px 20px 24px;display:flex;flex-direction:column;gap:12px">
+        <div style="padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;gap:11px">
+          <div style="display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Name</span>
+            <input value="{{ editActName }}" onChange="{{ setActName }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%">
+          </div>
+          <div style="display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Steuerungsklasse</span>
+            <select value="{{ editActControl }}" onChange="{{ setActControl }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);width:100%">
+              <sc-for list="{{ controlOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o }}">{{ o }}</option></sc-for>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Medien</span>
+            <select value="{{ editActMedia }}" onChange="{{ setActMedia }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);width:100%">
+              <option value="">keine</option>
+              <option value="jellyfin">jellyfin</option>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Lichtszene</span>
+            <select value="{{ editActScene }}" onChange="{{ setActScene }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);width:100%">
+              <option value="">—</option>
+              <sc-for list="{{ sceneOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.id }}">{{ o.name }}</option></sc-for>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Icon</span>
+            <input value="{{ editActIcon }}" onChange="{{ setActIcon }}" placeholder="mdi:…" style="font-family:ui-monospace,monospace;font-size:12.5px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%">
+          </div>
+        </div>
+
+        <div style="font-size:12px;font-weight:800;color:var(--text2);letter-spacing:0.4px;margin:4px 2px 0">GERÄTE</div>
+        <sc-for list="{{ editDevices }}" as="d" hint-placeholder-count="4">
+          <div style="padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface)">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column">
+                <span style="font-weight:800;font-size:13.5px">{{ d.name }}</span>
+                <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:var(--text3)">{{ d.key }}</span>
+              </span>
+              <span style="font-size:11.5px;font-weight:700;color:{{ d.stateColor }}">{{ d.stateLabel }}</span>
+              <button onClick="{{ d.toggle }}" style="width:46px;height:28px;border-radius:14px;border:none;padding:2px;cursor:pointer;background:{{ d.switchBg }};display:flex;justify-content:{{ d.switchAlign }}">
+                <span style="width:24px;height:24px;border-radius:12px;background:#fff;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></span>
+              </button>
+            </div>
+            <sc-if value="{{ d.on }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:12px;display:flex;flex-direction:column;gap:9px;border-top:1px solid var(--border);padding-top:12px">
+                <sc-for list="{{ d.settings }}" as="s" hint-placeholder-count="2">
+                  <div style="display:grid;grid-template-columns:88px 1fr;gap:10px;align-items:center">
+                    <span style="font-size:11.5px;color:var(--text2)">{{ s.label }}</span>
+                    <sc-if value="{{ s.isSelect }}" hint-placeholder-val="{{ true }}">
+                      <select value="{{ s.value }}" onChange="{{ s.onChange }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:8px 10px;border-radius:9px;min-height:36px;border:1px solid var(--border);background:var(--bg);color:var(--text);width:100%">
+                        <option value="">—</option>
+                        <sc-for list="{{ s.options }}" as="o" hint-placeholder-count="2"><option value="{{ o }}">{{ o }}</option></sc-for>
+                      </select>
+                    </sc-if>
+                    <sc-if value="{{ s.isNumber }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <input type="number" step="0.5" value="{{ s.value }}" onChange="{{ s.onChange }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:8px 10px;border-radius:9px;min-height:36px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%">
+                        <span style="font-size:11px;color:var(--text3)">dB</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ s.isShadow }}" hint-placeholder-val="{{ false }}">
+                      <span style="justify-self:start;font-size:11px;padding:5px 10px;border-radius:12px;background:var(--surface2);color:var(--text2)" title="Gerät aus — Werte nicht abrufbar. Der gesetzte Wert wird beim Start angewendet.">{{ s.shadowLabel }}</span>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+
+        <div style="display:flex;gap:10px;margin-top:6px">
+          <button onClick="{{ duplicateActivity }}" style="flex:1;padding:12px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:12.5px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">⧉ Duplizieren</button>
+          <button onClick="{{ deleteActivity }}" disabled="{{ deleteDisabled }}" style="flex:1;padding:12px;border-radius:11px;border:1px solid var(--red);background:transparent;color:var(--red);font-weight:700;font-size:12.5px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;opacity:{{ deleteOpacity }}">✕ Löschen</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ screenDevices }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Geräte" style="padding:2px 20px 24px">
+        <p style="margin:0 0 14px;font-size:12px;color:var(--text2);line-height:1.5">Welche Home-Assistant-Entity welches logische Gerät bedient. Mit * markierte Rollen braucht der Treiber zwingend.</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ deviceList }}" as="d" hint-placeholder-count="5">
+            <button onClick="{{ d.open }}" style="display:flex;align-items:center;gap:12px;padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;text-align:left;font-family:'Manrope',system-ui,sans-serif;width:100%;box-sizing:border-box">
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="display:flex;align-items:baseline;gap:8px"><span style="font-weight:800;font-size:14px">{{ d.name }}</span><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:var(--text3)">{{ d.key }}</span></span>
+                <span style="font-size:11.5px;color:var(--text2)">{{ d.summary }}</span>
+              </span>
+              <span style="font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:10px;background:var(--surface2);color:var(--text2);font-family:ui-monospace,monospace">{{ d.driver }}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.5 0.01 265)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><polyline points="9 4 17 12 9 20"></polyline></svg>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ screenDeviceEdit }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Gerät bearbeiten" style="padding:2px 20px 24px;display:flex;flex-direction:column;gap:12px">
+        <div style="padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;gap:11px">
+          <div style="display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Treiber</span>
+            <select value="{{ editDevDriver }}" onChange="{{ setDevDriver }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);width:100%">
+              <sc-for list="{{ driverOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o }}">{{ o }}</option></sc-for>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Name</span>
+            <input value="{{ editDevName }}" onChange="{{ setDevName }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%">
+          </div>
+        </div>
+        <div style="font-size:12px;font-weight:800;color:var(--text2);letter-spacing:0.4px;margin:4px 2px 0">ENTITIES</div>
+        <div style="padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;gap:12px">
+          <sc-for list="{{ editDevRoles }}" as="r" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span style="font-size:11.5px;color:{{ r.labelColor }};font-weight:700">{{ r.label }}</span>
+              <input value="{{ r.value }}" onChange="{{ r.onChange }}" placeholder="{{ r.hint }}" style="font-family:ui-monospace,monospace;font-size:12px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%">
+              <sc-if value="{{ r.unknown }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:11px;color:var(--red)">Diese Entity existiert nicht</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;gap:11px">
+          <div style="display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Start-Timeout (s)</span>
+            <input type="number" value="{{ editDevTimeout }}" onChange="{{ setDevTimeout }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">Startdauer ≈ (s)</span>
+            <input type="number" value="{{ editDevStartup }}" onChange="{{ setDevStartup }}" style="font-family:'Manrope',system-ui,sans-serif;font-size:13px;padding:9px 11px;border-radius:9px;min-height:38px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%">
+          </div>
+        </div>
+        <sc-if value="{{ editDevIsZidoo }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface)">
+            <div style="font-size:12.5px;font-weight:800;margin-bottom:4px">Pfad-Zuordnung</div>
+            <p style="margin:0 0 10px;font-size:11.5px;color:var(--text2);line-height:1.5">Links der Pfad aus der Bibliothek, rechts der Pfad, unter dem der Player dieselbe Datei öffnet.</p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <sc-for list="{{ pathMapRows }}" as="p" hint-placeholder-count="1">
+                <div style="display:flex;flex-direction:column;gap:6px;border:1px solid var(--border);border-radius:10px;padding:10px">
+                  <input value="{{ p.from }}" onChange="{{ p.onChangeFrom }}" style="font-family:ui-monospace,monospace;font-size:11.5px;padding:8px 10px;border-radius:8px;min-height:34px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:11px;color:var(--text3)">→</span>
+                    <input value="{{ p.to }}" onChange="{{ p.onChangeTo }}" style="flex:1;font-family:ui-monospace,monospace;font-size:11.5px;padding:8px 10px;border-radius:8px;min-height:34px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box">
+                    <button onClick="{{ p.remove }}" style="width:34px;height:34px;border-radius:9px;border:1px solid var(--red);background:transparent;color:var(--red);cursor:pointer;flex-shrink:0">✕</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <button onClick="{{ addPathMap }}" style="margin-top:10px;padding:10px 14px;border-radius:10px;border:1px dashed var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">+ Zuordnung</button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ screenBoard }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Gerätestatus" style="padding:2px 20px 24px">
+        <p style="margin:0 0 12px;font-size:12px;color:var(--text2);line-height:1.5">{{ boardContext }} Start und Stopp wirken nur auf dieses eine Gerät.</p>
+        <button onClick="{{ reloadBoard }}" style="margin-bottom:12px;padding:9px 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">↻ Aktualisieren</button>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ boardCards }}" as="b" hint-placeholder-count="5">
+            <div style="padding:14px;border-radius:14px;border:1px solid var(--border);background:var(--surface)">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="width:9px;height:9px;border-radius:5px;background:{{ b.color }};animation:{{ b.anim }};flex-shrink:0"></span>
+                <span style="font-weight:800;font-size:13.5px;flex:1">{{ b.name }}</span>
+                <span style="font-size:11.5px;font-weight:700;color:{{ b.readyColor }}">{{ b.readyLabel }}</span>
+              </div>
+              <div style="margin-top:6px;font-size:11.5px;color:var(--text2)">{{ b.powerLabel }}</div>
+              <sc-if value="{{ b.hasComparison }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:9px;border-top:1px solid var(--border);padding-top:9px;display:flex;flex-direction:column;gap:4px">
+                  <sc-for list="{{ b.comparison }}" as="c" hint-placeholder-count="2">
+                    <div style="display:flex;gap:8px;font-family:ui-monospace,monospace;font-size:11px">
+                      <span style="color:var(--text3);min-width:60px">{{ c.key }}</span>
+                      <span style="color:{{ c.color }}">{{ c.text }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <div style="display:flex;gap:8px;margin-top:11px">
+                <button onClick="{{ b.testStart }}" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Start</button>
+                <button onClick="{{ b.testStop }}" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Stopp</button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ screenPlanner }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Planer" style="padding:2px 0 24px">
+        <p style="margin:0 20px 12px;font-size:12px;color:var(--text2);line-height:1.5">Zeigt den berechneten Unterschied vom aktuellen Zustand zu einer Aktivität — ohne irgendetwas auszuführen.</p>
+        <div class="kino-hscroll" style="display:flex;gap:8px;overflow-x:auto;padding:0 20px 14px;scrollbar-width:none">
+          <sc-for list="{{ plannerPills }}" as="p" hint-placeholder-count="5">
+            <button onClick="{{ p.run }}" style="flex-shrink:0;padding:9px 16px;border-radius:18px;border:none;font-size:12.5px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ p.bg }};color:{{ p.fg }}">{{ p.label }}</button>
+          </sc-for>
+        </div>
+        <sc-if value="{{ hasPlan }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:0 20px">
+            <div style="font-size:12.5px;font-weight:700;margin-bottom:12px;line-height:1.5">{{ planSummary }}</div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <sc-for list="{{ planActions }}" as="a" hint-placeholder-count="4">
+                <div style="padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface)">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-weight:800;font-size:13px;flex:1">{{ a.device }}</span>
+                    <span style="font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:10px;background:{{ a.badgeBg }};color:{{ a.badgeFg }};letter-spacing:0.3px">{{ a.kind }}</span>
+                  </div>
+                  <sc-if value="{{ a.hasSettings }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:6px;font-family:ui-monospace,monospace;font-size:11px;color:var(--text2)">{{ a.settings }}</div>
+                  </sc-if>
+                  <div style="margin-top:5px;font-size:11.5px;color:var(--text3)">{{ a.reason }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noPlan }}" hint-placeholder-val="{{ true }}">
+          <p style="margin:8px 20px;font-size:12px;color:var(--text3)">Eine Aktivität wählen.</p>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ screenMore }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Mehr" style="padding:2px 20px 24px;display:flex;flex-direction:column;gap:10px">
+        <button onClick="{{ openLog }}" style="display:flex;align-items:center;gap:12px;padding:15px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;text-align:left;font-family:'Manrope',system-ui,sans-serif;width:100%;box-sizing:border-box">
+          <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-weight:800;font-size:14px">Verlauf</span><span style="font-size:11.5px;color:var(--text2)">Übergänge und gelernte Dauern</span></span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.5 0.01 265)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 4 17 12 9 20"></polyline></svg>
+        </button>
+        <button onClick="{{ openRaw }}" style="display:flex;align-items:center;gap:12px;padding:15px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;text-align:left;font-family:'Manrope',system-ui,sans-serif;width:100%;box-sizing:border-box">
+          <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-weight:800;font-size:14px">Datei</span><span style="font-size:11.5px;color:var(--text2)">Das Dokument als JSON — sichern und einspielen</span></span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.5 0.01 265)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 4 17 12 9 20"></polyline></svg>
+        </button>
+        <div style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center;font-family:ui-monospace,monospace">kino-panel 0.4.0 · kino.yaml · .bak wird behalten</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ screenLog }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Verlauf" style="padding:2px 20px 24px">
+        <div style="font-size:12px;font-weight:800;color:var(--text2);letter-spacing:0.4px;margin:0 2px 10px">ÜBERGÄNGE</div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <sc-for list="{{ logTransitions }}" as="t" hint-placeholder-count="3">
+            <div style="padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface)">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:800;font-size:13px;flex:1">{{ t.title }}</span>
+                <span style="font-size:11px;font-weight:800;color:{{ t.statusColor }}">{{ t.status }}</span>
+                <span style="font-size:11px;color:var(--text3)">{{ t.duration }}</span>
+              </div>
+              <div style="margin-top:6px;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--text2);line-height:1.6">{{ t.steps }}</div>
+              <sc-if value="{{ t.hasError }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:5px;font-size:11.5px;color:var(--red)">{{ t.error }}</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin:20px 2px 10px">
+          <span style="flex:1;font-size:12px;font-weight:800;color:var(--text2);letter-spacing:0.4px">GELERNTE DAUERN</span>
+          <button onClick="{{ resetAllDurations }}" style="padding:7px 12px;border-radius:9px;border:1px solid var(--red);background:transparent;color:var(--red);font-weight:700;font-size:11px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Alle zurücksetzen</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ logDurations }}" as="d" hint-placeholder-count="4">
+            <div style="padding:11px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:10px">
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                <span style="font-weight:700;font-size:12.5px">{{ d.device }} · {{ d.kind }}</span>
+                <span style="font-size:11px;color:var(--text3)">{{ d.detail }}</span>
+              </span>
+              <span style="font-weight:800;font-size:13px;color:var(--gold)">{{ d.estimate }}</span>
+              <button onClick="{{ d.reset }}" style="width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;flex-shrink:0" title="Zurücksetzen">↺</button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ screenRaw }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Datei" style="padding:2px 20px 24px;display:flex;flex-direction:column;gap:12px">
+        <p style="margin:0;font-size:12px;color:var(--text2);line-height:1.5">Das komplette Dokument als JSON. Gespeichert wird als YAML nach <span style="font-family:ui-monospace,monospace">kino.yaml</span>; die vorherige Fassung bleibt als <span style="font-family:ui-monospace,monospace">.bak</span> liegen.</p>
+        <div style="display:flex;gap:8px">
+          <button onClick="{{ copyRaw }}" style="flex:1;padding:11px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">In die Zwischenablage</button>
+          <button onClick="{{ applyRaw }}" style="flex:1;padding:11px;border-radius:10px;border:none;background:var(--gold);color:var(--goldText);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Übernehmen</button>
+        </div>
+        <textarea value="{{ rawText }}" onChange="{{ setRawText }}" spellcheck="{{ false }}" style="font-family:ui-monospace,monospace;font-size:11px;line-height:1.55;min-height:420px;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%;resize:vertical"></textarea>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ dirty }}" hint-placeholder-val="{{ false }}">
+    <div style="flex-shrink:0;display:flex;gap:10px;padding:10px 20px;border-top:1px solid var(--border);background:var(--surface)">
+      <button onClick="{{ revert }}" style="padding:12px 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Verwerfen</button>
+      <button onClick="{{ save }}" style="flex:1;padding:12px;border-radius:11px;border:none;background:var(--gold);color:var(--goldText);font-weight:800;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Speichern</button>
+    </div>
+  </sc-if>
+
+  <div style="flex-shrink:0;display:flex;border-top:1px solid var(--border);background:var(--surface);padding:6px 8px 22px">
+    <sc-for list="{{ tabBar }}" as="t" hint-placeholder-count="5">
+      <button onClick="{{ t.select }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 0 3px;border:none;background:transparent;color:{{ t.color }};cursor:pointer;font-family:'Manrope',system-ui,sans-serif;min-height:44px">
+        <span style="display:flex;width:22px;height:22px;align-items:center;justify-content:center" dangerouslySetInnerHTML="{{ t.iconHtml }}"></span>
+        <span style="font-size:9.5px;font-weight:700;letter-spacing:0.2px">{{ t.label }}</span>
+      </button>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{ hasDialog }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ dialogCancel }}" style="position:absolute;inset:0;z-index:50;background:rgba(0,0,0,0.55);display:flex;align-items:flex-end;padding:0;box-sizing:border-box">
+      <div onClick="{{ dialogNoop }}" style="width:100%;background:var(--surface);border-top:1px solid var(--border);border-radius:20px 20px 0 0;padding:20px 20px 34px;box-sizing:border-box">
+        <div style="width:36px;height:4px;border-radius:2px;background:var(--surface2);margin:0 auto 16px"></div>
+        <h3 style="margin:0 0 8px;font-size:15px;font-weight:800">{{ dialogTitle }}</h3>
+        <p style="margin:0 0 14px;font-size:12px;color:var(--text2);line-height:1.5">{{ dialogBody }}</p>
+        <sc-if value="{{ dialogHasInput }}" hint-placeholder-val="{{ false }}">
+          <input onChange="{{ dialogInput }}" placeholder="Name der Aktivität" style="font-family:'Manrope',system-ui,sans-serif;font-size:14px;padding:11px 13px;border-radius:10px;min-height:44px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box;width:100%;margin-bottom:14px">
+        </sc-if>
+        <div style="display:flex;gap:10px">
+          <button onClick="{{ dialogCancel }}" style="flex:1;padding:13px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Abbrechen</button>
+          <button onClick="{{ dialogConfirm }}" style="flex:1;padding:13px;border-radius:11px;border:{{ dialogConfirmBorder }};background:{{ dialogConfirmBg }};color:{{ dialogConfirmFg }};font-weight:800;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">{{ dialogConfirmLabel }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</x-import>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 470, &quot;height&quot;: 940}, &quot;roomActive&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Demo-Zustand&quot;, &quot;description&quot;: &quot;Kino läuft (Auswahllisten live) oder ist aus (Schattenwerte)&quot;}, &quot;showErrors&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Demo-Zustand&quot;, &quot;description&quot;: &quot;Gruppierte Validierungsfehler anzeigen&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const doc = this._initialDoc();
+    this.state = {
+      tab: "activities", push: null,
+      doc, original: JSON.parse(JSON.stringify(doc)),
+      notice: null, dialog: null,
+      plan: null, plannerTarget: "",
+      rawText: "",
+    };
+    this._dialogText = "";
+  }
+
+  _initialDoc() {
+    return {
+      version: 1,
+      settings: { off_activity: "aus" },
+      devices: {
+        barco: { driver: "barco", name: "Beamer", entities: { power: "switch.hodr_cs_power", state: "sensor.hodr_cs_state", profile: "select.hodr_cs_profile" }, startup_timeout: 420, default_startup_seconds: 95 },
+        trinnov: { driver: "trinnov", name: "Trinnov", entities: { power: "switch.trinnov_altitude_power", state: "sensor.trinnov_altitude_power_status", source: "select.trinnov_altitude_source", volume: "number.trinnov_altitude_volume", dim: "switch.trinnov_altitude_dim" }, startup_timeout: 120, default_startup_seconds: 45 },
+        madvr: { driver: "madvr", name: "madVR", entities: { power: "remote.madvr_envy", state: "sensor.madvr_envy_status" }, startup_timeout: 90, default_startup_seconds: 40 },
+        zidoo: { driver: "zidoo", name: "Zidoo", entities: { media: "media_player.zidoo_z9x", audio: "select.zidoo_audio_track", subtitle: "select.zidoo_subtitle_track" }, options: { path_map: { "/media/entertainment/": "/mnt/nfs/192.168.50.10#entertainment/" } }, startup_timeout: 60, default_startup_seconds: 25 },
+        shield: { driver: "generic", name: "Shield", entities: { media: "media_player.shield_kino" }, startup_timeout: 60, default_startup_seconds: 15 },
+      },
+      activities: {
+        aus: { name: "Aus", control_class: "off", icon: "mdi:power", devices: {} },
+        film: { name: "Bibliothek", control_class: "full", media: "jellyfin", light_scene: "scene.dark", icon: "mdi:movie-open", devices: { barco: { power: true, profile: "HDR 260 HDMI" }, trinnov: { power: true, source: "zidoo", volume: -30 }, madvr: { power: true }, zidoo: { power: true } } },
+        netflix: { name: "Streaming", control_class: "handoff", light_scene: "scene.dark", icon: "mdi:television-play", devices: { barco: { power: true, profile: "HDR 260 HDMI" }, trinnov: { power: true, source: "shield", volume: -32 }, madvr: { power: true }, shield: { power: true } } },
+        musik: { name: "Musik", control_class: "mixed", icon: "mdi:music", devices: { trinnov: { power: true, source: "bluetooth", volume: -25 } } },
+        steam: { name: "Steam", control_class: "room", light_scene: "scene.gaming", icon: "mdi:controller", devices: { barco: { power: true, profile: "SDR 120 HDMI" }, trinnov: { power: true, source: "tv", volume: -28 }, madvr: { power: true } } },
+      },
+    };
+  }
+
+  _settingsCatalogue(devKey) {
+    const live = this.props.roomActive ?? true;
+    const cat = {
+      barco: { profile: { type: "select", options: live ? ["HDR 260 HDMI", "SDR 120 HDMI", "3D Frame Packed"] : [] } },
+      trinnov: {
+        source: { type: "select", options: live ? ["zidoo", "shield", "tv", "bluetooth"] : [] },
+        preset: { type: "select", options: [] },
+        upmixer: { type: "select", options: live ? ["Auto", "Dolby Surround", "Neural:X", "Aus"] : [] },
+        volume: { type: "number" },
+      },
+      madvr: { profile: { type: "select", options: [] } },
+      zidoo: {}, shield: {},
+    };
+    const dev = this.state.doc.devices[devKey];
+    return cat[dev && dev.driver === "generic" ? "shield" : devKey] || {};
+  }
+
+  _roles(driver) {
+    return {
+      barco: [{ role: "power", req: true, hint: "switch.…" }, { role: "state", req: true, hint: "sensor.…" }, { role: "profile", req: false, hint: "select.…" }],
+      trinnov: [{ role: "power", req: true, hint: "switch.…" }, { role: "state", req: true, hint: "sensor.…" }, { role: "source", req: false, hint: "select.…" }, { role: "volume", req: false, hint: "number.…" }, { role: "dim", req: false, hint: "switch.…" }],
+      madvr: [{ role: "power", req: true, hint: "remote.…" }, { role: "state", req: false, hint: "sensor.…" }],
+      zidoo: [{ role: "media", req: true, hint: "media_player.…" }, { role: "audio", req: false, hint: "select.…" }, { role: "subtitle", req: false, hint: "select.…" }],
+      generic: [{ role: "media", req: true, hint: "media_player.…" }],
+    }[driver] || [];
+  }
+
+  _knownEntities() {
+    const doc = this.state.doc;
+    const known = new Set(["scene.dark", "scene.hell", "scene.gaming"]);
+    for (const d of Object.values(doc.devices)) for (const id of Object.values(d.entities || {})) known.add(id);
+    return known;
+  }
+
+  _requirement(actKey, devKey) {
+    const raw = this.state.doc.activities[actKey]?.devices?.[devKey];
+    if (!raw) return { present: false, power: false, settings: {} };
+    const reserved = new Set(["power", "required", "settings"]);
+    const settings = raw.settings ? { ...raw.settings } : Object.fromEntries(Object.entries(raw).filter(([k]) => !reserved.has(k)));
+    return { present: true, power: raw.power !== false, settings };
+  }
+
+  _mutate(fn) {
+    this.setState((s) => {
+      const doc = JSON.parse(JSON.stringify(s.doc));
+      fn(doc);
+      return { doc };
+    });
+  }
+
+  _notify(kind, text) {
+    this.setState({ notice: { kind, text } });
+    clearTimeout(this._noticeTimer);
+    this._noticeTimer = setTimeout(() => this.setState({ notice: null }), 3200);
+  }
+
+  _slugify(name) {
+    const slug = String(name || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    return slug || "aktivitaet";
+  }
+
+  _uniqueKey(doc, base) {
+    if (!doc.activities[base]) return base;
+    let n = 2;
+    while (doc.activities[`${base}_${n}`]) n += 1;
+    return `${base}_${n}`;
+  }
+
+  _board() {
+    const live = this.props.roomActive ?? true;
+    if (!live) return {
+      state: "off", activity: "aus",
+      devices: [
+        { key: "barco", power: "off", ready: false, obs: [] },
+        { key: "trinnov", power: "off", ready: false, obs: [] },
+        { key: "madvr", power: "off", ready: false, obs: [] },
+        { key: "zidoo", power: "off", ready: false, obs: [] },
+        { key: "shield", power: "off", ready: false, obs: [] },
+      ],
+    };
+    return {
+      state: "on", activity: "film",
+      devices: [
+        { key: "barco", power: "on", ready: true, obs: [{ k: "profile", ist: "HDR 260 HDMI", soll: "HDR 260 HDMI", ok: true }] },
+        { key: "trinnov", power: "on", ready: true, obs: [{ k: "source", ist: "zidoo", soll: "zidoo", ok: true }, { k: "volume", ist: "-27,5 dB", soll: "—", ok: true }] },
+        { key: "madvr", power: "transitioning", phase: "startet", ready: false, obs: [{ k: "profile", ist: "—", soll: "—", ok: true }] },
+        { key: "zidoo", power: "on", ready: true, obs: [] },
+        { key: "shield", power: "off", ready: false, obs: [], note: "wird von Bibliothek nicht benötigt" },
+      ],
+    };
+  }
+
+  _cannedPlan(target) {
+    const plans = {
+      film: { summary: "nichts zu tun — Bibliothek läuft bereits", actions: [
+        { device: "barco", kind: "keep", settings: {}, reason: "läuft bereits mit passenden Einstellungen" },
+        { device: "trinnov", kind: "keep", settings: {}, reason: "Quelle und Pegel stimmen" },
+        { device: "madvr", kind: "keep", settings: {}, reason: "läuft bereits" },
+        { device: "zidoo", kind: "keep", settings: {}, reason: "läuft bereits" } ] },
+      netflix: { summary: "stoppen: Zidoo · starten: Shield · umkonfigurieren: Trinnov", actions: [
+        { device: "zidoo", kind: "stop", settings: {}, reason: "wird von Streaming nicht benötigt" },
+        { device: "shield", kind: "start", settings: {}, reason: "neu in Streaming" },
+        { device: "trinnov", kind: "reconfigure", settings: { source: "shield", volume: -32 }, reason: "Quelle shield statt zidoo" },
+        { device: "barco", kind: "keep", settings: {}, reason: "Profil bleibt HDR 260 HDMI" },
+        { device: "madvr", kind: "keep", settings: {}, reason: "läuft bereits" } ] },
+      aus: { summary: "stoppen: Beamer, Trinnov, madVR, Zidoo", actions: [
+        { device: "barco", kind: "stop", settings: {}, reason: "Kino wird ausgeschaltet — Abkühlphase ≈ 5 min" },
+        { device: "trinnov", kind: "stop", settings: {}, reason: "Kino wird ausgeschaltet" },
+        { device: "madvr", kind: "stop", settings: {}, reason: "Kino wird ausgeschaltet" },
+        { device: "zidoo", kind: "stop", settings: {}, reason: "Kino wird ausgeschaltet" } ] },
+      musik: { summary: "stoppen: Beamer, madVR, Zidoo · umkonfigurieren: Trinnov", actions: [
+        { device: "barco", kind: "stop", settings: {}, reason: "Musik braucht kein Bild" },
+        { device: "madvr", kind: "stop", settings: {}, reason: "Musik braucht kein Bild" },
+        { device: "zidoo", kind: "stop", settings: {}, reason: "wird von Musik nicht benötigt" },
+        { device: "trinnov", kind: "reconfigure", settings: { source: "bluetooth", volume: -25 }, reason: "Quelle bluetooth statt zidoo" } ] },
+      steam: { summary: "stoppen: Zidoo · umkonfigurieren: Beamer, Trinnov", actions: [
+        { device: "zidoo", kind: "stop", settings: {}, reason: "wird von Steam nicht benötigt" },
+        { device: "barco", kind: "reconfigure", settings: { profile: "SDR 120 HDMI" }, reason: "Profil SDR 120 HDMI statt HDR 260 HDMI" },
+        { device: "trinnov", kind: "reconfigure", settings: { source: "tv", volume: -28 }, reason: "Quelle tv statt zidoo" },
+        { device: "madvr", kind: "keep", settings: {}, reason: "läuft bereits" } ] },
+    };
+    return plans[target] || { summary: "nichts zu tun", actions: [] };
+  }
+
+  _icons() {
+    const s = 'width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+    return {
+      activities: `<svg ${s}><rect x="3" y="3" width="8" height="8" rx="2"></rect><rect x="13" y="3" width="8" height="8" rx="2"></rect><rect x="3" y="13" width="8" height="8" rx="2"></rect><rect x="13" y="13" width="8" height="8" rx="2"></rect></svg>`,
+      devices: `<svg ${s}><rect x="4" y="4" width="16" height="12" rx="2"></rect><line x1="9" y1="20" x2="15" y2="20"></line></svg>`,
+      board: `<svg ${s}><polyline points="3 12 8 12 10 7 14 17 16 12 21 12"></polyline></svg>`,
+      planner: `<svg ${s}><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="18" r="2.5"></circle><path d="M8.5 6 H15 a3 3 0 0 1 3 3 v6"></path></svg>`,
+      more: `<svg ${s}><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>`,
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const doc = s.doc;
+    const actName = (k) => doc.activities[k]?.name || k;
+    const devName = (k) => doc.devices[k]?.name || k;
+    const dirty = JSON.stringify(doc) !== JSON.stringify(s.original);
+    const push = s.push;
+    const offKey = doc.settings?.off_activity || "aus";
+
+    // header
+    let headerTitle = "KINO", headerSub = "";
+    if (push?.screen === "activity") { headerTitle = actName(push.key); headerSub = push.key; }
+    else if (push?.screen === "device") { headerTitle = devName(push.key); headerSub = push.key; }
+    else if (push?.screen === "log") headerTitle = "Verlauf";
+    else if (push?.screen === "raw") headerTitle = "Datei";
+
+    // activities list
+    const controlOptions = ["off", "full", "handoff", "mixed", "room"];
+    const activityList = Object.keys(doc.activities).map((key) => {
+      const a = doc.activities[key];
+      const n = Object.keys(a.devices || {}).length;
+      const parts = [a.control_class || "room"];
+      if (a.media) parts.push("Jellyfin");
+      parts.push(n === 0 ? "keine Geräte" : n === 1 ? "1 Gerät" : `${n} Geräte`);
+      return { key, name: a.name || key, glyph: (a.name || key).charAt(0).toUpperCase(), summary: parts.join(" · "), open: () => this.setState({ push: { screen: "activity", key }, notice: null }) };
+    });
+
+    // activity editor
+    let editVals = {};
+    if (push?.screen === "activity" && doc.activities[push.key]) {
+      const key = push.key;
+      const act = doc.activities[key];
+      const sceneOptions = [{ id: "scene.dark", name: "Dark" }, { id: "scene.hell", name: "Hell" }, { id: "scene.gaming", name: "Gaming" }];
+      const editDevices = Object.keys(doc.devices).map((devKey) => {
+        const req = this._requirement(key, devKey);
+        const on = req.present && req.power;
+        const catalogue = this._settingsCatalogue(devKey);
+        const settings = Object.entries(catalogue).map(([name, desc]) => {
+          const value = req.settings[name];
+          const base = { label: name, isSelect: false, isNumber: false, isShadow: false };
+          const onChange = (e) => this._mutate((d) => {
+            const entry = d.activities[key].devices[devKey];
+            const v = e.target.value;
+            if (v === "" || v == null) delete entry[name];
+            else entry[name] = desc.type === "number" ? parseFloat(v) : v;
+          });
+          if (desc.type === "number") return { ...base, isNumber: true, value: value == null ? "" : value, onChange };
+          if (!desc.options.length) return { ...base, isShadow: true, shadowLabel: value ? `aus · gesetzt: ${value}` : "aus · —" };
+          return { ...base, isSelect: true, value: value == null ? "" : String(value), options: desc.options, onChange };
+        });
+        return {
+          key: devKey, name: devName(devKey), on,
+          stateLabel: on ? "an" : "aus",
+          stateColor: on ? "var(--teal)" : "var(--text3)",
+          switchBg: on ? "var(--gold)" : "var(--surface2)",
+          switchAlign: on ? "flex-end" : "flex-start",
+          settings,
+          toggle: () => this._mutate((d) => {
+            const devs = d.activities[key].devices = d.activities[key].devices || {};
+            if (devs[devKey] && devs[devKey].power !== false) delete devs[devKey];
+            else devs[devKey] = { power: true };
+          }),
+        };
+      });
+      const deleteDisabled = key === offKey;
+      editVals = {
+        editActName: act.name || "", editActControl: act.control_class || "room",
+        editActMedia: act.media || "", editActScene: act.light_scene || "", editActIcon: act.icon || "",
+        setActName: (e) => this._mutate((d) => { d.activities[key].name = e.target.value; }),
+        setActControl: (e) => this._mutate((d) => { d.activities[key].control_class = e.target.value; }),
+        setActMedia: (e) => this._mutate((d) => { const v = e.target.value; if (v) d.activities[key].media = v; else delete d.activities[key].media; }),
+        setActScene: (e) => this._mutate((d) => { const v = e.target.value; if (v) d.activities[key].light_scene = v; else delete d.activities[key].light_scene; }),
+        setActIcon: (e) => this._mutate((d) => { d.activities[key].icon = e.target.value; }),
+        sceneOptions, editDevices, deleteDisabled,
+        deleteOpacity: deleteDisabled ? 0.45 : 1,
+        duplicateActivity: () => {
+          this._mutate((d) => {
+            const clone = JSON.parse(JSON.stringify(d.activities[key]));
+            clone.name = `${clone.name || key} Kopie`;
+            const nk = this._uniqueKey(d, `${key}_kopie`);
+            d.activities[nk] = clone;
+          });
+          this.setState({ push: null });
+          this._notify("ok", "Aktivität dupliziert — wirksam nach dem Speichern.");
+        },
+        deleteActivity: () => { if (!deleteDisabled) this.setState({ dialog: { kind: "delete-activity", key } }); },
+      };
+    }
+
+    // devices
+    const known = this._knownEntities();
+    const deviceList = Object.keys(doc.devices).map((key) => {
+      const d = doc.devices[key];
+      const roles = this._roles(d.driver);
+      const missing = roles.filter((r) => r.req && !(d.entities || {})[r.role]).map((r) => r.role);
+      return {
+        key, name: d.name || key, driver: d.driver,
+        summary: missing.length ? `Fehlende Entities: ${missing.join(", ")}` : `${Object.keys(d.entities || {}).length} Entities verdrahtet`,
+        open: () => this.setState({ push: { screen: "device", key }, notice: null }),
+      };
+    });
+
+    let devEditVals = {};
+    if (push?.screen === "device" && doc.devices[push.key]) {
+      const key = push.key;
+      const dev = doc.devices[key];
+      const roles = this._roles(dev.driver).map((r) => {
+        const value = (dev.entities || {})[r.role] || "";
+        const missing = r.req && !value;
+        return {
+          label: r.role + (r.req ? " *" : ""),
+          labelColor: missing ? "var(--red)" : "var(--text2)",
+          value, hint: r.hint,
+          unknown: !!value && !known.has(value),
+          onChange: (e) => this._mutate((d) => {
+            d.devices[key].entities = d.devices[key].entities || {};
+            const v = e.target.value.trim();
+            if (v) d.devices[key].entities[r.role] = v; else delete d.devices[key].entities[r.role];
+          }),
+        };
+      });
+      const map = dev.options?.path_map || {};
+      const pathMapRows = Object.entries(map).map(([from, to]) => ({
+        from, to,
+        onChangeFrom: (e) => this._mutate((d) => {
+          const m = d.devices[key].options.path_map;
+          const val = m[from]; delete m[from]; m[e.target.value] = val;
+        }),
+        onChangeTo: (e) => this._mutate((d) => { d.devices[key].options.path_map[from] = e.target.value; }),
+        remove: () => this._mutate((d) => { delete d.devices[key].options.path_map[from]; }),
+      }));
+      devEditVals = {
+        editDevDriver: dev.driver, editDevName: dev.name || "",
+        editDevTimeout: dev.startup_timeout ?? 180, editDevStartup: dev.default_startup_seconds ?? 30,
+        editDevRoles: roles, editDevIsZidoo: dev.driver === "zidoo", pathMapRows,
+        driverOptions: ["barco", "trinnov", "madvr", "zidoo", "generic"],
+        setDevDriver: (e) => this._mutate((d) => { d.devices[key].driver = e.target.value; }),
+        setDevName: (e) => this._mutate((d) => { d.devices[key].name = e.target.value; }),
+        setDevTimeout: (e) => this._mutate((d) => { d.devices[key].startup_timeout = parseInt(e.target.value || "0", 10); }),
+        setDevStartup: (e) => this._mutate((d) => { d.devices[key].default_startup_seconds = parseInt(e.target.value || "0", 10); }),
+        addPathMap: () => this._mutate((d) => {
+          d.devices[key].options = d.devices[key].options || {};
+          d.devices[key].options.path_map = d.devices[key].options.path_map || {};
+          d.devices[key].options.path_map[""] = "";
+        }),
+      };
+    }
+
+    // board
+    const board = this._board();
+    const boardContext = board.state === "off"
+      ? "Das Kino ist ausgeschaltet — erwartet ist: alle Geräte aus."
+      : `Beobachteter gegen erwarteten Zustand für die aktive Aktivität „${actName(board.activity)}“.`;
+    const boardCards = board.devices.map((b) => {
+      const color = b.ready ? "var(--teal)" : b.power === "transitioning" ? "var(--gold)" : b.power === "unavailable" ? "var(--red)" : "var(--text3)";
+      return {
+        name: devName(b.key), color,
+        anim: b.power === "transitioning" ? "kino-pulse 1.4s ease-in-out infinite" : "none",
+        readyLabel: b.ready ? "bereit" : b.power === "transitioning" ? b.phase || "startet" : "aus",
+        readyColor: b.ready ? "var(--teal)" : b.power === "transitioning" ? "var(--gold)" : "var(--text3)",
+        powerLabel: b.note ? b.note : `Zustand: ${b.power}`,
+        hasComparison: (b.obs || []).length > 0,
+        comparison: (b.obs || []).map((c) => ({ key: c.k, text: `${c.ist} / soll ${c.soll}`, color: c.ok ? "var(--teal)" : "var(--red)" })),
+        testStart: () => this._notify("ok", `${devName(b.key)}: start → on (bereit)`),
+        testStop: () => this._notify("ok", `${devName(b.key)}: stop → off`),
+      };
+    });
+
+    // planner
+    const plannerPills = Object.keys(doc.activities).map((key) => ({
+      label: actName(key),
+      bg: s.plannerTarget === key ? "var(--gold)" : "var(--surface2)",
+      fg: s.plannerTarget === key ? "var(--goldText)" : "var(--text)",
+      run: () => this.setState({ plannerTarget: key, plan: this._cannedPlan(key) }),
+    }));
+    const badge = {
+      stop: ["oklch(0.65 0.19 25 / 0.18)", "var(--red)", "STOPPEN"],
+      start: ["oklch(0.72 0.12 190 / 0.16)", "var(--teal)", "STARTEN"],
+      reconfigure: ["oklch(0.78 0.15 75 / 0.16)", "var(--gold)", "UMKONFIG."],
+      keep: ["var(--surface2)", "var(--text2)", "BEHALTEN"],
+    };
+    const planActions = (s.plan?.actions || []).map((a) => {
+      const [bg, fg, label] = badge[a.kind] || badge.keep;
+      const settings = Object.entries(a.settings || {}).map(([k, v]) => `${k}=${v}`).join(", ");
+      return { device: devName(a.device), kind: label, badgeBg: bg, badgeFg: fg, hasSettings: !!settings, settings, reason: a.reason };
+    });
+
+    // log
+    const logTransitions = [
+      { title: "Aus → Bibliothek", ok: true, duration: "1:36 min", steps: "Beamer starten 92,4 s · Trinnov starten 31,0 s · madVR starten 38,2 s · Zidoo starten 20,6 s" },
+      { title: "Bibliothek → Streaming", ok: true, duration: "12,1 s", steps: "Zidoo stoppen 4,2 s · Trinnov umkonfigurieren 1,1 s · Shield starten 6,8 s" },
+      { title: "Streaming → Aus", ok: false, duration: "5:05 min", steps: "Trinnov stoppen 3,4 s · madVR stoppen 8,1 s · Shield stoppen 2,0 s", error: "Beamer: Timeout beim Herunterfahren (305 s)" },
+    ].map((t) => ({
+      title: t.title, status: t.ok ? "ok" : "Fehler",
+      statusColor: t.ok ? "var(--teal)" : "var(--red)",
+      duration: t.duration, steps: t.steps, hasError: !!t.error, error: t.error || "",
+    }));
+    const logDurations = [
+      { device: "Beamer", kind: "Start (kalt)", estimate: "94,2 s", detail: "12 Messungen, 88,1–101,4 s" },
+      { device: "Beamer", kind: "Stopp", estimate: "5:08 min", detail: "9 Messungen, 4:52–5:31 min" },
+      { device: "Trinnov", kind: "Start", estimate: "31,5 s", detail: "14 Messungen, 29,0–35,2 s" },
+      { device: "madVR", kind: "Start", estimate: "38,9 s", detail: "11 Messungen, 35,4–44,0 s" },
+      { device: "Zidoo", kind: "Start", estimate: "20,1 s", detail: "13 Messungen, 18,2–23,7 s" },
+    ].map((d) => ({ ...d, reset: () => this.setState({ dialog: { kind: "reset-durations", key: d.device } }) }));
+
+    // dialog
+    const dialog = s.dialog;
+    let dialogVals = { hasDialog: !!dialog };
+    if (dialog) {
+      if (dialog.kind === "add-activity") dialogVals = {
+        ...dialogVals, dialogTitle: "Neue Aktivität",
+        dialogBody: "Der Schlüssel wird aus dem Namen abgeleitet. Wirksam wird das erst mit „Speichern“.",
+        dialogHasInput: true, dialogConfirmLabel: "Anlegen",
+        dialogConfirmBg: "var(--gold)", dialogConfirmFg: "var(--goldText)", dialogConfirmBorder: "none",
+      };
+      else if (dialog.kind === "delete-activity") dialogVals = {
+        ...dialogVals, dialogTitle: `Aktivität „${actName(dialog.key)}“ löschen?`,
+        dialogBody: "Die Aktivität und ihre Geräteeinstellungen werden entfernt. Wirksam wird das erst mit „Speichern“.",
+        dialogHasInput: false, dialogConfirmLabel: "Löschen",
+        dialogConfirmBg: "transparent", dialogConfirmFg: "var(--red)", dialogConfirmBorder: "1px solid var(--red)",
+      };
+      else dialogVals = {
+        ...dialogVals, dialogTitle: dialog.key ? `Gelernte Dauern für „${dialog.key}“ zurücksetzen?` : "Alle gelernten Dauern zurücksetzen?",
+        dialogBody: "Die Restzeit-Anzeige beginnt danach wieder bei den konfigurierten Standardwerten.",
+        dialogHasInput: false, dialogConfirmLabel: "Zurücksetzen",
+        dialogConfirmBg: "transparent", dialogConfirmFg: "var(--red)", dialogConfirmBorder: "1px solid var(--red)",
+      };
+    }
+
+    // tab bar
+    const icons = this._icons();
+    const tabs = [["activities", "Aktivitäten"], ["devices", "Geräte"], ["board", "Status"], ["planner", "Planer"], ["more", "Mehr"]];
+    const tabBar = tabs.map(([key, label]) => ({
+      label,
+      color: s.tab === key && !push ? "var(--gold)" : "var(--text3)",
+      iconHtml: { __html: icons[key] },
+      select: () => this.setState({ tab: key, push: null, notice: null }),
+    }));
+
+    const notice = s.notice;
+    return {
+      pushed: !!push, isRoot: !push, goBack: () => this.setState({ push: null }),
+      headerTitle, headerSub, hasHeaderSub: !!headerSub,
+      dirty,
+      hasNotice: !!notice, noticeText: notice?.text || "",
+      noticeBg: notice?.kind === "ok" ? "oklch(0.72 0.12 190 / 0.12)" : "oklch(0.65 0.19 25 / 0.12)",
+      noticeBorder: notice?.kind === "ok" ? "var(--teal)" : "var(--red)",
+      showErrors: this.props.showErrors ?? false,
+
+      screenActivities: !push && s.tab === "activities",
+      screenActivityEdit: push?.screen === "activity",
+      screenDevices: !push && s.tab === "devices",
+      screenDeviceEdit: push?.screen === "device",
+      screenBoard: !push && s.tab === "board",
+      screenPlanner: !push && s.tab === "planner",
+      screenMore: !push && s.tab === "more",
+      screenLog: push?.screen === "log",
+      screenRaw: push?.screen === "raw",
+
+      activityList, controlOptions, ...editVals,
+      addActivity: () => { this._dialogText = ""; this.setState({ dialog: { kind: "add-activity" } }); },
+      deviceList, ...devEditVals,
+      boardContext, boardCards,
+      reloadBoard: () => this._notify("ok", "Gerätestatus aktualisiert."),
+      plannerPills, hasPlan: !!s.plan, noPlan: !s.plan,
+      planSummary: s.plan?.summary || "", planActions,
+      openLog: () => this.setState({ push: { screen: "log" } }),
+      openRaw: () => this.setState({ push: { screen: "raw" }, rawText: JSON.stringify(doc, null, 2) }),
+      logTransitions, logDurations,
+      resetAllDurations: () => this.setState({ dialog: { kind: "reset-durations", key: null } }),
+      rawText: s.rawText,
+      setRawText: (e) => this.setState({ rawText: e.target.value }),
+      copyRaw: () => { try { navigator.clipboard.writeText(s.rawText || JSON.stringify(doc, null, 2)); this._notify("ok", "In die Zwischenablage kopiert."); } catch (err) { this._notify("error", "Kopieren nicht möglich."); } },
+      applyRaw: () => {
+        try {
+          const parsed = JSON.parse(s.rawText);
+          this.setState({ doc: parsed });
+          this._notify("ok", "Übernommen — wirksam nach dem Speichern.");
+        } catch (err) { this._notify("error", "Kein gültiges JSON — nichts übernommen."); }
+      },
+      revert: () => { this.setState({ doc: JSON.parse(JSON.stringify(s.original)), notice: null }); },
+      save: () => {
+        this.setState({ original: JSON.parse(JSON.stringify(doc)) });
+        this._notify("ok", "Gespeichert und übernommen — kein Neustart nötig.");
+      },
+
+      ...dialogVals,
+      dialogInput: (e) => { this._dialogText = e.target.value; },
+      dialogNoop: (e) => e.stopPropagation(),
+      dialogCancel: () => this.setState({ dialog: null }),
+      dialogConfirm: () => {
+        const d = s.dialog;
+        if (!d) return;
+        if (d.kind === "add-activity") {
+          const name = (this._dialogText || "").trim() || "Neue Aktivität";
+          let newKey;
+          this._mutate((docm) => {
+            newKey = this._uniqueKey(docm, this._slugify(name));
+            docm.activities[newKey] = { name, control_class: "room", devices: {} };
+          });
+          this.setState({ dialog: null, push: { screen: "activity", key: newKey } });
+        } else if (d.kind === "delete-activity") {
+          this._mutate((docm) => { delete docm.activities[d.key]; });
+          this.setState({ dialog: null, push: null });
+        } else {
+          this.setState({ dialog: null });
+          this._notify("ok", d.key ? `Gelernte Dauern für „${d.key}“ zurückgesetzt.` : "Alle gelernten Dauern zurückgesetzt.");
+        }
+      },
+      tabBar,
+    };
+  }
+}
+</script>
+</body>
+</html>
