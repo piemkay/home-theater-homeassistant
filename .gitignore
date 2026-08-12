@@ -5,3 +5,6 @@ __pycache__/
 node_modules/
 dist/
 .DS_Store
+
+# Local dev-harness launch config
+.claude/launch.json
