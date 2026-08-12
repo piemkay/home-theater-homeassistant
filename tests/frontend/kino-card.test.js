@@ -531,6 +531,25 @@ describe("view modes", () => {
   });
 });
 
+describe("filter sheet layout", () => {
+  test("chip groups wrap instead of scrolling, and the sheet is keyed", () => {
+    const c = Object.create(KinoCard.prototype);
+    c._view = {
+      sort: "added",
+      sortDir: null,
+      viewMode: "poster",
+      filters: { tags: [], genres: [], countries: [], ratings: [], yearFrom: null, yearTo: null },
+    };
+    c._facets = { genres: ["Drama"], countries: [], ratings: ["FSK-16"], yearMin: 1957, yearMax: 2026 };
+    c._library = { total: 42 };
+    const html = c._renderFilterSheet();
+    assert.match(html, /data-sheet="filter"/);
+    assert.match(html, /class="chipwrap"/);
+    // The flex-shrink workaround made rows clip on phones — never again.
+    assert.doesNotMatch(html, /posterrow hscroll" style="flex-wrap/);
+  });
+});
+
 describe("device chips", () => {
   const kino = {
     activity: "film",

@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.2.1";
+const CARD_VERSION = "0.2.2";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -393,6 +393,10 @@ input[type="text"], select {
   display: flex; flex-direction: column; overflow-y: auto;
   animation: kino-sheet-in .2s ease-out; padding: 16px 20px 24px; box-sizing: border-box;
 }
+/* A column flexbox compresses its children once the content is taller than
+   the sheet (any phone): every row shrinks and clips instead of scrolling. */
+.sheet > * { flex-shrink: 0; }
+.chipwrap { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
 .backdrop { position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden; background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 10px, var(--kino-surface) 10px, var(--kino-surface) 20px); }
 .backdrop img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .dialog { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 28px; box-sizing: border-box; }
@@ -995,6 +999,13 @@ class KinoCard extends CardBase {
     }
 
     const scrollTop = this._container.querySelector(".scroller")?.scrollTop || 0;
+    // Sheets are rebuilt from scratch on every render. Without carrying the
+    // scroll position over and suppressing the slide-in replay, every chip
+    // tap makes an open sheet visibly "close and reopen".
+    const openSheets = {};
+    this._container.querySelectorAll(".sheet[data-sheet]").forEach((el) => {
+      openSheets[el.dataset.sheet] = el.scrollTop;
+    });
     // Re-rendering the whole card would otherwise drop the caret out of the
     // search box mid-word.
     const focused = this.shadowRoot.activeElement;
@@ -1019,6 +1030,14 @@ class KinoCard extends CardBase {
     this._signature = this._renderSignature();
     const scroller = this._container.querySelector(".scroller");
     if (scroller) scroller.scrollTop = scrollTop;
+    this._container.querySelectorAll(".sheet[data-sheet]").forEach((el) => {
+      const previous = openSheets[el.dataset.sheet];
+      if (previous !== undefined) {
+        // Was already open before this render: no entry animation, same spot.
+        el.style.animation = "none";
+        el.scrollTop = previous;
+      }
+    });
     if (focusField) {
       const next = this._container.querySelector(`[data-field="${focusField}"]`);
       if (next) {
@@ -1421,7 +1440,7 @@ class KinoCard extends CardBase {
     const group = (title, values, kind, selected) =>
       values.length
         ? `<div class="label">${title}</div>
-           <div class="posterrow hscroll" style="flex-wrap:wrap;margin-bottom:20px">
+           <div class="chipwrap">
              ${values
                .map(
                  (v) =>
@@ -1432,7 +1451,7 @@ class KinoCard extends CardBase {
            </div>`
         : "";
     const effectiveDir = this._view.sortDir || helpers.defaultSortDir(this._view.sort);
-    return `<div class="sheet" style="z-index:35">
+    return `<div class="sheet" data-sheet="filter" style="z-index:35">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
         <a class="link" data-act="close-filters">‹ Zurück</a>
         <h2 style="flex:1">Filter</h2>
@@ -1457,7 +1476,7 @@ class KinoCard extends CardBase {
           aria-pressed="${effectiveDir === "desc"}">Absteigend</button>
       </div>
       <div class="label">Ansicht</div>
-      <div class="posterrow hscroll" style="flex-wrap:wrap;margin-bottom:20px">
+      <div class="chipwrap">
         ${VIEW_MODES.map(
           ([key, label]) =>
             `<button class="pill" data-act="view-mode-set" data-key="${key}"
@@ -1491,7 +1510,8 @@ class KinoCard extends CardBase {
 
   _renderDetailSheet() {
     const item = this._view.detail;
-    if (!item) return '<div class="sheet"><p class="empty">Wird geladen…</p></div>';
+    if (!item)
+      return '<div class="sheet" data-sheet="detail"><p class="empty">Wird geladen…</p></div>';
     const backdrop = helpers.artworkUrl(
       item.id,
       "Backdrop",
@@ -1501,7 +1521,7 @@ class KinoCard extends CardBase {
     // (FR-55) — the label must say so instead of pretending it just plays.
     const mediaActive =
       helpers.bodyFor(this._currentActivity) === "library" && !this._kino.progress;
-    return `<div class="sheet">
+    return `<div class="sheet" data-sheet="detail">
       <div style="display:flex;align-items:center;gap:10px">
         <a class="link" style="flex:1" data-act="close-detail">‹ Zurück</a>
         <button class="iconbtn" data-act="toggle-favorite" data-key="${this._esc(item.id)}"
@@ -1564,7 +1584,7 @@ class KinoCard extends CardBase {
         ? `this.onerror=null;this.src='${this._esc(poster)}'`
         : "this.style.display='none'";
 
-    return `<div class="sheet" style="z-index:30">
+    return `<div class="sheet" data-sheet="playing" style="z-index:30">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <a class="link" data-act="collapse-playing">⌄ Minimieren</a>
         <a class="link" style="color:var(--kino-text3)" data-act="stop-playing">Wiedergabe beenden</a>
