@@ -1075,7 +1075,9 @@ class KinoCard extends CardBase {
     }[kind];
     if (!group) return null;
     const value = group[kind === "tag" ? TAG_FLAGS[key] : key];
-    return typeof value === "number" ? value : null;
+    // A value the scan never saw (a series-only genre while browsing films)
+    // would match nothing — that is a real zero, not an unknown.
+    return typeof value === "number" ? value : 0;
   }
 
   /**
