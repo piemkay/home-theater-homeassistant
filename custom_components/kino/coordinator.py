@@ -148,6 +148,11 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
                         "error": snapshot.last_error,
                     },
                 )
+                # Write the just-learned durations to disk now: Home Assistant
+                # does not unload entries on a core restart, so waiting for
+                # async_unload_entry silently lost everything a session had
+                # learned (found live, 2026-08-12).
+                self.hass.async_create_task(self.async_persist_durations())
             self._previous_state = snapshot.state
 
         if self._previous_activity != snapshot.activity:
