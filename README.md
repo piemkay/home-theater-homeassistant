@@ -47,7 +47,9 @@ on. Volume and mute are the user's — they are never reported as drift.
 **A media catalogue that works with the cinema switched off.** Browse, search,
 filter and sort come from Jellyfin over the Home Assistant WebSocket API.
 Picking a title while the Film activity is off starts the activity *and then*
-plays, as one action, with progress shown throughout.
+plays, as one action, with progress shown throughout — and the queued title
+stays on screen, with its poster, for the whole transition. Series drill down
+from show to season to episode, and resume exactly where you left off.
 
 **Playback flows back into the catalogue.** What the Zidoo plays is reported
 to Jellyfin as a real playback session — start, progress, pause, stop — so
@@ -175,12 +177,16 @@ height: 70vh
 
 ### Activities and status
 
-Activity tiles to start or switch; a compact chip once something runs. During
-a transition the card shows the progress bar, the learned ETA and the
-bottleneck device; each device of the activity is a chip with a live health
-dot — including during shutdown, so you can watch each device confirm. Errors
-and drift arrive as banners with the recovery action attached ("Wiederherstellen"
-/ "Ignorieren"); turning everything off asks once, in words ("Alles ausschalten?").
+Activity tiles — with their configured `mdi:` icons — to start or switch; a
+compact chip once something runs. During a transition the card shows the
+progress bar, the learned ETA and the bottleneck device; the device chips list
+**every device the plan touches**, stops included, so `Film → Streaming` shows
+the Zidoo going down with the same gold pulse shutdown has. A device whose
+integration is merely reconnecting while the room is off stays grey — off
+means off. Errors and drift arrive as banners with the recovery action
+attached ("Wiederherstellen" / "Ignorieren"); turning everything off asks
+once, in words, and while it runs the footer says "Wird ausgeschaltet…"
+instead of offering a dead volume stepper.
 
 ### The library
 
@@ -198,6 +204,13 @@ and drift arrive as banners with the recovery action attached ("Wiederherstellen
   Liste), remembered per browser.
 * **Favorites** are written back to Jellyfin from the heart toggle and
   filterable like everything else.
+* **Series drill-down**: a show's detail opens a season strip (preselected on
+  the first season with unwatched episodes) and an episode list — thumb,
+  `S03E08 · Titel`, runtime, watched tick, resume bar — and every row plays or
+  resumes that episode. "Weitersehen" names episodes by their series.
+* **Every detail sheet says what the film is**: synopsis (clamped to four
+  lines with "mehr"), genre chips and the age rating. On a desktop the sheet
+  is a centered panel with the poster beside the text.
 * Tiles carry 4K badges, resume bars, watched ticks, favorite hearts, and a
   red mark with a reason when a title is missing the data it needs to play.
 * Infinite scroll plus an explicit "Weitere Titel laden" button; a failed page
@@ -211,10 +224,13 @@ A full playing sheet (and a mini-player in the footer): backdrop and real
 title for whatever is open — even if playback was started on the player itself
 — transport with ⟲10 / 10⟳ relative seek, position advanced client-side
 between polls, dB volume stepper with mute, a **Dim** toggle for the Trinnov's
-own -20 dB dim, Trinnov preset and upmixer selects, and audio/subtitle track
-selects that appear only when the player actually offers tracks. Every option
-list is read live from the device — the card never shows a choice the hardware
-would reject.
+own -20 dB dim, the processor's preset and upmixer as **Klang** and
+**Raumklang** (function, not brand), and audio/subtitle track selects that
+appear only when the player actually offers tracks. Raw player strings are
+prettified for display — "0: Off" reads "Aus", "0: English Dolby TrueHD with
+Dolby Atmos 48.0KHz" reads "Englisch · TrueHD Atmos" — while the value sent to
+the device stays exactly what it offered. Every option list is read live from
+the device — the card never shows a choice the hardware would reject.
 
 Dim is an audio feature, not a light scene: the button drives the processor's
 dim switch and appears once that entity is wired to the volume device:
@@ -234,8 +250,8 @@ or `room` activity (Streaming, Steam) shows its configured hand-off text —
 
 ## Admin panel
 
-An admin-only **Kino** entry appears in the sidebar (the second user never
-sees it). Six tabs:
+An admin-only **Kino Admin** entry appears in the sidebar (the second user
+never sees it, and the admin can tell it from the dashboard). Six tabs:
 
 | Tab | |
 |---|---|
@@ -243,8 +259,12 @@ sees it). Six tabs:
 | **Geräte** | Which Home Assistant entity backs each logical device — pickers filtered to the domains each driver role accepts — plus timeouts, duration estimates and the Zidoo's path mapping. Missing entities are flagged |
 | **Gerätestatus** | Observed against expected, per device and per setting (Ist / Soll), plus start/stop for one device in isolation |
 | **Planer** | The computed delta for any activity — stop / keep / reconfigure / start, with the reason per device — **without executing it** |
-| **Verlauf** | Recent transitions with per-step timings, and the learned durations behind the ETA (resettable) |
+| **Verlauf** | Recent transitions with per-step timings, and the learned durations behind the ETA — resettable per device or wholesale |
 | **Datei** | The whole document as JSON — copy to clipboard, paste back, apply |
+
+Everywhere a human reads, activities and devices appear by display name; keys
+are for the Datei tab and validation errors, which group under the activity or
+device they belong to. Dialogs are the panel's own — no browser `prompt()`.
 
 Saving validates first: a rejected edit is never written, so the running
 configuration keeps working. The previous file is kept as `kino.yaml.bak`.
@@ -295,7 +315,7 @@ not once per poll).
 The card and panel talk to the integration over `hass.callWS`; the same
 commands are available to anything else that speaks the HA WebSocket API.
 Library and room-state commands (`kino/state`, `kino/activate`,
-`kino/library/search|item|resume|facets|favorite|refresh`, `kino/dry_run`,
+`kino/library/search|item|seasons|episodes|resume|facets|favorite|refresh`, `kino/dry_run`,
 `kino/restore_device`, `kino/dismiss_drift`) are available to any signed-in
 user; the panel's commands (`kino/config/*`, `kino/device_board`,
 `kino/device_test`, `kino/transition_log`, `kino/durations/reset`) require an
@@ -328,10 +348,14 @@ projector's cooldown behaviour, transcribed from ten days of recorded history.
 
 ## Status
 
-Phases 1 (activity engine), 3 (media + card) and 4 (admin panel) are
-implemented, including favorites, six library view modes, richer filters and
-Jellyfin playback-session reporting. The panel edits the same `kino.yaml`
-schema the loader reads — one format, no migration.
+Release **0.3 "Klar & Konsistent"**: the trust pass (off means off, the queued
+title stays on screen, stops get chips), one design language (names not keys,
+German everywhere a human reads, function over brand, a real desktop layout),
+content depth (series drill-down, synopsis on every detail, honest facets) and
+the panel ergonomics pass — on top of 0.2's engine, library and panel. See
+[`docs/release-0.3-plan.md`](docs/release-0.3-plan.md) for the findings this
+release answers. The panel edits the same `kino.yaml` schema the loader reads
+— one format, no migration.
 
 ## Licence
 

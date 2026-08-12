@@ -24,6 +24,10 @@ Requirements §13. "Automated" means an executable test asserts the behaviour;
 | A17 | Typo in a Trinnov preset name | ✅ automated | `test_schema.py` (11 cases), including `test_all_errors_are_reported_in_one_pass` |
 | A18 | Half a film, resume next evening | partial | resume read-back and progress reporting covered by `test_jellyfin.py::TestPlayState`; end-to-end is **live** |
 | A19 | A month of viewing shows up in Jellystat | **blocked** | Jellystat is not deployed yet |
+| A20 | Idle room shows no phantom device state (0.3/F1) | ✅ automated | `test_machine.py::test_idle_room_never_shows_a_starting_device`, `test_drivers.py::TestTrinnovPowerStatus::test_reconnect_probe_while_off_is_off`; the live check is one glance: room off ⇒ every chip grey |
+| A21 | The queued title stays on screen during start-then-play (0.3/F5) | partial | payload and render covered by `kino-card.test.js` ("pending item"); end-to-end is **live**: pick a title from cold, the progress card must name it until the playing sheet opens itself |
+| A22 | A switch shows the devices being stopped (0.3/F6) | partial | `kino-card.test.js` ("device chips" union case); **live**: `film → netflix` must show the Zidoo going down |
+| A23 | Series resume mid-season, from the phone (0.3/F2) | partial | `test_jellyfin.py::TestSeries`, episode naming in `kino-card.test.js`; **live**: open a series, the season with unwatched episodes is preselected, tap the row with the resume bar |
 
 ---
 

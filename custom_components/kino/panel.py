@@ -13,7 +13,7 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .frontend import PANEL_MODULE_URL
+from .frontend import PANEL_MODULE_URL, async_card_version
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,11 +32,15 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     if hass.data.get(_REGISTERED):
         return
 
+    # The version query is the cache-buster: without it a browser keeps the
+    # old panel module across updates — the card's Lovelace resource already
+    # works this way.
+    module_url = f"{PANEL_MODULE_URL}?v={await async_card_version(hass)}"
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL_PATH,
         webcomponent_name=PANEL_COMPONENT,
-        module_url=PANEL_MODULE_URL,
+        module_url=module_url,
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
         require_admin=True,
