@@ -292,6 +292,21 @@ class TestInferActivity:
         assert activity == "film"
         assert deviations == ["madvr"]
 
+    def test_stray_optional_device_does_not_claim_an_activity(self, config):
+        """A self-waking Shield in an otherwise dark room is not "netflix"."""
+        observations = _all_off(config)
+        observations["shield"] = _obs("shield", Power.ON)
+
+        activity, deviations = infer_active_activity(
+            devices=config.devices,
+            observations=observations,
+            activities=config.activities,
+            off_activity="aus",
+        )
+
+        assert activity == "aus"
+        assert deviations == []
+
     def test_only_trinnov_and_zidoo_powered_infers_musik(self, config):
         observations = _all_off(config)
         observations["trinnov"] = _obs(

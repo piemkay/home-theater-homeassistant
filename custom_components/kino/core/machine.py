@@ -188,24 +188,40 @@ class ActivityEngine:
         )
 
         if not transitioning:
-            inferred, _deviations = infer_active_activity(
+            inferred, deviations = infer_active_activity(
                 devices=self.config.devices,
                 observations=observations,
                 activities=self.config.activities,
                 off_activity=self.config.off_activity,
             )
-            if inferred != self._activity:
-                _LOGGER.debug(
-                    "Aktivität aus Gerätezustand abgeleitet: %s -> %s",
-                    self._activity,
-                    inferred,
+            if self._state is ActivityState.ERROR:
+                # A failed transition is knowledge the devices cannot
+                # re-derive: a room where three devices came up and one never
+                # started looks exactly like a healthy lesser activity. The
+                # error therefore stands until a retry or restore clears it —
+                # or until the room demonstrably reaches a coherent state
+                # (every deviation gone), at which point it is stale.
+                if not deviations:
+                    self._last_error = None
+                    self._activity = inferred
+                    self._state = (
+                        ActivityState.OFF
+                        if inferred == self.config.off_activity
+                        else ActivityState.ON
+                    )
+            else:
+                if inferred != self._activity:
+                    _LOGGER.debug(
+                        "Aktivität aus Gerätezustand abgeleitet: %s -> %s",
+                        self._activity,
+                        inferred,
+                    )
+                    self._activity = inferred
+                self._state = (
+                    ActivityState.OFF
+                    if inferred == self.config.off_activity
+                    else ActivityState.ON
                 )
-                self._activity = inferred
-            self._state = (
-                ActivityState.OFF
-                if inferred == self.config.off_activity
-                else ActivityState.ON
-            )
             self._device_health = {
                 key: _health_of(obs) for key, obs in observations.items()
             }
@@ -222,13 +238,6 @@ class ActivityEngine:
         if fatal and not transitioning:
             self._state = ActivityState.ERROR
             self._last_error = findings[0].detail
-        elif self._state is ActivityState.ERROR and not findings:
-            self._last_error = None
-            self._state = (
-                ActivityState.OFF
-                if self._activity == self.config.off_activity
-                else ActivityState.ON
-            )
 
         self._notify()
         return self.snapshot()
@@ -295,6 +304,21 @@ class ActivityEngine:
         if task is not None:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+    async def async_shutdown(self) -> None:
+        """Cancel a running transition and detach every listener.
+
+        Called when the engine is being replaced or unloaded. Without this an
+        abandoned engine keeps driving hardware and keeps pushing snapshots
+        through its still-registered listeners, fighting its successor.
+        """
+        task = self._task
+        self._task = None
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._listeners.clear()
 
     async def _run_transition(self, activity_key: str) -> None:
         async with self._lock:

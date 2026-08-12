@@ -115,6 +115,7 @@ class FakeDriver:
         settings: Mapping[str, Any] | None = None,
         start_seconds: float = 0.0,
         stop_seconds: float = 0.0,
+        apply_seconds: float = 0.0,
         fail_start: bool = False,
         never_stops: bool = False,
     ) -> None:
@@ -124,6 +125,7 @@ class FakeDriver:
         self.settings: dict[str, Any] = dict(settings or {})
         self.start_seconds = start_seconds
         self.stop_seconds = stop_seconds
+        self.apply_seconds = apply_seconds
         self.fail_start = fail_start
         self.never_stops = never_stops
         self.unverified: set[str] = set()
@@ -173,6 +175,8 @@ class FakeDriver:
 
     async def apply(self, settings: Mapping[str, Any]) -> None:
         self.calls.append("apply")
+        if self.apply_seconds > 0:
+            await self._clock.sleep(self.apply_seconds)
         self.applied.append(dict(settings))
         self.settings.update(settings)
         self.unverified -= set(settings)

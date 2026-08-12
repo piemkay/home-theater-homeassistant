@@ -109,17 +109,6 @@ class DurationEstimator:
         weight = sample.samples / float(_CONFIDENCE_SAMPLES)
         return weight * sample.seconds + (1.0 - weight) * default
 
-    def estimate_plan(self, durations: Mapping[str, float]) -> float:
-        """
-        Return the critical-path duration of a whole plan (FR-22).
-
-        A transition takes as long as its slowest device (FR-22).
-
-        Devices run concurrently, so the critical path — not the sum — is the
-        honest number to show.
-        """
-        return max(durations.values()) if durations else 0.0
-
     def reset(self, device: str | None = None) -> None:
         if device is None:
             self._samples.clear()

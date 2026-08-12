@@ -97,6 +97,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     runtime: KinoRuntimeData = entry.runtime_data
+    # A transition still in flight must not outlive the entry — an abandoned
+    # engine would keep driving hardware and pushing stale snapshots.
+    await runtime.coordinator.engine.async_shutdown()
     await runtime.coordinator.async_persist_durations()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
@@ -120,14 +123,21 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         return
 
     async def _reload(_call: ServiceCall) -> None:
-        """Re-read the config document without restarting HA (FR-93)."""
+        """Re-read the config document without restarting HA (FR-93).
+
+        Validate first, so a broken file fails loudly here and the running
+        configuration keeps working. Then reload the config entry rather
+        than hot-swapping the engine: entities are built from the config
+        (per-device sensors, track selects, volume bounds), so only a real
+        entry reload keeps them in step with the document.
+        """
         store = ConfigStore(hass)
         try:
-            config = await store.async_load()
+            await store.async_load()
         except (ConfigErrors, ConfigNotFoundError) as err:
             raise HomeAssistantError(str(err)) from err
-        for coordinator in _coordinators(hass):
-            await coordinator.async_reload_config(config)
+        for entry_id in list(hass.data.get(DOMAIN, {})):
+            await hass.config_entries.async_reload(entry_id)
         _LOGGER.info("Kino-Konfiguration neu geladen")
 
     async def _activate(call: ServiceCall) -> None:

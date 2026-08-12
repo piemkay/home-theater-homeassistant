@@ -17,6 +17,7 @@ Design rules this file implements:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -269,15 +270,21 @@ class TransitionExecutor:
             return
 
         spec = driver.spec
-        step.started_at = self._time()
         try:
+            # The clock starts *after* the dependency wait: time spent
+            # blocked on another device is that device's duration, and
+            # recording it here would poison the learned estimates and the
+            # critical-path ordering derived from them (FR-22, FR-24).
             if action.kind is ActionKind.STOP:
+                step.started_at = self._time()
                 await self._do_stop(driver, step)
             elif action.kind is ActionKind.START:
                 await self._await_dependencies(spec, ready_events)
+                step.started_at = self._time()
                 await self._do_start(driver, step)
             elif action.kind is ActionKind.RECONFIGURE:
                 await self._await_dependencies(spec, ready_events)
+                step.started_at = self._time()
                 await self._do_reconfigure(driver, step)
         except TransitionAborted:
             step.finished_at = self._time()
@@ -328,18 +335,51 @@ class TransitionExecutor:
             )
 
         if step.action.settings:
-            await driver.apply(dict(step.action.settings))
+            await self._apply_settings(driver, step.action.settings)
         step.health = DeviceHealth.READY
 
     async def _do_reconfigure(self, driver: DeviceDriver, step: StepState) -> None:
         step.health = DeviceHealth.STARTING
-        await driver.apply(dict(step.action.settings))
+        await self._apply_settings(driver, step.action.settings)
         step.health = DeviceHealth.READY
         self._estimator.record(
             driver.spec.key,
             "reconfigure",
             step.elapsed(self._time()),
             from_cold=False,
+        )
+
+    async def _apply_settings(
+        self, driver: DeviceDriver, settings: Mapping[str, Any]
+    ) -> None:
+        """Write settings, bounded by the device's ``reconfigure_timeout``.
+
+        A service call that never returns must fail the step, not wedge the
+        transition — the same rule the start and stop paths already follow.
+        Raced against the injected sleep rather than ``asyncio.wait_for`` so
+        the timeout runs on the same clock as everything else here.
+        """
+        spec = driver.spec
+        apply_task = asyncio.ensure_future(driver.apply(dict(settings)))
+        timer = asyncio.ensure_future(self._sleep(spec.reconfigure_timeout))
+        try:
+            done, _ = await asyncio.wait(
+                {apply_task, timer}, return_when=asyncio.FIRST_COMPLETED
+            )
+        except asyncio.CancelledError:
+            apply_task.cancel()
+            timer.cancel()
+            raise
+        if apply_task in done:
+            timer.cancel()
+            await apply_task  # propagate what the driver raised, if anything
+            return
+        apply_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await apply_task
+        raise TimeoutError(
+            f"{spec.name}: Einstellungen nicht innerhalb von "
+            f"{int(spec.reconfigure_timeout)}s übernommen"
         )
 
     async def _do_stop(self, driver: DeviceDriver, step: StepState) -> None:

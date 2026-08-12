@@ -182,6 +182,14 @@ def infer_active_activity(
         if not wanted:
             continue
         matched = wanted & powered
+        # An activity is only a candidate when at least one of its *required*
+        # devices is actually powered. Optional devices sleep and wake on
+        # their own (the Shield), so a lone stray one must not claim the
+        # whole room and have every other device reported as "switched off
+        # by hand".
+        required_wanted = {d for d in wanted if _is_required(activity, devices[d], d)}
+        if not matched or (required_wanted and not (matched & required_wanted)):
+            continue
         extra = powered - wanted
         missing = wanted - powered
         # Jaccard-style score: reward overlap, punish both kinds of mismatch.

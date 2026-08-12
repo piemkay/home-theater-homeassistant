@@ -582,7 +582,7 @@ async def ws_config_save(hass, connection, msg) -> None:
     """Validate, write and apply — without a Home Assistant restart (FR-115)."""
     store = ConfigStore(hass)
     try:
-        config = await store.async_save(msg["document"])
+        await store.async_save(msg["document"])
     except ConfigErrors as err:
         # Nothing was written, so the running configuration is untouched.
         connection.send_result(
@@ -593,8 +593,12 @@ async def ws_config_save(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "write_failed", str(err))
         return
 
-    for runtime in _runtimes(hass):
-        await runtime.coordinator.async_reload_config(config)
+    # A real entry reload, not an engine hot-swap: entities are built from
+    # the config (per-device sensors, track selects, volume bounds), so this
+    # is what makes an added device appear and a removed one go away. It also
+    # cancels any transition the old engine still had in flight.
+    for entry_id in list(hass.data.get(DOMAIN, {})):
+        await hass.config_entries.async_reload(entry_id)
 
     connection.send_result(msg["id"], {"saved": True, "errors": []})
 

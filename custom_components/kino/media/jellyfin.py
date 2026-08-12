@@ -15,6 +15,7 @@ a password.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -136,7 +137,7 @@ class JellyfinClient:
                 headers=headers,
                 timeout=self._timeout,
             )
-        except TimeoutError as err:
+        except (TimeoutError, asyncio.TimeoutError) as err:  # noqa: UP041 - two distinct classes on Python 3.10, which CI still runs
             raise MediaBackendError(
                 "Die Bibliothek antwortet nicht. Bitte erneut versuchen."
             ) from err
@@ -211,40 +212,7 @@ class JellyfinClient:
 
     async def search(self, query: MediaQuery) -> MediaPage:
         user = self._require_user()
-        sort_by, sort_order = _SORT_FIELDS[query.sort]
-
-        params: dict[str, Any] = {
-            "Recursive": True,
-            "Fields": _MOVIE_FIELDS,
-            "IncludeItemTypes": "Series"
-            if query.category is Category.SHOWS
-            else "Movie",
-            "SortBy": sort_by,
-            "SortOrder": sort_order,
-            "Limit": query.limit,
-            "StartIndex": query.offset,
-            "EnableTotalRecordCount": True,
-        }
-        if query.search:
-            params["SearchTerm"] = query.search
-        if query.genres:
-            params["Genres"] = "|".join(query.genres)
-        if query.countries:
-            # Jellyfin has no first-class country filter, so this is applied
-            # client-side below rather than pretended away here.
-            pass
-        if query.year_from or query.year_to:
-            years = _year_range(query.year_from, query.year_to)
-            if years:
-                params["Years"] = ",".join(str(y) for y in years)
-        if query.only_unwatched or query.category is Category.UNWATCHED:
-            params["Filters"] = "IsUnplayed"
-        if query.only_resumable or query.category is Category.CONTINUE:
-            params["Filters"] = "IsResumable"
-        if query.category is Category.RECENT or query.only_recent:
-            params["SortBy"] = "DateCreated"
-            params["SortOrder"] = "Descending"
-
+        params = _search_params(query)
         payload = await self._request("GET", f"/Users/{user}/Items", params=params)
         raw_items = (payload or {}).get("Items") or []
         total = int((payload or {}).get("TotalRecordCount", len(raw_items)))
@@ -274,19 +242,6 @@ class JellyfinClient:
             },
         )
         return [_to_item(raw) for raw in (payload or {}).get("Items") or []]
-
-    async def latest(self, limit: int = 12) -> Sequence[MediaItem]:
-        user = self._require_user()
-        payload = await self._request(
-            "GET",
-            f"/Users/{user}/Items/Latest",
-            params={
-                "Limit": limit,
-                "Fields": _MOVIE_FIELDS,
-                "IncludeItemTypes": "Movie",
-            },
-        )
-        return [_to_item(raw) for raw in (payload or [])]
 
     async def facets(self) -> Facets:
         user = self._require_user()
@@ -367,6 +322,50 @@ def _param(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+def _search_params(query: MediaQuery) -> dict[str, Any]:
+    """Translate one :class:`MediaQuery` into `/Items` query parameters."""
+    sort_by, sort_order = _SORT_FIELDS[query.sort]
+    params: dict[str, Any] = {
+        "Recursive": True,
+        "Fields": _MOVIE_FIELDS,
+        "IncludeItemTypes": "Series" if query.category is Category.SHOWS else "Movie",
+        "SortBy": sort_by,
+        "SortOrder": sort_order,
+        "Limit": query.limit,
+        "StartIndex": query.offset,
+        "EnableTotalRecordCount": True,
+    }
+    if query.search:
+        params["SearchTerm"] = query.search
+    if query.genres:
+        params["Genres"] = "|".join(query.genres)
+    # Countries have no server-side parameter; they are applied client-side
+    # in `_apply_client_side_filters` rather than pretended away here.
+    #
+    # 4K/HD go server-side (`is_4k` is width >= 3000): a client-side cut
+    # after pagination made page sizes lie and the card's next offset —
+    # computed from what it kept — skip or repeat titles.
+    if query.only_4k or query.category is Category.UHD:
+        params["MinWidth"] = 3000
+    if query.only_hd:
+        params["MaxWidth"] = 2999
+    years = _year_range(query.year_from, query.year_to)
+    if years:
+        params["Years"] = ",".join(str(y) for y in years)
+    # Filters combine — assigning would let the last one silently win.
+    filters = []
+    if query.only_unwatched or query.category is Category.UNWATCHED:
+        filters.append("IsUnplayed")
+    if query.only_resumable or query.category is Category.CONTINUE:
+        filters.append("IsResumable")
+    if filters:
+        params["Filters"] = ",".join(filters)
+    if query.category is Category.RECENT or query.only_recent:
+        params["SortBy"] = "DateCreated"
+        params["SortOrder"] = "Descending"
+    return params
 
 
 def _year_range(start: int | None, end: int | None) -> list[int]:
@@ -465,17 +464,16 @@ def _apply_client_side_filters(
     items: list[MediaItem], query: MediaQuery
 ) -> list[MediaItem]:
     """
-    Apply the filters Jellyfin cannot express server-side.
+    Apply the one filter Jellyfin cannot express server-side.
 
-    Kept explicit rather than silently dropped, so the card never offers a
-    filter that does nothing (FR-52).
+    Countries live only in `ProductionLocations`, which `/Items` cannot
+    filter on. Beware the cost: a client-side cut shrinks a page after
+    pagination, so page totals and offsets stop lining up. Today this path
+    is unreachable from the card — `facets()` supplies no countries, so the
+    filter is never offered (FR-52) — and it must not gain new filters
+    without solving the pagination accounting first.
     """
-    result = items
-    if query.countries:
-        wanted = set(query.countries)
-        result = [i for i in result if wanted & set(i.countries)]
-    if query.only_4k:
-        result = [i for i in result if i.is_4k]
-    if query.only_hd:
-        result = [i for i in result if not i.is_4k]
-    return result
+    if not query.countries:
+        return items
+    wanted = set(query.countries)
+    return [i for i in items if wanted & set(i.countries)]

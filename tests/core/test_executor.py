@@ -241,6 +241,54 @@ async def test_progress_reports_a_named_bottleneck(config, drivers, clock):
     assert 0 <= mid.percent <= 99
 
 
+async def test_learned_duration_excludes_dependency_wait(config_doc, clock):
+    """FR-24: waiting on another device is that device's time, not this one's."""
+    from custom_components.kino.core.schema import validate
+    from tests.conftest import FakeDriver
+
+    config_doc["devices"]["zidoo"]["depends_on"] = ["trinnov"]
+    config = validate(config_doc)
+    drivers = {
+        key: FakeDriver(spec, clock, start_seconds=10.0)
+        for key, spec in config.devices.items()
+    }
+    drivers["trinnov"].start_seconds = 40.0
+    estimator = DurationEstimator()
+
+    plan = _plan(config, drivers, "musik")
+    await clock.run(_executor(drivers, clock, estimator).execute(plan))
+
+    sample = next(
+        row
+        for row in estimator.report()
+        if row["device"] == "zidoo" and row["kind"] == "start"
+    )
+    # The Zidoo waited ~40s for the Trinnov and then took ~10s itself; only
+    # the 10s belong to its learned start duration.
+    assert sample["last_seconds"] == pytest.approx(10.0, abs=2.0)
+
+
+async def test_reconfigure_that_hangs_times_out_with_a_named_device(config_doc, clock):
+    """The reconfigure path obeys `reconfigure_timeout` like every other path."""
+    from custom_components.kino.core.schema import validate
+    from tests.conftest import FakeDriver
+
+    config_doc["devices"]["trinnov"]["reconfigure_timeout"] = 30
+    config = validate(config_doc)
+    drivers = {key: FakeDriver(spec, clock) for key, spec in config.devices.items()}
+    drivers["trinnov"].power = Power.ON
+    drivers["trinnov"].settings = {"source": "shield", "volume": -30.0}
+    drivers["trinnov"].apply_seconds = 10_000.0
+    drivers["zidoo"].power = Power.ON
+
+    plan = _plan(config, drivers, "musik")
+    result = await clock.run(_executor(drivers, clock).execute(plan), max_steps=50_000)
+
+    assert not result.succeeded
+    assert "Trinnov" in (result.error or "")
+    assert "30s" in (result.error or "")
+
+
 async def test_durations_are_learned_from_observed_runs(config, drivers, clock):
     """FR-24: the ETA comes from what actually happened."""
     estimator = DurationEstimator()

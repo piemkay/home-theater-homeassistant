@@ -113,6 +113,30 @@ async def test_switching_mid_transition_retargets(config, drivers, clock):
     assert drivers["barco"].power is Power.OFF
 
 
+async def test_shutdown_cancels_a_running_transition(config, drivers, clock):
+    """An unloaded or replaced engine must not keep driving hardware."""
+    engine = _engine(config, drivers, clock)
+    notifications = []
+    engine.add_listener(notifications.append)
+
+    async def _run():
+        await engine.activate("film")
+        for _ in range(20):
+            await asyncio.sleep(0)
+        await engine.async_shutdown()
+
+    await clock.run(_run(), max_steps=50_000)
+
+    # The start was issued but the wait was cancelled mid-flight.
+    assert drivers["barco"].calls.count("start") == 1
+    assert drivers["barco"].power is not Power.ON
+
+    # Listeners are detached: further engine activity notifies nobody.
+    before = len(notifications)
+    await clock.run(engine.reconcile())
+    assert len(notifications) == before
+
+
 async def test_transition_log_records_per_step_timings(config, drivers, clock):
     """FR-122 / A12: a slow switch can be diagnosed afterwards."""
     engine = _engine(config, drivers, clock)
@@ -139,6 +163,58 @@ async def test_failure_goes_to_error_with_a_plain_german_message(
     snapshot = engine.snapshot()
     assert snapshot.state is ActivityState.ERROR
     assert "Beamer antwortet nicht" in snapshot.status_text()
+
+
+async def test_error_state_survives_reconciliation(config, drivers, clock):
+    """A failed transition must not be polled away into "Bereit" (FR-80/A9)."""
+    drivers["barco"].fail_start = True
+    engine = _engine(config, drivers, clock)
+
+    await _activate(engine, clock, "film")
+    assert engine.snapshot().state is ActivityState.ERROR
+
+    # What the coordinator does a few polls later.
+    clock.now += 30.0
+    await clock.run(engine.reconcile())
+
+    snapshot = engine.snapshot()
+    assert snapshot.state is ActivityState.ERROR
+    assert "Beamer antwortet nicht" in snapshot.status_text()
+
+
+async def test_error_clears_when_the_room_reaches_the_target_by_hand(
+    config, drivers, clock
+):
+    """The error is memory, not dogma: a coherent room makes it stale."""
+    drivers["barco"].fail_start = True
+    engine = _engine(config, drivers, clock)
+    await _activate(engine, clock, "film")
+    assert engine.snapshot().state is ActivityState.ERROR
+
+    # Somebody powers the projector with its own remote; the other three
+    # devices already came up during the failed attempt.
+    drivers["barco"].power = Power.ON
+    await clock.run(engine.reconcile())
+
+    snapshot = engine.snapshot()
+    assert snapshot.state is ActivityState.ON
+    assert snapshot.activity == "film"
+    assert snapshot.last_error is None
+
+
+async def test_retry_after_failure_clears_the_error(config, drivers, clock):
+    """FR-81: the retry button re-runs the wanted activity out of ERROR."""
+    drivers["barco"].fail_start = True
+    engine = _engine(config, drivers, clock)
+    await _activate(engine, clock, "film")
+    assert engine.snapshot().state is ActivityState.ERROR
+
+    drivers["barco"].fail_start = False
+    await _activate(engine, clock, "film")
+
+    snapshot = engine.snapshot()
+    assert snapshot.state is ActivityState.ON
+    assert snapshot.last_error is None
 
 
 async def test_dry_run_computes_a_plan_without_touching_anything(

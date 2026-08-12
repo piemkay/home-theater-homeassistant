@@ -10,7 +10,7 @@
  * and repaired.
  */
 
-const PANEL_VERSION = "0.1.6";
+const PANEL_VERSION = "0.1.8";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -347,9 +347,7 @@ class KinoPanel extends PanelBase {
     this._render();
   }
 
-  disconnectedCallback() {
-    if (this._boardTimer) clearInterval(this._boardTimer);
-  }
+  disconnectedCallback() {}
 
   get _dirty() {
     return JSON.stringify(this._document) !== JSON.stringify(this._original);

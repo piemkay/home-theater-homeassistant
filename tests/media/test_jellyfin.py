@@ -224,6 +224,16 @@ class TestQuerying:
         await _client(session).search(MediaQuery(only_unwatched=True))
         assert session.requests[0]["params"]["Filters"] == "IsUnplayed"
 
+    async def test_combined_watch_filters_do_not_clobber_each_other(self):
+        """Unwatched + resumable used to leave only the last one standing."""
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(
+            MediaQuery(only_unwatched=True, only_resumable=True)
+        )
+        assert session.requests[0]["params"]["Filters"] == "IsUnplayed,IsResumable"
+
     async def test_year_range_is_expanded(self):
         session = FakeSession(
             {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
@@ -238,15 +248,29 @@ class TestQuerying:
         await _client(session).search(MediaQuery(year_from=1800, year_to=2026))
         assert "Years" not in session.requests[0]["params"]
 
-    async def test_4k_filter_is_applied_client_side(self):
-        hd = dict(MOVIE, Id="hd", MediaStreams=[{"Type": "Video", "Width": 1920}])
+    async def test_4k_filter_is_server_side(self):
+        """A client-side cut after pagination skipped and repeated titles."""
         session = FakeSession(
-            {"/Users/user-1/Items": {"Items": [MOVIE, hd], "TotalRecordCount": 2}}
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
         )
+        await _client(session).search(MediaQuery(only_4k=True))
+        assert session.requests[0]["params"]["MinWidth"] == "3000"
 
-        page = await _client(session).search(MediaQuery(only_4k=True))
+    async def test_hd_filter_is_server_side(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(only_hd=True))
+        params = session.requests[0]["params"]
+        assert params["MaxWidth"] == "2999"
+        assert "MinWidth" not in params
 
-        assert [i.id for i in page.items] == ["abc123"]
+    async def test_uhd_category_filters_like_the_4k_tag(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery(category=Category.UHD))
+        assert session.requests[0]["params"]["MinWidth"] == "3000"
 
     async def test_country_filter_is_applied_client_side(self):
         session = FakeSession(

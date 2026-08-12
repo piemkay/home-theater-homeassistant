@@ -70,6 +70,10 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
         #: resolved by the media player. Room-level, so the card's state
         #: payload can carry it without going through the entity.
         self.playing_item: dict[str, Any] | None = None
+        #: Devices whose current drift episode has already been announced, so
+        #: a standing finding fires `kino_device_drift` once — not once per
+        #: poll for as long as it stands.
+        self._announced_drift: set[str] = set()
         self.engine.add_listener(self._on_engine_change)
 
     def _build_engine(self, config: KinoConfig) -> ActivityEngine:
@@ -89,13 +93,6 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
         if stored:
             self.estimator.restore(stored)
             _LOGGER.debug("%d gelernte Dauern wiederhergestellt", len(stored))
-
-    async def async_reload_config(self, config: KinoConfig) -> None:
-        """Apply a new config document without an HA restart (FR-93)."""
-        self.config = config
-        self.engine = self._build_engine(config)
-        self.engine.add_listener(self._on_engine_change)
-        await self.async_request_refresh()
 
     async def async_persist_durations(self) -> None:
         await self._store.async_save(self.estimator.as_dict())
@@ -162,7 +159,10 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
             )
             self._previous_activity = snapshot.activity
 
+        current_drift = {f.device for f in snapshot.drift}
         for finding in snapshot.drift:
+            if finding.device in self._announced_drift:
+                continue
             self.hass.bus.async_fire(
                 EVENT_DEVICE_DRIFT,
                 {
@@ -171,6 +171,8 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
                     "detail": finding.detail,
                 },
             )
+        # A device that came back into line re-fires if it drifts again.
+        self._announced_drift = current_drift
 
     # -- actions ------------------------------------------------------------
 
