@@ -167,3 +167,16 @@ class MediaBackend(Protocol):
 
     async def artwork(self, item_id: str, image_type: str) -> tuple[bytes, str]:
         """Raw image bytes plus content type, for the proxy (FR-42a)."""
+
+    async def report_start(
+        self, item_id: str, *, position_seconds: float = 0.0
+    ) -> None:
+        """Open a playback session in the catalogue (FR-48)."""
+
+    async def report_progress(
+        self, item_id: str, *, position_seconds: float, paused: bool = False
+    ) -> None:
+        """Keep the session's position current (FR-49)."""
+
+    async def report_stop(self, item_id: str, *, position_seconds: float) -> None:
+        """Close the session; the catalogue derives watched state from it."""

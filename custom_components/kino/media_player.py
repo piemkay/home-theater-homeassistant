@@ -32,6 +32,7 @@ from .entity import KinoEntity
 from .http import async_artwork_url
 from .media.base import Category, MediaBackendError, MediaItem, MediaQuery
 from .media.naming import provider_ids_from_path, title_from_path
+from .media.reporting import PlaybackReporter
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,6 +99,9 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
         self._playing: dict[str, Any] | None = None
         self._resolving: str | None = None
         self._lookup_failed_at: float = 0.0
+        #: Reports Zidoo playback to Jellyfin as a real session (FR-48).
+        self._reporter: PlaybackReporter | None = None
+        self._report_task: asyncio.Task[None] | None = None
 
     # -- the device currently carrying media --------------------------------
 
@@ -175,7 +179,36 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         self._sync_catalogue_entry()
+        self._report_playback()
         super()._handle_coordinator_update()
+
+    @callback
+    def _report_playback(self) -> None:
+        """Report what the player is doing to the catalogue (FR-48, FR-49).
+
+        One observation per coordinator poll; the reporter decides whether
+        the catalogue needs to hear about it. Only a resolved catalogue
+        entry is reported — a file the library could not match produces no
+        session at all (FR-49c).
+        """
+        media = self.coordinator.media
+        if media is None:
+            return
+        if self._reporter is None:
+            self._reporter = PlaybackReporter(media, time_fn=self.hass.loop.time)
+        if self._report_task is not None and not self._report_task.done():
+            # The previous report is still on the wire; this poll's
+            # observation is not worth queueing behind it.
+            return
+        now = self._now()
+        entry = self._catalogue_entry()
+        self._report_task = self.hass.async_create_task(
+            self._reporter.update(
+                item_id=(entry or {}).get("id"),
+                state=now.get("state"),
+                position=now.get("position"),
+            )
+        )
 
     def _sync_catalogue_entry(self) -> None:
         """Look the open file up in the catalogue when it changes.
