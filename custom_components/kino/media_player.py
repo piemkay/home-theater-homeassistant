@@ -31,7 +31,11 @@ from .devices.zidoo import ZidooDriver
 from .entity import KinoEntity
 from .http import async_artwork_url
 from .media.base import Category, MediaBackendError, MediaItem, MediaQuery
-from .media.naming import provider_ids_from_path, title_from_path
+from .media.naming import (
+    episode_code_from_path,
+    provider_ids_from_path,
+    title_from_path,
+)
 from .media.reporting import PlaybackReporter
 
 _LOGGER = logging.getLogger(__name__)
@@ -243,6 +247,11 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
             return
         finally:
             self._resolving = None
+        # A play started from the card arrives with its entry attached, and
+        # that entry is authoritative. While this lookup was on the wire the
+        # play may have set it — a resolve for a stale URI must not stomp it.
+        if self._playing and self._playing["uri"] == self._now().get("uri"):
+            return
         # A real "nothing matched" *is* recorded, so one unmatched file does
         # not re-query the catalogue on every poll.
         self._playing = {
@@ -269,13 +278,44 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
             if candidates and wanted:
                 break
 
-        for item in candidates:
-            if any(item.provider_ids.get(k) == v for k, v in wanted.items()):
-                return item
-        # Without a provider ID, only an exact title counts. A near-miss puts
-        # the wrong poster on the screen, which is worse than no poster.
+        match = next(
+            (
+                item
+                for item in candidates
+                if any(item.provider_ids.get(k) == v for k, v in wanted.items())
+            ),
+            None,
+        )
+        if match is None:
+            # Without a provider ID, only an exact title counts. A near-miss
+            # puts the wrong poster on the screen — worse than no poster.
+            match = next(
+                (i for i in candidates if i.title.casefold() == title.casefold()),
+                None,
+            )
+        if match is not None and match.kind == "show":
+            # An episode file must resolve to the episode, not the series —
+            # the series id would report the session against the wrong entry.
+            episode = await self._episode_of(match, uri)
+            if episode is not None:
+                return episode
+        return match
+
+    async def _episode_of(self, series: MediaItem, uri: str) -> MediaItem | None:
+        """Return the series' episode the file's SxxEyy code names, if any."""
+        code = episode_code_from_path(uri)
+        media = self.coordinator.media
+        if code is None or media is None:
+            return None
+        season, number = code
+        episodes = await media.episodes(series.id)
         return next(
-            (i for i in candidates if i.title.casefold() == title.casefold()), None
+            (
+                e
+                for e in episodes
+                if e.index_number == number and (e.parent_index or 1) == season
+            ),
+            None,
         )
 
     @property

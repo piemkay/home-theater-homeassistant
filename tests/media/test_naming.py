@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from custom_components.kino.media.naming import (
+    episode_code_from_path,
     provider_ids_from_path,
     title_from_path,
 )
@@ -28,6 +29,11 @@ CLOVERFIELD = (
     "/mnt/nfs/192.168.50.10#entertainment/movies/10 Cloverfield Lane (2016)/"
     "10 Cloverfield Lane (2016) {imdb-tt1179933} [Remux-2160p][HDR10]"
     "[TrueHD Atmos 7.1][HEVC]-FraMeSToR.mkv"
+)
+LUCKY_EPISODE = (
+    "/mnt/nfs/192.168.50.10#entertainment/series/Lucky (2026)/Season 1/"
+    "Lucky (2026) - S01E01 - No Shortcuts [WEBDL-2160p][EAC3 Atmos 5.1]"
+    "[h265]-ETHEL.mkv"
 )
 
 
@@ -53,6 +59,22 @@ class TestTitle:
     def test_nothing_recognisable_is_not_a_guess(self):
         assert title_from_path("") == ""
         assert title_from_path("/media/(2016)/(2016).mkv") == ""
+
+
+class TestEpisodeCode:
+    """F2: an episode file resolves to the episode, not just its series."""
+
+    def test_the_sonarr_naming_carries_the_code(self):
+        assert episode_code_from_path(LUCKY_EPISODE) == (1, 1)
+        assert episode_code_from_path(HOUSE_OF_THE_DRAGON) == (3, 8)
+
+    def test_a_movie_file_carries_none(self):
+        assert episode_code_from_path(CLOVERFIELD) is None
+        assert episode_code_from_path("/media/movies/Gravity.mkv") is None
+
+    def test_a_season_directory_alone_does_not_count(self):
+        # Only the file name speaks; "Season 3" in the directory is not a code.
+        assert episode_code_from_path("/x/Season 3/whatever.mkv") is None
 
 
 class TestProviderIds:

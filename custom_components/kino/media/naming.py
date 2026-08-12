@@ -27,9 +27,12 @@ _TITLE_END = re.compile(r"\s*[({\[]")
 #: the year, but never so far that nothing is left to search for.
 _BARE_YEAR = re.compile(r"\s(?:19|20)\d{2}(?:\s|$)")
 
-#: `Series Name - S03E08 - Episode Title […]` — the show is what the catalogue
-#: knows; the episode is not a separate entry to look up.
+#: `Series Name - S03E08 - Episode Title […]` — the series name is what the
+#: catalogue search takes; the code then picks the episode out of the series.
 _EPISODE = re.compile(r"\s*-\s*S\d{1,3}E\d{1,3}\b.*$", re.IGNORECASE)
+
+#: The code itself, wherever it sits in the name.
+_EPISODE_CODE = re.compile(r"\bS(\d{1,3})E(\d{1,3})\b", re.IGNORECASE)
 
 
 def provider_ids_from_path(path: str) -> dict[str, str]:
@@ -40,6 +43,20 @@ def provider_ids_from_path(path: str) -> dict[str, str]:
     if match := _TMDB.search(path):
         found["Tmdb"] = match.group(1)
     return found
+
+
+def episode_code_from_path(path: str) -> tuple[int, int] | None:
+    """Return (season, episode) when the file name carries an SxxEyy code.
+
+    An episode file must resolve to the *episode*, not to its series — the
+    series id would put the wrong title on screen and, worse, report the
+    playback session against the wrong entry (F2).
+    """
+    stem = path.replace("\\", "/").rsplit("/", 1)[-1]
+    match = _EPISODE_CODE.search(stem)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
 
 
 def title_from_path(path: str) -> str:
