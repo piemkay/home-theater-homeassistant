@@ -443,6 +443,19 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
   resolution tiers (4K/HD/SD, mutually exclusive) plus 3D, genres, FSK parental ratings
   (`OfficialRatings`), and a year from–to range. Countries stay dormant — Jellyfin has no
   server-side parameter and a client-side cut breaks pagination.
+- **FR-52a** Cast and crew SHALL be filterable by name, offered from the catalogue's own
+  `/Persons` rather than as free text, with several names combinable and individually
+  removable. Several people narrow (AND), like stacked genre chips.
+- **FR-52b** Audio-track **and** subtitle-track languages SHALL each be their own filter, and
+  SHALL be honest about what a title can be watched in: every track counts, not just the
+  first; a title with two German mixes is German once; a commentary or audio-description
+  track is not a language the title exists in; and `ger`/`deu`/`de`/`de-DE` are one value.
+  A series carries no streams of its own, so it is lent the union of its episodes'
+  languages (one sweep, cached far longer than a page scan, with its own timeout budget;
+  a failed sweep degrades to no series languages, never to a broken filter).
+- **FR-52c** A facet group SHALL show its most common values first and keep the long tail
+  behind one tap — this library has 63 subtitle languages. Every group SHALL start folded,
+  remembering only which ones the user unfolds.
 - **FR-53** Sorting SHALL be available (title, year, date added, at minimum). Shipped: title,
   year, date added, community rating, runtime, last played, critics rating and random, each
   with an ascending/descending override (per-field default direction otherwise). Random
@@ -457,6 +470,17 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
 - **FR-56** Rich metadata from the player (title, poster, duration, position, video format
   e.g. `3840X2160P @ 23.976Hz … HDR10`, audio format, TMDB/IMDB id, tagline) SHALL be
   surfaced in a detail view.
+- **FR-56a** The detail view SHALL list **every** audio and subtitle track the file carries —
+  language, channel layout, codec, the default one first, commentaries and forced subtitles
+  marked — because the one-line audio format names the first stream only, and whether a
+  disc has a German mix is what decides whether tonight works.
+- **FR-56b** A trailer, where the catalogue knows one, SHALL be watchable from the detail
+  view on the phone, with the room off. Jellyfin's trailers are links to YouTube and the
+  like, so this opens a browser tab rather than pretending Kino can stream them.
+- **FR-56c** Watched state SHALL be settable and unsettable from the card for a film, for a
+  single episode and for a whole season (`POST`/`DELETE /Users/{userId}/PlayedItems/{itemId}`,
+  which Jellyfin cascades from a season to its episodes). The season strip's remaining-count
+  and the episode rows SHALL both reflect the change without a reload.
 - **FR-57** **Thumbnail caching/proxying SHALL be implemented** if it is needed for a smooth
   grid — this is explicitly permitted (D8). Metadata caching is optional and performance-driven
   only; there is no offline-browsing requirement (D7).
@@ -488,6 +512,8 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
 
 ## 9. The custom card
 
+- **FR-70a** The library home SHALL carry a **Favoriten** row beside Weitersehen and Zuletzt
+  hinzugefügt, films and series together, with a way into the full filtered list.
 - **FR-70** A custom Lovelace card SHALL provide in one place: activity selection, poster grid,
   search field, filter and sort controls, detail view with play button, and a "Weitersehen" row.
   The library home additionally carries a "Zuletzt hinzugefügt" row.

@@ -28,6 +28,12 @@ Requirements §13. "Automated" means an executable test asserts the behaviour;
 | A21 | The queued title stays on screen during start-then-play (0.3/F5) | partial | payload and render covered by `kino-card.test.js` ("pending item"); end-to-end is **live**: pick a title from cold, the progress card must name it until the playing sheet opens itself |
 | A22 | A switch shows the devices being stopped (0.3/F6) | partial | `kino-card.test.js` ("device chips" union case); **live**: `film → netflix` must show the Zidoo going down |
 | A23 | Series resume mid-season, from the phone (0.3/F2) | partial | `test_jellyfin.py::TestSeries`, episode naming in `kino-card.test.js`; **live**: open a series, the season with unwatched episodes is preselected, tap the row with the resume bar |
+| A24 | Find every film with a given actor without knowing how to spell the catalogue's ID (0.6) | ✅ automated + **verified live** | `test_jellyfin.py::TestPersons`, `kino-card.test.js` "cast and crew filter"; live 2026-08-13: "pacino" → Al Pacino → 6 Titel |
+| A25 | One language is one chip, however the file spells it (0.6) | ✅ automated + **verified live** | `test_jellyfin.py::TestLanguageCodes`, `::TestTracks::test_a_commentary_is_not_a_language_the_film_exists_in`; live: `en`/`th`/`vi`/`zh-hans`/`id` no longer appear beside their three-letter twins |
+| A26 | A series can be filtered by the languages its episodes carry (0.6) | ✅ automated + **verified live** | `test_jellyfin.py::TestSeriesLanguages`; live: Serien → Tonspur → Deutsch 21 ⇒ 21 Titel (the group was empty before) |
+| A27 | Decide whether tonight works: every audio and subtitle track, before starting anything (0.6) | ✅ automated + **verified live** | `kino-card.test.js` "audio and subtitle tracks"; live: *Heat* lists 2 audio and 21 subtitle tracks, commentaries marked |
+| A28 | Watch the trailer on the phone with the room off (0.6) | partial | render covered by `kino-card.test.js` "trailers"; live 2026-08-13: *DTF St. Louis* → "Trailer ansehen" opened the official trailer |
+| A29 | Mark a film, an episode or a whole season gesehen — and undo it (0.6) | ✅ automated + **verified live** | `test_jellyfin.py::TestWatched`, `kino-card.test.js` "marking gesehen"; live: episode ⇒ season strip 7→6; season ⇒ all seven episodes ticked; both reversed cleanly |
 
 ---
 
