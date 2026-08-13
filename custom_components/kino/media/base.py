@@ -35,6 +35,7 @@ class Category(str, Enum):
     RECENT = "recent"
     CONTINUE = "continue"
     UNWATCHED = "unwatched"
+    FAVORITES = "favorites"
     UHD = "4k"
 
 
@@ -58,6 +59,54 @@ class Person:
             "role": self.role,
             "imageTag": self.image_tag,
         }
+
+
+@dataclass(frozen=True)
+class MediaTrack:
+    """One audio or subtitle stream of a title.
+
+    A file carries several of each — three German dubs and an English
+    commentary is a normal evening here — so the detail view lists them all
+    rather than naming the first one and calling it "the" audio format.
+    """
+
+    #: The stream's index inside the file, as Jellyfin numbers it.
+    index: int
+    #: ISO-639-2 code, folded onto one spelling; None when the file says nothing.
+    language: str | None = None
+    codec: str | None = None
+    #: "5.1", "stereo", … — audio only.
+    channel_layout: str | None = None
+    #: The stream's own title, when it carries one ("Director's Commentary").
+    title: str | None = None
+    is_default: bool = False
+    is_forced: bool = False
+    #: A commentary or audio-description track: present in the file, but not
+    #: what "this film is available in English" should ever mean.
+    is_commentary: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "index": self.index,
+            "language": self.language,
+            "codec": self.codec,
+            "channelLayout": self.channel_layout,
+            "title": self.title,
+            "default": self.is_default,
+            "forced": self.is_forced,
+            "commentary": self.is_commentary,
+        }
+
+
+@dataclass(frozen=True)
+class Trailer:
+    """A trailer the catalogue knows about, as a URL a phone can open."""
+
+    name: str
+    url: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "url": self.url}
 
 
 @dataclass(frozen=True)
@@ -104,6 +153,12 @@ class MediaItem:
     banner_tag: str | None = None
     video_format: str | None = None
     audio_format: str | None = None
+    #: Every audio and subtitle stream of the file, in file order. Only the
+    #: single-item detail fetch carries them — grids stay light.
+    audio_tracks: tuple[MediaTrack, ...] = ()
+    subtitle_tracks: tuple[MediaTrack, ...] = ()
+    #: Trailers to watch on the phone, before the room is even on.
+    trailers: tuple[Trailer, ...] = ()
     #: False when nothing playable could be matched — surfaced, never hidden
     #: (FR-47).
     playable: bool = True
@@ -173,6 +228,9 @@ class MediaItem:
             "bannerTag": self.banner_tag,
             "videoFormat": self.video_format,
             "audioFormat": self.audio_format,
+            "audioTracks": [track.as_dict() for track in self.audio_tracks],
+            "subtitleTracks": [track.as_dict() for track in self.subtitle_tracks],
+            "trailers": [trailer.as_dict() for trailer in self.trailers],
             "playable": self.playable,
             "unplayableReason": self.unplayable_reason,
         }
@@ -192,7 +250,11 @@ class MediaQuery:
     #: Catalogue person IDs (cast or crew) every result must credit.
     person_ids: tuple[str, ...] = ()
     #: ISO-639 codes; a result must carry at least one matching audio track.
+    #: Commentary and audio-description tracks do not count — a film is not
+    #: "available in English" because the director talks over it.
     audio_langs: tuple[str, ...] = ()
+    #: ISO-639 codes; a result must carry at least one matching subtitle track.
+    subtitle_langs: tuple[str, ...] = ()
     year_from: int | None = None
     year_to: int | None = None
     only_4k: bool = False
@@ -237,6 +299,8 @@ class Facets:
     ratings: tuple[str, ...] = ()
     #: Audio-track languages present in the library, as ISO-639 codes.
     audio_languages: tuple[str, ...] = ()
+    #: Subtitle-track languages present in the library, as ISO-639 codes.
+    subtitle_languages: tuple[str, ...] = ()
     year_min: int | None = None
     year_max: int | None = None
 
@@ -272,6 +336,9 @@ class MediaBackend(Protocol):
     async def similar(self, item_id: str, limit: int = 12) -> Sequence[MediaItem]:
         """Titles the catalogue considers similar to one entry."""
 
+    async def persons(self, query: str, limit: int = 20) -> Sequence[Person]:
+        """Cast and crew whose name matches, for the people filter."""
+
     async def facets(self) -> Facets:
         """Available filter values."""
 
@@ -283,6 +350,9 @@ class MediaBackend(Protocol):
 
     async def set_favorite(self, item_id: str, favorite: bool) -> None:
         """Mark or unmark one entry as a favourite, in the catalogue."""
+
+    async def set_watched(self, item_id: str, watched: bool) -> None:
+        """Mark or unmark one entry as watched. Seasons cascade to episodes."""
 
     async def artwork(self, item_id: str, image_type: str) -> tuple[bytes, str]:
         """Raw image bytes plus content type, for the proxy (FR-42a)."""

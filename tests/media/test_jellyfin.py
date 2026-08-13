@@ -1080,3 +1080,340 @@ class TestFacetLanguages:
 
         assert facets.genres == ("Action", "Drama")
         assert facets.audio_languages == ()
+
+
+def _stream(
+    kind: str, index: int, language: str | None, **extra: Any
+) -> dict[str, Any]:
+    return {"Type": kind, "Index": index, "Language": language, **extra}
+
+
+TRACKED_MOVIE = dict(
+    MOVIE,
+    MediaStreams=[
+        _stream("Video", 0, None, Width=3840),
+        _stream("Audio", 1, "ger", Codec="dts", ChannelLayout="7.1", IsDefault=True),
+        _stream("Audio", 2, "ger", Codec="ac3", ChannelLayout="5.1"),
+        _stream("Audio", 3, "eng", Codec="ac3", Title="Commentary by the Director"),
+        _stream("Subtitle", 4, "ger", Codec="PGSSUB", IsForced=True),
+        _stream("Subtitle", 5, "eng", Codec="subrip"),
+    ],
+)
+
+
+class TestTracks:
+    """Every audio and subtitle stream, not just the first of each."""
+
+    async def test_the_detail_lists_all_audio_and_subtitle_tracks(self):
+        session = FakeSession({"/Users/user-1/Items/abc123": TRACKED_MOVIE})
+
+        item = await _client(session).item("abc123")
+
+        assert [(t.index, t.language, t.codec) for t in item.audio_tracks] == [
+            (1, "ger", "DTS"),
+            (2, "ger", "AC3"),
+            (3, "eng", "AC3"),
+        ]
+        assert [(t.index, t.language, t.is_forced) for t in item.subtitle_tracks] == [
+            (4, "ger", True),
+            (5, "eng", False),
+        ]
+        assert item.audio_tracks[0].channel_layout == "7.1"
+        assert item.audio_tracks[0].is_default is True
+        assert item.audio_tracks[2].is_commentary is True
+
+    async def test_tracks_reach_the_card_as_dicts(self):
+        session = FakeSession({"/Users/user-1/Items/abc123": TRACKED_MOVIE})
+
+        payload = (await _client(session).item("abc123")).as_dict()
+
+        assert payload["audioTracks"][0] == {
+            "index": 1,
+            "language": "ger",
+            "codec": "DTS",
+            "channelLayout": "7.1",
+            "title": None,
+            "default": True,
+            "forced": False,
+            "commentary": False,
+        }
+        assert len(payload["subtitleTracks"]) == 2
+
+    async def test_a_commentary_is_not_a_language_the_film_exists_in(self):
+        """A German film with an English commentary is not an English film."""
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [TRACKED_MOVIE], "TotalRecordCount": 1}}
+        )
+        client = _client(session)
+
+        german = await client.search(MediaQuery(audio_langs=("ger",)))
+        english = await client.search(MediaQuery(audio_langs=("eng",)))
+
+        assert german.total == 1
+        assert english.total == 0
+
+
+class TestTrailers:
+    async def test_remote_trailers_reach_the_detail(self):
+        movie = dict(
+            MOVIE,
+            RemoteTrailers=[
+                {"Name": "Trailer", "Url": "https://www.youtube.com/watch?v=abc"},
+                {"Name": "Ohne Url"},
+            ],
+        )
+        session = FakeSession({"/Users/user-1/Items/abc123": movie})
+
+        item = await _client(session).item("abc123")
+
+        assert "RemoteTrailers" in session.requests[0]["params"]["Fields"]
+        assert [(t.name, t.url) for t in item.trailers] == [
+            ("Trailer", "https://www.youtube.com/watch?v=abc")
+        ]
+        assert item.as_dict()["trailers"][0]["url"].endswith("v=abc")
+
+    async def test_grid_searches_do_not_request_trailers(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+        await _client(session).search(MediaQuery())
+        assert "RemoteTrailers" not in session.requests[0]["params"]["Fields"]
+
+
+def _scan_subs(movie_id: str, *, langs=(), sub_langs=()) -> dict[str, Any]:
+    record = _scan_movie(movie_id, langs=langs)
+    record["MediaStreams"] += [
+        {"Type": "Subtitle", "Language": lang} for lang in sub_langs
+    ]
+    return record
+
+
+class TestSubtitleFilter:
+    ITEMS: ClassVar[list[dict[str, Any]]] = [
+        _scan_subs("a", langs=("eng",), sub_langs=("ger", "eng")),
+        _scan_subs("b", langs=("eng",), sub_langs=("fre", "ger")),
+        _scan_subs("c", langs=("ger",)),
+    ]
+
+    def _session(self) -> FakeSession:
+        return FakeSession(
+            {"/Users/user-1/Items": {"Items": self.ITEMS, "TotalRecordCount": 3}}
+        )
+
+    async def test_subtitle_languages_take_the_scan_path(self):
+        session = self._session()
+
+        page = await _client(session).search(MediaQuery(subtitle_langs=("ger",)))
+
+        assert page.total == 2
+        assert session.requests[1]["params"]["Ids"] == "a,b"
+
+    async def test_subtitles_and_audio_narrow_together(self):
+        page = await _client(self._session()).search(
+            MediaQuery(audio_langs=("eng",), subtitle_langs=("fre",))
+        )
+        assert page.total == 1
+
+    async def test_facets_carry_subtitle_languages(self):
+        session = FakeSession(
+            {
+                "/Items/Filters": {"Genres": ["Drama"]},
+                "/Users/user-1/Items": {"Items": self.ITEMS, "TotalRecordCount": 3},
+            }
+        )
+
+        facets = await _client(session).facets()
+
+        # Both scans (films and series) meet the same fixture, so the ranking
+        # is what matters here, not the absolute counts.
+        assert facets.subtitle_languages[0] == "ger"
+        assert set(facets.subtitle_languages) == {"ger", "eng", "fre"}
+
+    async def test_counts_preview_each_subtitle_language(self):
+        counts = await _client(self._session()).facet_counts(MediaQuery())
+        assert counts["subtitleLangs"] == {"ger": 2, "eng": 1, "fre": 1}
+
+
+def _episode(series_id: str, suffix: str, *, langs=(), sub_langs=()) -> dict[str, Any]:
+    return {
+        "Id": f"{series_id}-{suffix}",
+        "Type": "Episode",
+        "SeriesId": series_id,
+        "MediaStreams": [
+            *({"Type": "Audio", "Language": lang} for lang in langs),
+            *({"Type": "Subtitle", "Language": lang} for lang in sub_langs),
+        ],
+    }
+
+
+class SeriesSession(FakeSession):
+    """A library of two series, whose languages live in their episodes."""
+
+    SERIES: ClassVar[list[dict[str, Any]]] = [
+        {"Id": "s1", "Name": "Eins", "Type": "Series", "UserData": {}},
+        {"Id": "s2", "Name": "Zwei", "Type": "Series", "UserData": {}},
+    ]
+    EPISODES: ClassVar[list[dict[str, Any]]] = [
+        _episode("s1", "a", langs=("ger", "eng"), sub_langs=("ger",)),
+        _episode("s1", "b", langs=("ger",)),
+        _episode("s2", "a", langs=("jpn",), sub_langs=("eng",)),
+    ]
+
+    async def request(self, method, url, *, params=None, **kwargs):
+        # The base class does the recording; only the payload is ours.
+        await super().request(method, url, params=params, **kwargs)
+        params = dict(params or {})
+        if params.get("IncludeItemTypes") == "Episode":
+            return FakeResponse(200, {"Items": self.EPISODES})
+        if params.get("Ids"):
+            wanted = params["Ids"].split(",")
+            return FakeResponse(
+                200, {"Items": [s for s in self.SERIES if s["Id"] in wanted]}
+            )
+        return FakeResponse(200, {"Items": self.SERIES, "TotalRecordCount": 2})
+
+
+class TestSeriesLanguages:
+    """A series has no streams of its own — its episodes' languages are its own."""
+
+    async def test_a_series_can_be_filtered_by_its_episodes_languages(self):
+        page = await _client(SeriesSession()).search(
+            MediaQuery(category=Category.SHOWS, audio_langs=("jpn",))
+        )
+        assert page.total == 1
+        assert page.items[0].id == "s2"
+
+    async def test_series_subtitle_languages_come_from_the_episodes_too(self):
+        page = await _client(SeriesSession()).search(
+            MediaQuery(category=Category.SHOWS, subtitle_langs=("ger",))
+        )
+        assert page.total == 1
+        assert page.items[0].id == "s1"
+
+    async def test_the_shows_facet_counts_offer_languages_at_all(self):
+        counts = await _client(SeriesSession()).facet_counts(
+            MediaQuery(category=Category.SHOWS)
+        )
+        assert counts["audioLangs"] == {"ger": 1, "eng": 1, "jpn": 1}
+        assert counts["subtitleLangs"] == {"ger": 1, "eng": 1}
+
+    async def test_the_episode_sweep_happens_once_across_scans(self):
+        session = SeriesSession()
+        client = _client(session)
+
+        await client.facet_counts(MediaQuery(category=Category.SHOWS))
+        await client.search(MediaQuery(category=Category.SHOWS, audio_langs=("ger",)))
+
+        sweeps = [
+            r
+            for r in session.requests
+            if r["params"].get("IncludeItemTypes") == "Episode"
+        ]
+        assert len(sweeps) == 1
+
+    async def test_a_failing_episode_sweep_leaves_the_series_browsable(self):
+        class BrokenSession(SeriesSession):
+            async def request(self, method, url, *, params=None, **kwargs):
+                if (params or {}).get("IncludeItemTypes") == "Episode":
+                    self.requests.append({"method": method, "params": dict(params)})
+                    return FakeResponse(500, {})
+                return await super().request(method, url, params=params, **kwargs)
+
+        counts = await _client(BrokenSession()).facet_counts(
+            MediaQuery(category=Category.SHOWS)
+        )
+
+        assert counts["total"] == 2
+        assert counts["audioLangs"] == {}
+
+
+class TestPersons:
+    async def test_person_search_asks_the_persons_endpoint(self):
+        session = FakeSession(
+            {
+                "/Persons": {
+                    "Items": [
+                        {
+                            "Id": "p1",
+                            "Name": "Guillermo del Toro",
+                            "Type": "Person",
+                            "ImageTags": {"Primary": "t1"},
+                        },
+                        {"Name": "Ohne Id"},
+                    ]
+                }
+            }
+        )
+
+        people = await _client(session).persons("del toro", limit=5)
+
+        request = session.requests[0]
+        assert request["path"] == "/Persons"
+        assert request["params"]["SearchTerm"] == "del toro"
+        assert request["params"]["Limit"] == "5"
+        assert [(p.id, p.name, p.image_tag) for p in people] == [
+            ("p1", "Guillermo del Toro", "t1")
+        ]
+
+    async def test_a_blank_query_asks_nothing(self):
+        session = FakeSession()
+        assert await _client(session).persons("  ") == ()
+        assert session.requests == []
+
+
+class TestWatched:
+    async def test_marking_posts_to_the_played_endpoint(self):
+        session = FakeSession()
+        await _client(session).set_watched("abc123", True)
+        request = session.requests[0]
+        assert request["method"] == "POST"
+        assert request["path"] == "/Users/user-1/PlayedItems/abc123"
+
+    async def test_unmarking_deletes(self):
+        session = FakeSession()
+        await _client(session).set_watched("abc123", False)
+        assert session.requests[0]["method"] == "DELETE"
+
+    async def test_marking_watched_invalidates_the_scan(self):
+        """The grid behind the sheet must not keep claiming the opposite."""
+        session = FakeSession(
+            {
+                "/Users/user-1/Items": {
+                    "Items": [_scan_movie("a", langs=("ger",))],
+                    "TotalRecordCount": 1,
+                }
+            }
+        )
+        client = _client(session)
+        await client.search(MediaQuery(audio_langs=("ger",)))
+        before = len(session.requests)
+
+        await client.set_watched("a", True)
+        await client.search(MediaQuery(audio_langs=("ger",)))
+
+        rescans = [
+            r
+            for r in session.requests[before:]
+            if r["path"] == "/Users/user-1/Items" and "Ids" not in r["params"]
+        ]
+        assert rescans, "the cached scan should have been dropped"
+
+    async def test_watching_needs_a_connected_user(self):
+        client = JellyfinClient(
+            FakeSession(), base_url="https://x", token="t", user_id=None
+        )
+        with pytest.raises(JellyfinAuthError):
+            await client.set_watched("abc123", True)
+
+
+class TestFavoritesCategory:
+    async def test_the_favorites_category_covers_films_and_series(self):
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
+        )
+
+        await _client(session).search(MediaQuery(category=Category.FAVORITES))
+
+        params = session.requests[0]["params"]
+        assert params["IncludeItemTypes"] == "Movie,Series"
+        assert params["Filters"] == "IsFavorite"

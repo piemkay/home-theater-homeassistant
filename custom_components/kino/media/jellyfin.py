@@ -33,8 +33,10 @@ from .base import (
     MediaItem,
     MediaPage,
     MediaQuery,
+    MediaTrack,
     Person,
     SortOrder,
+    Trailer,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,8 +65,9 @@ _MOVIE_FIELDS = ",".join(  # noqa: FLY002 - a long, readable field list
     )
 )
 
-#: The single-item detail additionally carries cast and crew; grids do not.
-_DETAIL_FIELDS = f"{_MOVIE_FIELDS},People"
+#: The single-item detail additionally carries cast, crew and trailers; grids
+#: do not.
+_DETAIL_FIELDS = f"{_MOVIE_FIELDS},People,RemoteTrailers"
 
 #: What the filter-count scan needs per title — no images, no media sources.
 _SCAN_FIELDS = ",".join(  # noqa: FLY002 - a long, readable field list
@@ -79,6 +82,10 @@ _SCAN_FIELDS = ",".join(  # noqa: FLY002 - a long, readable field list
     )
 )
 
+#: A series carries no streams of its own — its languages live one level down,
+#: in the episodes. This is all that pass needs to read.
+_EPISODE_LANG_FIELDS = "MediaStreams"
+
 #: Upper bound for one scan page — far above any home library, so one request
 #: really is the whole catalogue.
 _SCAN_LIMIT = 5000
@@ -87,6 +94,19 @@ _SCAN_LIMIT = 5000
 #: recounts several times in a few seconds; the library does not change while
 #: someone is doing that.
 _SCAN_TTL_SECONDS = 30.0
+
+#: The episode sweep behind the series language facets is the one expensive
+#: read in this client (thousands of episodes, every stream on each). What it
+#: answers — "which languages does this series exist in" — changes when files
+#: are added, not while someone taps chips, so it is cached far longer.
+_EPISODE_INDEX_TTL_SECONDS = 900.0
+
+#: Stream titles that mark a track as *about* the film rather than a way to
+#: watch it. Jellyfin has no flag for this, so the title is the only signal.
+_COMMENTARY_PATTERN = re.compile(
+    r"(?i)\b(commentar\w*|kommentar\w*|audio\s*descri\w*|audiodeskription|"
+    r"described\s+video|narration)\b"
+)
 
 #: ISO-639-2/T codes Jellyfin sometimes emits, folded onto the /B twins the
 #: rest of the library uses, so "deu" and "ger" count as one language.
@@ -154,6 +174,8 @@ class JellyfinClient:
         self._timeout = timeout
         #: (item types, search, persons, sort) -> (monotonic time, records).
         self._scan_cache: dict[tuple, tuple[float, list[_ScanRecord]]] = {}
+        #: (monotonic time, series id -> (audio langs, subtitle langs)).
+        self._episode_index: tuple[float, dict[str, _LangPair]] | None = None
 
     @property
     def user_id(self) -> str | None:
@@ -276,12 +298,17 @@ class JellyfinClient:
 
     async def search(self, query: MediaQuery) -> MediaPage:
         # Filters Jellyfin cannot express — several genres that must ALL
-        # match, audio-track languages, and a critics minimum (10.11 accepts
+        # match, track languages, and a critics minimum (10.11 accepts
         # MinCriticRating and then ignores it, verified live) — go through
         # the scan: filter the whole catalogue by ID first, then fetch just
         # the visible page. That keeps totals and offsets exact (the trap
         # `_apply_client_side_filters` documents).
-        if len(query.genres) > 1 or query.audio_langs or query.min_critic is not None:
+        if (
+            len(query.genres) > 1
+            or query.audio_langs
+            or query.subtitle_langs
+            or query.min_critic is not None
+        ):
             return await self._search_scanned(query)
         user = self._require_user()
         params = _search_params(query)
@@ -412,6 +439,9 @@ class JellyfinClient:
             params["PersonIds"] = "|".join(query.person_ids)
         payload = await self._request("GET", f"/Users/{user}/Items", params=params)
         records = [_to_record(raw) for raw in (payload or {}).get("Items") or []]
+        # A series has no streams of its own; its languages are its episodes'.
+        if "Series" in item_types:
+            records = await self._with_episode_languages(records)
 
         # Drop expired entries so alternating categories cannot grow the map.
         self._scan_cache = {
@@ -419,6 +449,72 @@ class JellyfinClient:
         }
         self._scan_cache[key] = (now, records)
         return records
+
+    async def _with_episode_languages(
+        self, records: list[_ScanRecord]
+    ) -> list[_ScanRecord]:
+        """Lend every series the languages its episodes actually carry.
+
+        Without this the Tonspur and Untertitel groups are simply empty under
+        Serien — 121 shows, no languages, no explanation. The index behind it
+        is one sweep over the episodes, cached far longer than a scan, and a
+        failure is not fatal: the series keep the languages they had (none).
+        """
+        if not any(record.is_series for record in records):
+            return records
+        try:
+            index = await self._episode_language_index()
+        except MediaBackendError:
+            _LOGGER.debug("Folgen-Sprachindex fehlgeschlagen", exc_info=True)
+            return records
+        if not index:
+            return records
+        lent = []
+        for record in records:
+            pair = index.get(record.id) if record.is_series else None
+            lent.append(
+                record
+                if pair is None
+                else replace(record, langs=pair[0], sub_langs=pair[1])
+            )
+        return lent
+
+    async def _episode_language_index(self) -> dict[str, _LangPair]:
+        """Per series: the union of its episodes' audio and subtitle languages."""
+        now = time.monotonic()
+        cached = self._episode_index
+        if cached and now - cached[0] < _EPISODE_INDEX_TTL_SECONDS:
+            return cached[1]
+
+        user = self._require_user()
+        payload = await self._request(
+            "GET",
+            f"/Users/{user}/Items",
+            params={
+                "Recursive": True,
+                "IncludeItemTypes": "Episode",
+                "Limit": _SCAN_LIMIT,
+                "Fields": _EPISODE_LANG_FIELDS,
+                "EnableImages": False,
+                "EnableUserData": False,
+                "EnableTotalRecordCount": False,
+            },
+        )
+        audio: dict[str, set[str]] = {}
+        subs: dict[str, set[str]] = {}
+        for raw in (payload or {}).get("Items") or []:
+            series_id = raw.get("SeriesId")
+            if not series_id:
+                continue
+            langs, sub_langs = _stream_languages(raw)
+            audio.setdefault(str(series_id), set()).update(langs)
+            subs.setdefault(str(series_id), set()).update(sub_langs)
+        index = {
+            series_id: (frozenset(langs), frozenset(subs.get(series_id, ())))
+            for series_id, langs in audio.items()
+        }
+        self._episode_index = (now, index)
+        return index
 
     async def facet_counts(self, query: MediaQuery) -> dict[str, Any]:
         """Per filter value: the result count after tapping that chip.
@@ -433,6 +529,7 @@ class JellyfinClient:
         genre_values = {g for record in records for g in record.genres}
         rating_values = {r for record in records if (r := record.official)}
         lang_values = {lang for record in records for lang in record.langs}
+        sub_values = {lang for record in records for lang in record.sub_langs}
 
         def count(candidate: MediaQuery) -> int:
             return sum(1 for record in records if _matches(record, candidate))
@@ -453,8 +550,39 @@ class JellyfinClient:
                 )
                 for value in lang_values
             },
+            "subtitleLangs": {
+                value: count(
+                    replace(query, subtitle_langs=_toggled(query.subtitle_langs, value))
+                )
+                for value in sub_values
+            },
             "tags": {flag: count(_toggle_flag(query, flag)) for flag in _TAG_FLAGS},
         }
+
+    async def persons(self, query: str, limit: int = 20) -> Sequence[Person]:
+        """Cast and crew whose name matches, for the people filter.
+
+        `/Persons` searches the catalogue's own people, so the field can only
+        ever offer names that will actually return something.
+        """
+        term = (query or "").strip()
+        if not term:
+            return ()
+        payload = await self._request(
+            "GET",
+            "/Persons",
+            params={
+                "UserId": self._user_id,
+                "SearchTerm": term,
+                "Limit": limit,
+                "Recursive": True,
+            },
+        )
+        return tuple(
+            _to_person(raw)
+            for raw in (payload or {}).get("Items") or []
+            if raw.get("Id")
+        )
 
     async def facets(self) -> Facets:
         # The legacy filter endpoint carries genres, official ratings and the
@@ -484,22 +612,23 @@ class JellyfinClient:
             )
         )
         years = [y for y in payload.get("Years") or [] if isinstance(y, int)]
-        # Audio languages exist nowhere in /Items/Filters — they come from the
-        # movie scan, most common first (series carry no streams of their own).
+        # Track languages exist nowhere in /Items/Filters — they come from the
+        # scans, most common first. Films and series both contribute: a series'
+        # languages are lent to it from its episodes (`_with_episode_languages`).
         langs: Counter[str] = Counter()
-        try:
-            for record in await self._scan(MediaQuery()):
-                langs.update(record.langs)
-        except MediaBackendError:
-            _LOGGER.debug("Tonspur-Scan fehlgeschlagen", exc_info=True)
-        # "und" is undetermined, "zxx" is no-linguistic-content (score-only
-        # tracks) — neither is a language anyone filters for.
+        sub_langs: Counter[str] = Counter()
+        for category in (Category.MOVIES, Category.SHOWS):
+            try:
+                for record in await self._scan(MediaQuery(category=category)):
+                    langs.update(record.langs)
+                    sub_langs.update(record.sub_langs)
+            except MediaBackendError:
+                _LOGGER.debug("Sprach-Scan fehlgeschlagen", exc_info=True)
         return Facets(
             genres=genres,
             ratings=ratings,
-            audio_languages=tuple(
-                code for code, _ in langs.most_common() if code not in ("und", "zxx")
-            ),
+            audio_languages=_ranked_languages(langs),
+            subtitle_languages=_ranked_languages(sub_langs),
             year_min=min(years) if years else None,
             year_max=max(years) if years else None,
         )
@@ -507,6 +636,7 @@ class JellyfinClient:
     async def refresh(self) -> None:
         """Ask Jellyfin to rescan (FR-44)."""
         self._scan_cache.clear()
+        self._episode_index = None
         await self._request("POST", "/Library/Refresh")
 
     async def set_favorite(self, item_id: str, favorite: bool) -> None:
@@ -514,6 +644,20 @@ class JellyfinClient:
         user = self._require_user()
         method = "POST" if favorite else "DELETE"
         await self._request(method, f"/Users/{user}/FavoriteItems/{quote(item_id)}")
+        self._scan_cache.clear()
+
+    async def set_watched(self, item_id: str, watched: bool) -> None:
+        """Mark or unmark one entry as watched, for the connected user.
+
+        Jellyfin takes a season or a series here as readily as an episode and
+        cascades the flag down, which is exactly what "Staffel gesehen" means.
+        The cached scans still hold the old flag, so they are dropped: the grid
+        behind the sheet must not keep claiming the opposite.
+        """
+        user = self._require_user()
+        method = "POST" if watched else "DELETE"
+        await self._request(method, f"/Users/{user}/PlayedItems/{quote(item_id)}")
+        self._scan_cache.clear()
 
     async def artwork(
         self, item_id: str, image_type: str = "Primary"
@@ -609,10 +753,10 @@ def _rating_sort_key(rating: str) -> tuple[int, int, str]:
 
 def _item_types(category: Category) -> str:
     """Which Jellyfin item types one browse category covers."""
-    # The home rows (recent, continue) should show both kinds.
+    # The home rows (recent, continue, favorites) should show both kinds.
     if category is Category.SHOWS:
         return "Series"
-    if category in (Category.RECENT, Category.CONTINUE):
+    if category in (Category.RECENT, Category.CONTINUE, Category.FAVORITES):
         return "Movie,Series"
     return "Movie"
 
@@ -674,7 +818,7 @@ def _search_params(  # noqa: C901, PLR0912 - a flat translation table, one branc
         filters.append("IsPlayed")
     if query.only_resumable or query.category is Category.CONTINUE:
         filters.append("IsResumable")
-    if query.only_favorites:
+    if query.only_favorites or query.category is Category.FAVORITES:
         filters.append("IsFavorite")
     if filters:
         params["Filters"] = ",".join(filters)
@@ -710,6 +854,7 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
         resume_percent = resume_ticks / runtime_ticks * 100.0
 
     width, video_format, audio_format = _stream_summary(raw)
+    audio_tracks, subtitle_tracks = _to_tracks(raw)
     provider_ids = {str(k): str(v) for k, v in (raw.get("ProviderIds") or {}).items()}
     path = raw.get("Path")
 
@@ -754,6 +899,11 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
         banner_tag=(raw.get("ImageTags") or {}).get("Banner"),
         video_format=video_format,
         audio_format=audio_format,
+        audio_tracks=audio_tracks,
+        subtitle_tracks=subtitle_tracks,
+        trailers=tuple(
+            _to_trailer(t) for t in raw.get("RemoteTrailers") or () if t.get("Url")
+        ),
         playable=playable,
         unplayable_reason=(
             None if playable else "Keine TMDB/IMDb-ID und kein Pfad — nicht abspielbar"
@@ -762,13 +912,97 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
 
 
 def _to_person(raw: Mapping[str, Any]) -> Person:
+    # `/Persons` answers with Type="Person" — a person's *kind* only exists in
+    # the context of a title, so the search results carry no role at all.
     return Person(
         id=str(raw.get("Id", "")),
         name=str(raw.get("Name") or ""),
         kind=str(raw.get("Type") or "Actor"),
         role=raw.get("Role") or None,
-        image_tag=raw.get("PrimaryImageTag"),
+        image_tag=(raw.get("ImageTags") or {}).get("Primary")
+        or raw.get("PrimaryImageTag"),
     )
+
+
+def _to_trailer(raw: Mapping[str, Any]) -> Trailer:
+    return Trailer(name=str(raw.get("Name") or "Trailer"), url=str(raw.get("Url")))
+
+
+def _streams(raw: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Every stream of a title, wherever this response happens to carry them."""
+    streams = raw.get("MediaStreams")
+    if not streams:
+        sources = raw.get("MediaSources") or []
+        streams = sources[0].get("MediaStreams", []) if sources else []
+    return list(streams or [])
+
+
+def _is_commentary(stream: Mapping[str, Any]) -> bool:
+    """Report whether a track is *about* the film rather than a way to watch it."""
+    for field in ("Title", "DisplayTitle"):
+        value = stream.get(field)
+        if isinstance(value, str) and _COMMENTARY_PATTERN.search(value):
+            return True
+    return False
+
+
+def _to_track(stream: Mapping[str, Any]) -> MediaTrack:
+    title = stream.get("Title") or stream.get("DisplayTitle")
+    return MediaTrack(
+        index=int(stream.get("Index") or 0),
+        language=_normalize_lang(stream.get("Language")),
+        codec=(stream.get("Codec") or None) and str(stream["Codec"]).upper(),
+        channel_layout=stream.get("ChannelLayout"),
+        title=str(title) if title else None,
+        is_default=bool(stream.get("IsDefault")),
+        is_forced=bool(stream.get("IsForced")),
+        is_commentary=_is_commentary(stream),
+    )
+
+
+def _to_tracks(
+    raw: Mapping[str, Any],
+) -> tuple[tuple[MediaTrack, ...], tuple[MediaTrack, ...]]:
+    """Split one title's streams into its audio and its subtitle tracks."""
+    audio: list[MediaTrack] = []
+    subtitles: list[MediaTrack] = []
+    for stream in _streams(raw):
+        kind = stream.get("Type")
+        if kind == "Audio":
+            audio.append(_to_track(stream))
+        elif kind == "Subtitle":
+            subtitles.append(_to_track(stream))
+    return tuple(audio), tuple(subtitles)
+
+
+def _stream_languages(raw: Mapping[str, Any]) -> tuple[frozenset[str], frozenset[str]]:
+    """Return the audio and subtitle languages one title can be watched in.
+
+    Commentary and audio-description tracks are left out: a film with a
+    German dub and an English director's commentary is a German film, and
+    saying otherwise is what made the Tonspur filter untrustworthy.
+    """
+    langs: set[str] = set()
+    sub_langs: set[str] = set()
+    for stream in _streams(raw):
+        lang = _normalize_lang(stream.get("Language"))
+        if not lang or lang in _NON_LANGUAGES or _is_commentary(stream):
+            continue
+        if stream.get("Type") == "Audio":
+            langs.add(lang)
+        elif stream.get("Type") == "Subtitle":
+            sub_langs.add(lang)
+    return frozenset(langs), frozenset(sub_langs)
+
+
+def _ranked_languages(counts: Counter[str]) -> tuple[str, ...]:
+    """Language codes, most common first."""
+    return tuple(code for code, _ in counts.most_common())
+
+
+#: "und" is undetermined, "zxx" is no-linguistic-content (score-only tracks) —
+#: neither is a language anyone filters for.
+_NON_LANGUAGES = frozenset({"und", "zxx"})
 
 
 def _normalize_lang(code: Any) -> str | None:
@@ -781,6 +1015,10 @@ def _normalize_lang(code: Any) -> str | None:
     return _LANG_SYNONYMS.get(value, value)
 
 
+#: A series' (audio languages, subtitle languages), lent from its episodes.
+_LangPair = tuple[frozenset[str], frozenset[str]]
+
+
 @dataclass(frozen=True)
 class _ScanRecord:
     """One title, boiled down to what the filter predicates read."""
@@ -788,6 +1026,7 @@ class _ScanRecord:
     id: str
     genres: frozenset[str]
     langs: frozenset[str]
+    sub_langs: frozenset[str]
     year: int | None
     official: str | None
     rating: float | None
@@ -797,27 +1036,24 @@ class _ScanRecord:
     watched: bool
     favorite: bool
     resumable: bool
+    #: Series carry no streams of their own — `_with_episode_languages` fills
+    #: theirs in afterwards, and needs to know which records to fill.
+    is_series: bool = False
 
 
 def _to_record(raw: Mapping[str, Any]) -> _ScanRecord:
     user_data = raw.get("UserData") or {}
     width: int | None = None
-    langs: set[str] = set()
-    streams = raw.get("MediaStreams")
-    if not streams:
-        sources = raw.get("MediaSources") or []
-        streams = sources[0].get("MediaStreams", []) if sources else []
-    for stream in streams or []:
-        if stream.get("Type") == "Video" and width is None:
+    for stream in _streams(raw):
+        if stream.get("Type") == "Video":
             width = stream.get("Width")
-        elif stream.get("Type") == "Audio":
-            lang = _normalize_lang(stream.get("Language"))
-            if lang:
-                langs.add(lang)
+            break
+    langs, sub_langs = _stream_languages(raw)
     return _ScanRecord(
         id=str(raw.get("Id", "")),
         genres=frozenset(raw.get("Genres") or ()),
-        langs=frozenset(langs),
+        langs=langs,
+        sub_langs=sub_langs,
         year=raw.get("ProductionYear"),
         official=raw.get("OfficialRating"),
         rating=raw.get("CommunityRating"),
@@ -827,6 +1063,7 @@ def _to_record(raw: Mapping[str, Any]) -> _ScanRecord:
         watched=bool(user_data.get("Played")),
         favorite=bool(user_data.get("IsFavorite")),
         resumable=bool(user_data.get("PlaybackPositionTicks")),
+        is_series=raw.get("Type") == "Series",
     )
 
 
@@ -843,6 +1080,8 @@ def _matches(  # noqa: C901, PLR0912 - a flat predicate, one clause per filter
     if query.ratings and record.official not in query.ratings:
         return False
     if query.audio_langs and not set(query.audio_langs) & record.langs:
+        return False
+    if query.subtitle_langs and not set(query.subtitle_langs) & record.sub_langs:
         return False
     if query.year_from is not None and (
         record.year is None or record.year < query.year_from
@@ -872,7 +1111,9 @@ def _matches(  # noqa: C901, PLR0912 - a flat predicate, one clause per filter
         query.only_resumable or query.category is Category.CONTINUE
     ) and not record.resumable:
         return False
-    if query.only_favorites and not record.favorite:
+    if (
+        query.only_favorites or query.category is Category.FAVORITES
+    ) and not record.favorite:
         return False
     if query.min_rating is not None and (
         record.rating is None or record.rating < query.min_rating
@@ -924,15 +1165,10 @@ def _toggle_flag(query: MediaQuery, flag: str) -> MediaQuery:
 def _stream_summary(
     raw: Mapping[str, Any],
 ) -> tuple[int | None, str | None, str | None]:
-    streams = raw.get("MediaStreams")
-    if not streams:
-        sources = raw.get("MediaSources") or []
-        streams = sources[0].get("MediaStreams", []) if sources else []
-
     width: int | None = None
     video_format: str | None = None
     audio_format: str | None = None
-    for stream in streams or []:
+    for stream in _streams(raw):
         if stream.get("Type") == "Video" and video_format is None:
             width = stream.get("Width")
             bits = [

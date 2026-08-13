@@ -463,6 +463,19 @@ describe("off-state body", () => {
     assert.match(html, /Zuletzt hinzugefügt/);
   });
 
+  test("favourites get their own row, with a way into the full list (0.6.0)", () => {
+    const c = card();
+    c._favorites = [{ id: "f1", title: "Heat", year: 1995 }];
+    const html = c._renderBody();
+    assert.match(html, /Favoriten/);
+    assert.match(html, /data-act="open-detail" data-key="f1"/);
+    assert.match(html, /data-act="open-favorites"/);
+  });
+
+  test("no favourites, no row", () => {
+    assert.doesNotMatch(card()._renderBody(), /Favoriten/);
+  });
+
   test("an open library view survives regardless of power", () => {
     const c = card();
     c._view = {
@@ -956,11 +969,20 @@ describe("new filter buckets (0.5.0)", () => {
     assert.equal(msg.min_critic, 80);
   });
 
+  test("subtitle languages are their own filter (0.6.0)", () => {
+    const filters = { ...empty, audioLangs: ["eng"], subtitleLangs: ["ger"] };
+    assert.equal(helpers.activeFilterCount(filters), 2);
+    const msg = helpers.queryFromFilters(filters, "movies", "", "added");
+    assert.deepEqual(msg.audio_langs, ["eng"]);
+    assert.deepEqual(msg.subtitle_langs, ["ger"]);
+  });
+
   test("absent buckets translate to neutral values", () => {
     const legacy = { tags: [], genres: [], countries: [], yearFrom: null, yearTo: null };
     const msg = helpers.queryFromFilters(legacy, "movies", "", "added");
     assert.deepEqual(msg.person_ids, []);
     assert.deepEqual(msg.audio_langs, []);
+    assert.deepEqual(msg.subtitle_langs, []);
     assert.equal(msg.min_rating, null);
     assert.equal(msg.min_critic, null);
   });
@@ -1028,6 +1050,7 @@ describe("collapsible filter sheet (0.5.0)", () => {
       countries: [],
       ratings: ["FSK-16", "FSK-18"],
       audioLanguages: ["ger", "eng"],
+      subtitleLanguages: ["ger", "eng", "fre"],
       yearMin: 1957,
       yearMax: 2026,
     };
@@ -1072,12 +1095,14 @@ describe("collapsible filter sheet (0.5.0)", () => {
     assert.match(html, /Deutsch\s*<span class="chipcount">2<\/span>/);
   });
 
-  test("the audio-language group exists for movies only", () => {
-    assert.match(sheetCard()._renderFilterSheet(), /Tonspur/);
-    assert.doesNotMatch(
-      sheetCard({ category: "shows" })._renderFilterSheet(),
-      /Tonspur/
-    );
+  test("both language groups exist, in either category", () => {
+    for (const category of ["movies", "shows"]) {
+      const html = sheetCard({ category })._renderFilterSheet();
+      assert.match(html, /Tonspur/);
+      assert.match(html, /data-kind="lang" data-key="ger"/);
+      assert.match(html, /Untertitel/);
+      assert.match(html, /data-kind="sublang" data-key="eng"/);
+    }
   });
 
   test("rating thresholds and tile sizes are offered", () => {
@@ -1193,5 +1218,251 @@ describe("detail sheet extras (0.5.0)", () => {
     const html = detailCard({ ...movie, people: [] }, [])._renderDetailSheet();
     assert.doesNotMatch(html, /Besetzung/);
     assert.doesNotMatch(html, /Mehr wie dieser Titel/);
+  });
+
+  describe("audio and subtitle tracks (0.6.0)", () => {
+    const tracked = {
+      ...movie,
+      audioTracks: [
+        { index: 2, language: "eng", codec: "AC3", channelLayout: "5.1" },
+        {
+          index: 1,
+          language: "ger",
+          codec: "DTS",
+          channelLayout: "7.1",
+          default: true,
+        },
+        { index: 3, language: "eng", codec: "AC3", commentary: true },
+      ],
+      subtitleTracks: [
+        { index: 4, language: "ger", codec: "PGSSUB", forced: true },
+        { index: 5, language: "fre", codec: "SUBRIP" },
+      ],
+    };
+
+    test("every track is listed, default first, in German", () => {
+      const html = detailCard(tracked)._renderDetailSheet();
+      assert.match(html, /Tonspuren &amp; Untertitel/);
+      assert.match(html, /Ton \(3\)/);
+      assert.match(html, /Untertitel \(2\)/);
+      // The default track leads, whatever its index.
+      const order = [...html.matchAll(/Deutsch · 7\.1 · DTS|Englisch · 5\.1 · AC3/g)];
+      assert.equal(order[0][0], "Deutsch · 7.1 · DTS");
+      assert.match(html, /class="std"/);
+    });
+
+    test("a commentary says so, and a forced subtitle too", () => {
+      const html = detailCard(tracked)._renderDetailSheet();
+      assert.match(html, /Englisch · AC3 · Kommentar/);
+      assert.match(html, /Deutsch · PGSSUB · erzwungen/);
+    });
+
+    test("a title with no stream data grows no empty section", () => {
+      const html = detailCard(movie)._renderDetailSheet();
+      assert.doesNotMatch(html, /Tonspuren/);
+    });
+  });
+
+  describe("trailers (0.6.0)", () => {
+    test("one trailer gets one plain button", () => {
+      const html = detailCard({
+        ...movie,
+        trailers: [{ name: "Trailer", url: "https://youtu.be/x" }],
+      })._renderDetailSheet();
+      assert.match(html, /data-act="trailer" data-key="0"/);
+      assert.match(html, /Trailer ansehen/);
+    });
+
+    test("several trailers are told apart by name", () => {
+      const html = detailCard({
+        ...movie,
+        trailers: [
+          { name: "Teaser", url: "https://youtu.be/a" },
+          { name: "Offizieller Trailer", url: "https://youtu.be/b" },
+        ],
+      })._renderDetailSheet();
+      assert.match(html, /data-act="trailer" data-key="1"/);
+      assert.match(html, /Offizieller Trailer/);
+    });
+
+    test("no trailer, no button", () => {
+      assert.doesNotMatch(detailCard(movie)._renderDetailSheet(), /data-act="trailer"/);
+    });
+  });
+
+  describe("marking gesehen (0.6.0)", () => {
+    test("a film carries a watched toggle next to the heart", () => {
+      const html = detailCard(movie)._renderDetailSheet();
+      assert.match(html, /data-act="toggle-watched" data-key="m1"/);
+      assert.match(html, /Als gesehen markieren/);
+    });
+
+    test("a watched film offers the way back", () => {
+      const html = detailCard({ ...movie, watched: true })._renderDetailSheet();
+      assert.match(html, /Als ungesehen markieren/);
+      assert.match(html, /data-act="toggle-watched"[^>]*aria-pressed="true"/);
+    });
+
+    test("a series header has no toggle — its seasons do", () => {
+      const c = detailCard({ ...movie, kind: "show" });
+      c._view.seasons = [
+        { id: "s1", title: "Staffel 1", kind: "season", unplayedCount: 3 },
+        { id: "s2", title: "Staffel 2", kind: "season", unplayedCount: 0 },
+      ];
+      c._view.seasonId = "s1";
+      c._view.episodes = [];
+      const html = c._renderDetailSheet();
+      assert.doesNotMatch(html, /data-act="toggle-watched" data-key="m1"/);
+      assert.match(html, /data-act="toggle-watched"\s+data-key="s1"/);
+      assert.match(html, /Staffel als gesehen markieren/);
+    });
+
+    test("a fully watched season offers to undo that", () => {
+      const c = detailCard({ ...movie, kind: "show" });
+      c._view.seasons = [
+        { id: "s2", title: "Staffel 2", kind: "season", unplayedCount: 0 },
+      ];
+      c._view.seasonId = "s2";
+      c._view.episodes = [];
+      assert.match(c._renderDetailSheet(), /Staffel als ungesehen markieren/);
+    });
+
+    test("every episode row is its own toggle", () => {
+      const c = detailCard({ ...movie, kind: "show" });
+      c._view.seasons = [{ id: "s1", title: "Staffel 1", kind: "season" }];
+      c._view.seasonId = "s1";
+      c._view.episodes = [
+        { id: "e1", title: "Pilot", episodeCode: "S01E01", watched: true },
+        { id: "e2", title: "Zwei", episodeCode: "S01E02" },
+      ];
+      const html = c._renderDetailSheet();
+      assert.match(html, /data-act="toggle-watched" data-key="e1"[\s\S]*?aria-pressed="true"/);
+      assert.match(html, /data-act="toggle-watched" data-key="e2"[\s\S]*?aria-pressed="false"/);
+    });
+  });
+});
+
+describe("watched state", () => {
+  test("a film is watched when Jellyfin says so", () => {
+    assert.equal(helpers.isWatched({ kind: "movie", watched: true }), true);
+    assert.equal(helpers.isWatched({ kind: "movie" }), false);
+    assert.equal(helpers.isWatched(null), false);
+  });
+
+  test("a season is watched when nothing below it is left", () => {
+    // Jellyfin never sets `Played` on a season — the count is the truth.
+    assert.equal(helpers.isWatched({ kind: "season", unplayedCount: 0 }), true);
+    assert.equal(helpers.isWatched({ kind: "season", unplayedCount: 2 }), false);
+    assert.equal(helpers.isWatched({ kind: "season" }), false);
+  });
+
+  test("the label names what is being marked", () => {
+    assert.equal(
+      helpers.watchedLabel({ kind: "season", unplayedCount: 3 }),
+      "Staffel als gesehen markieren"
+    );
+    assert.equal(
+      helpers.watchedLabel({ kind: "episode", watched: true }),
+      "Als ungesehen markieren"
+    );
+  });
+});
+
+describe("track labels", () => {
+  test("the language leads, the technical bits follow", () => {
+    assert.equal(
+      helpers.trackLabel({ language: "ger", codec: "DTS", channelLayout: "7.1" }),
+      "Deutsch · 7.1 · DTS"
+    );
+    assert.equal(helpers.trackLabel({ language: "fre" }), "Französisch");
+    assert.equal(helpers.trackLabel(null), "");
+  });
+
+  test("an unnamed language is not silently dropped", () => {
+    assert.equal(helpers.trackLabel({ language: null, codec: "AC3" }), "— · AC3");
+  });
+
+  test("the default track sorts to the top, the rest keep file order", () => {
+    const sorted = helpers.sortTracks([
+      { index: 3 },
+      { index: 1 },
+      { index: 2, default: true },
+    ]);
+    assert.deepEqual(
+      sorted.map((t) => t.index),
+      [2, 1, 3]
+    );
+    assert.deepEqual(helpers.sortTracks(null), []);
+  });
+});
+
+describe("filter groups fold by default (0.6.0)", () => {
+  test("a user who has never touched the sheet sees every group folded", () => {
+    const collapsed = helpers.filterCollapse(null);
+    assert.equal(collapsed.tags, true);
+    assert.equal(collapsed.genres, true);
+    assert.equal(collapsed.people, true);
+    assert.equal(collapsed.sublangs, true);
+    assert.equal(collapsed.view, true);
+  });
+
+  test("a group the user unfolded stays unfolded", () => {
+    const collapsed = helpers.filterCollapse({ genres: false });
+    assert.equal(collapsed.genres, false);
+    assert.equal(collapsed.tags, true);
+  });
+});
+
+describe("cast and crew filter (0.6.0)", () => {
+  const personCard = (overrides = {}) => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = { artworkSignature: "sig" };
+    c._view = {
+      personQuery: "",
+      filters: helpers.emptyFilters(),
+      ...overrides,
+    };
+    return c;
+  };
+
+  test("chosen names render as chips that drop themselves", () => {
+    const c = personCard({
+      filters: {
+        ...helpers.emptyFilters(),
+        people: [{ id: "p1", name: "Guillermo del Toro" }],
+      },
+    });
+    const html = c._renderPersonChips();
+    assert.match(html, /data-act="toggle-person"\s+data-key="p1"/);
+    assert.match(html, /Guillermo del Toro ✕/);
+  });
+
+  test("a short query asks for more letters instead of searching", () => {
+    const c = personCard({ personQuery: "d" });
+    assert.match(c._renderPersonHits(), /Mindestens zwei Buchstaben/);
+  });
+
+  test("hits are offered, minus the names already chosen", () => {
+    const c = personCard({
+      filters: { ...helpers.emptyFilters(), people: [{ id: "p1", name: "A" }] },
+      personQuery: "del",
+    });
+    c._personHits = [
+      { id: "p1", name: "A" },
+      { id: "p2", name: "Benicio del Toro", imageTag: "t" },
+    ];
+    const html = c._renderPersonHits();
+    assert.match(html, /data-act="toggle-person" data-key="p2"/);
+    assert.doesNotMatch(html, /data-key="p1"/);
+  });
+
+  test("a search with nothing behind it says so", () => {
+    const c = personCard({ personQuery: "xyzzy" });
+    c._personHits = [];
+    assert.match(c._renderPersonHits(), /Keine passenden Namen/);
+  });
+
+  test("an untouched field offers nothing at all", () => {
+    assert.equal(personCard()._renderPersonHits(), "");
   });
 });

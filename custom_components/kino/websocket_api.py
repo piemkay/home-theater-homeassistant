@@ -66,7 +66,9 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_resume)
     websocket_api.async_register_command(hass, ws_facets)
     websocket_api.async_register_command(hass, ws_facet_counts)
+    websocket_api.async_register_command(hass, ws_persons)
     websocket_api.async_register_command(hass, ws_favorite)
+    websocket_api.async_register_command(hass, ws_watched)
     websocket_api.async_register_command(hass, ws_refresh)
     websocket_api.async_register_command(hass, ws_state)
     websocket_api.async_register_command(hass, ws_activate)
@@ -91,6 +93,7 @@ _QUERY_SCHEMA = {
     vol.Optional("countries", default=[]): [str],
     vol.Optional("person_ids", default=[]): [str],
     vol.Optional("audio_langs", default=[]): [str],
+    vol.Optional("subtitle_langs", default=[]): [str],
     vol.Optional("year_from"): vol.Any(int, None),
     vol.Optional("year_to"): vol.Any(int, None),
     vol.Optional("only_4k", default=False): bool,
@@ -120,6 +123,7 @@ def _query_from_msg(msg: Mapping[str, Any]) -> MediaQuery:
         countries=tuple(msg["countries"]),
         person_ids=tuple(msg["person_ids"]),
         audio_langs=tuple(msg["audio_langs"]),
+        subtitle_langs=tuple(msg["subtitle_langs"]),
         year_from=msg.get("year_from"),
         year_to=msg.get("year_to"),
         only_4k=msg["only_4k"],
@@ -317,9 +321,38 @@ async def ws_facets(hass, connection, msg) -> None:
             "countries": list(facets.countries),
             "ratings": list(facets.ratings),
             "audioLanguages": list(facets.audio_languages),
+            "subtitleLanguages": list(facets.subtitle_languages),
             "yearMin": facets.year_min,
             "yearMax": facets.year_max,
         },
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/library/persons",
+        vol.Required("query"): str,
+        vol.Optional("limit", default=20): vol.All(int, vol.Range(1, 50)),
+    }
+)
+@websocket_api.async_response
+async def ws_persons(hass, connection, msg) -> None:
+    """Name matches for the filter sheet's cast-and-crew field.
+
+    Only people the catalogue actually credits are offered, so a chosen name
+    can never come back empty-handed.
+    """
+    media = _first_media(hass)
+    if media is None:
+        connection.send_result(msg["id"], {"items": []})
+        return
+    try:
+        people = await media.persons(msg["query"], msg["limit"])
+    except MediaBackendError as err:
+        connection.send_error(msg["id"], "library_error", str(err))
+        return
+    connection.send_result(
+        msg["id"], {"items": [person.as_dict() for person in people]}
     )
 
 
@@ -343,6 +376,28 @@ async def ws_favorite(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "library_error", str(err))
         return
     connection.send_result(msg["id"], {"ok": True, "favorite": msg["favorite"]})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/library/watched",
+        vol.Required("item_id"): str,
+        vol.Required("watched"): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_watched(hass, connection, msg) -> None:
+    """Mark a film, an episode or a whole season as watched, or undo that."""
+    media = _first_media(hass)
+    if media is None:
+        connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")
+        return
+    try:
+        await media.set_watched(msg["item_id"], msg["watched"])
+    except MediaBackendError as err:
+        connection.send_error(msg["id"], "library_error", str(err))
+        return
+    connection.send_result(msg["id"], {"ok": True, "watched": msg["watched"]})
 
 
 @websocket_api.websocket_command({vol.Required("type"): "kino/library/refresh"})

@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.5.0";
+const CARD_VERSION = "0.6.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -105,6 +105,7 @@ export const helpers = {
       (filters.ratings || []).length +
       (filters.people || []).length +
       (filters.audioLangs || []).length +
+      (filters.subtitleLangs || []).length +
       (filters.minRating != null ? 1 : 0) +
       (filters.minCritic != null ? 1 : 0) +
       (yearActive ? 1 : 0)
@@ -121,6 +122,7 @@ export const helpers = {
       countries: filters.countries,
       person_ids: (filters.people || []).map((p) => p.id),
       audio_langs: filters.audioLangs || [],
+      subtitle_langs: filters.subtitleLangs || [],
       ratings: filters.ratings || [],
       min_rating: filters.minRating ?? null,
       min_critic: filters.minCritic ?? null,
@@ -141,6 +143,19 @@ export const helpers = {
     };
   },
 
+  /**
+   * Which filter groups are folded, given what the user has stored.
+   *
+   * Folded is the default for every group — eleven open ones is a page of
+   * chips to scroll past before reaching the one you came for. What is
+   * stored is only the deviations, so a group opened last night is open
+   * again tonight and one never touched is still folded.
+   */
+  filterCollapse(stored) {
+    const all = Object.fromEntries(FILTER_GROUPS.map((key) => [key, true]));
+    return stored && typeof stored === "object" ? { ...all, ...stored } : all;
+  },
+
   /** A pristine filter set — the single source of that shape. */
   emptyFilters() {
     return {
@@ -150,6 +165,7 @@ export const helpers = {
       ratings: [],
       people: [],
       audioLangs: [],
+      subtitleLangs: [],
       minRating: null,
       minCritic: null,
       yearFrom: null,
@@ -236,6 +252,56 @@ export const helpers = {
       und: "Unbekannt",
     };
     return names[String(code).toLowerCase()] || String(code).toUpperCase();
+  },
+
+  /**
+   * One audio or subtitle track, as a line a person can read.
+   *
+   * The language leads, because that is what anyone scanning the list is
+   * looking for; the technical bits follow. A commentary says so — otherwise
+   * three "Englisch" entries look like a mistake.
+   */
+  trackLabel(track) {
+    if (!track) return "";
+    const bits = [helpers.langLabel(track.language)];
+    if (track.channelLayout) bits.push(track.channelLayout);
+    if (track.codec) bits.push(track.codec);
+    if (track.commentary) bits.push("Kommentar");
+    if (track.forced) bits.push("erzwungen");
+    return bits.join(" · ");
+  },
+
+  /** Which tracks a person should see first: default, then file order. */
+  sortTracks(tracks) {
+    return (tracks || [])
+      .slice()
+      .sort((a, b) => Number(!!b.default) - Number(!!a.default) || a.index - b.index);
+  },
+
+  /**
+   * Is this entry watched? A season or series counts as watched when nothing
+   * below it is still unwatched — Jellyfin never sets `Played` on those.
+   */
+  isWatched(item) {
+    if (!item) return false;
+    if (item.kind === "season" || item.kind === "show") {
+      return item.unplayedCount === 0;
+    }
+    return !!item.watched;
+  },
+
+  /** German label for the mark-watched control of one entry. */
+  watchedLabel(item) {
+    const kind = item && item.kind;
+    const subject =
+      kind === "season" ? "Staffel" : kind === "show" ? "Serie" : null;
+    const done = helpers.isWatched(item);
+    if (subject) {
+      return done
+        ? `${subject} als ungesehen markieren`
+        : `${subject} als gesehen markieren`;
+    }
+    return done ? "Als ungesehen markieren" : "Als gesehen markieren";
   },
 
   /** "94 %" for a critics score, or null when there is none. */
@@ -635,6 +701,45 @@ footer {
 .chipcount:empty { display: none; }
 .pill.emptying { opacity: .4; }
 
+/* Cast & crew filter: a search field with its suggestions right under it. */
+.personsearch { position: relative; margin-bottom: 12px; }
+.personhits {
+  list-style: none; margin: 6px 0 0; padding: 0;
+  border: 1px solid var(--kino-border); border-radius: 12px;
+  background: var(--kino-surface); overflow: hidden;
+}
+.personhits:empty { display: none; border: none; }
+.personhits li + li { border-top: 1px solid var(--kino-border); }
+.personhits button {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border: none; background: transparent; cursor: pointer;
+  color: var(--kino-text); font: inherit; font-size: 13px; text-align: left;
+}
+.personhits button:hover { background: var(--kino-surface2); }
+.personhits .hitart {
+  width: 26px; height: 26px; border-radius: 13px; flex-shrink: 0;
+  background: var(--kino-surface2); overflow: hidden; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; color: var(--kino-text3);
+}
+.personhits .hitart img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.searchnote { font-size: 11px; color: var(--kino-text3); margin: 6px 0 0; }
+
+/* Detail sheet: the tracks a file actually carries. */
+.tracklist { list-style: none; margin: 6px 0 0; padding: 0; }
+.tracklist li {
+  display: flex; align-items: center; gap: 8px; padding: 5px 0;
+  font-size: 12px; color: var(--kino-text2);
+}
+.tracklist li + li { border-top: 1px solid var(--kino-border); }
+.tracklist .std { color: var(--kino-gold); font-size: 10px; font-weight: 800; }
+.trackcol { flex: 1; min-width: 0; }
+.trackcol h4 {
+  margin: 0; font-size: 11px; font-weight: 800; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--kino-text3);
+}
+.trackcols { display: flex; gap: 20px; flex-wrap: wrap; }
+
 /* The CTA stays reachable however long the sheet grows. */
 .filtercta {
   position: sticky; bottom: -24px; z-index: 2;
@@ -725,6 +830,10 @@ const POWER_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
 const HEART_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
   <path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.6 5 6.1 5c2 0 3.5 1 4.4 2.5.4.7 1.4.7 1.8 0C13.2 6 14.7 5 16.7 5c3.5 0 5.5 3.6 4.1 6.7C18.3 16.3 12 21 12 21z"></path></svg>`;
 
+const CHECK_ICON = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="9" stroke-width="1.6"></circle><path d="M8 12.4l2.6 2.6L16 9.5"></path></svg>`;
+
 const VIEW_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
   <rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect>
   <rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg>`;
@@ -783,6 +892,21 @@ const VIEW_MODES = [
   ["list", "Liste"],
 ];
 
+// The filter sheet's groups, in the order they are rendered.
+const FILTER_GROUPS = [
+  "tags",
+  "genres",
+  "people",
+  "ratings",
+  "langs",
+  "sublangs",
+  "score",
+  "countries",
+  "year",
+  "sort",
+  "view",
+];
+
 const VIEW_MODE_STORAGE_KEY = "kino-card-view-mode";
 const GRID_SIZE_STORAGE_KEY = "kino-card-grid-size";
 const FILTER_COLLAPSE_STORAGE_KEY = "kino-card-filter-collapsed";
@@ -829,10 +953,11 @@ function readStoredGridSize() {
 /** Which filter groups the user keeps folded, remembered across sessions. */
 function readStoredCollapse() {
   try {
-    const parsed = JSON.parse(readStored(FILTER_COLLAPSE_STORAGE_KEY, "{}"));
-    return parsed && typeof parsed === "object" ? parsed : {};
+    return helpers.filterCollapse(
+      JSON.parse(readStored(FILTER_COLLAPSE_STORAGE_KEY, "{}"))
+    );
   } catch (err) {
-    return {};
+    return helpers.filterCollapse(null);
   }
 }
 
@@ -877,6 +1002,7 @@ class KinoCard extends CardBase {
       filters: helpers.emptyFilters(),
       filterSheet: false,
       filterCollapsed: readStoredCollapse(),
+      personQuery: "",
       detailId: null,
       detail: null,
       seasons: null,
@@ -899,16 +1025,21 @@ class KinoCard extends CardBase {
     };
     this._resume = [];
     this._recent = [];
+    this._favorites = [];
     this._homeRowsAt = 0;
     this._facets = {
       genres: [],
       countries: [],
       ratings: [],
       audioLanguages: [],
+      subtitleLanguages: [],
       yearMin: null,
       yearMax: null,
     };
     this._searchTimer = null;
+    // Cast-and-crew suggestions for the filter sheet, and the pending lookup.
+    this._personHits = null;
+    this._personTimer = null;
     // The filter sheet's CTA count, kept live while filters change (F4).
     this._filterPreview = null;
     this._previewTimer = null;
@@ -1031,6 +1162,7 @@ class KinoCard extends CardBase {
     if (this._timer) clearInterval(this._timer);
     if (this._searchTimer) clearTimeout(this._searchTimer);
     if (this._previewTimer) clearTimeout(this._previewTimer);
+    if (this._personTimer) clearTimeout(this._personTimer);
   }
 
   /**
@@ -1072,6 +1204,7 @@ class KinoCard extends CardBase {
       genre: counts.genres,
       rating: counts.ratings,
       lang: counts.audioLangs,
+      sublang: counts.subtitleLangs,
     }[kind];
     if (!group) return null;
     const value = group[kind === "tag" ? TAG_FLAGS[key] : key];
@@ -1124,8 +1257,14 @@ class KinoCard extends CardBase {
         return f.genres.length;
       case "ratings":
         return (f.ratings || []).length;
+      case "people":
+        return (f.people || []).length;
       case "langs":
         return (f.audioLangs || []).length;
+      case "sublangs":
+        return (f.subtitleLangs || []).length;
+      case "countries":
+        return (f.countries || []).length;
       case "score":
         return (f.minRating != null ? 1 : 0) + (f.minCritic != null ? 1 : 0);
       case "year":
@@ -1160,8 +1299,49 @@ class KinoCard extends CardBase {
     try {
       this._facets = await this._ws({ type: "kino/library/facets" });
     } catch (err) {
-      this._facets = { genres: [], countries: [], ratings: [], yearMin: null, yearMax: null };
+      this._facets = {
+        genres: [],
+        countries: [],
+        ratings: [],
+        audioLanguages: [],
+        subtitleLanguages: [],
+        yearMin: null,
+        yearMax: null,
+      };
     }
+  }
+
+  /**
+   * Look up cast and crew for the filter sheet's name field.
+   *
+   * The hits are written straight into the open sheet — a re-render would
+   * rebuild the input under the caret and lose the rest of the word.
+   */
+  _searchPeople() {
+    if (this._personTimer) clearTimeout(this._personTimer);
+    const query = this._view.personQuery.trim();
+    if (query.length < 2) {
+      this._personHits = null;
+      this._patchPersonSearch();
+      return;
+    }
+    this._personTimer = setTimeout(async () => {
+      let hits;
+      try {
+        const result = await this._ws({
+          type: "kino/library/persons",
+          query,
+          limit: 12,
+        });
+        hits = result.items || [];
+      } catch (err) {
+        hits = [];
+      }
+      // The person may have typed on, or closed the sheet entirely.
+      if (this._view.personQuery.trim() !== query) return;
+      this._personHits = hits;
+      this._patchPersonSearch();
+    }, 250);
   }
 
   /**
@@ -1315,16 +1495,33 @@ class KinoCard extends CardBase {
     this._render();
   }
 
+  /** The favourites row: films and series together, newest first. */
+  async _loadFavorites() {
+    try {
+      const page = await this._ws({
+        type: "kino/library/search",
+        category: "favorites",
+        limit: 12,
+        offset: 0,
+      });
+      this._favorites = page.items || [];
+    } catch (err) {
+      this._favorites = [];
+    }
+    this._render();
+  }
+
   /**
-   * Fetch the home rows (Weitersehen, Zuletzt hinzugefügt — FR-70) at most
-   * once a minute. Called from render, so the timestamp guard is what keeps
-   * the fetch → render → fetch loop from spinning.
+   * Fetch the home rows (Weitersehen, Zuletzt hinzugefügt, Favoriten —
+   * FR-70) at most once a minute. Called from render, so the timestamp guard
+   * is what keeps the fetch → render → fetch loop from spinning.
    */
   _ensureHomeRows() {
     if (Date.now() - this._homeRowsAt < 60000) return;
     this._homeRowsAt = Date.now();
     this._loadResume();
     this._loadRecent();
+    this._loadFavorites();
   }
 
   /* -- actions ------------------------------------------------------- */
@@ -1355,23 +1552,48 @@ class KinoCard extends CardBase {
     await this._refreshState();
   }
 
+  /** Every copy of one entry the card is currently holding. */
+  _findItem(itemId) {
+    const lists = [
+      this._view.detail ? [this._view.detail] : [],
+      this._library.items,
+      this._resume,
+      this._recent,
+      this._favorites,
+      this._view.episodes || [],
+      this._view.seasons || [],
+      this._view.similar || [],
+    ];
+    for (const list of lists) {
+      const found = list.find((i) => i && i.id === itemId);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  /** Write one change into every copy of an entry the card is holding. */
+  _patchItem(itemId, patch) {
+    const flip = (it) => (it && it.id === itemId ? { ...it, ...patch } : it);
+    if (this._view.detail && this._view.detail.id === itemId) {
+      this._view.detail = { ...this._view.detail, ...patch };
+    }
+    this._library.items = this._library.items.map(flip);
+    this._resume = this._resume.map(flip);
+    this._recent = this._recent.map(flip);
+    this._favorites = this._favorites.map(flip);
+    if (this._view.episodes) this._view.episodes = this._view.episodes.map(flip);
+    if (this._view.seasons) this._view.seasons = this._view.seasons.map(flip);
+    if (this._view.similar) this._view.similar = this._view.similar.map(flip);
+  }
+
   /**
    * Flip a favourite optimistically in every copy of the item the card
    * holds, then write it back to the catalogue; on failure, flip back.
    */
   async _toggleFavorite(itemId) {
-    const current =
-      (this._view.detail && this._view.detail.id === itemId
-        ? this._view.detail.favorite
-        : (this._library.items.find((i) => i.id === itemId) || {}).favorite) || false;
+    const current = !!(this._findItem(itemId) || {}).favorite;
     const apply = (favorite) => {
-      const flip = (it) => (it && it.id === itemId ? { ...it, favorite } : it);
-      if (this._view.detail && this._view.detail.id === itemId) {
-        this._view.detail = { ...this._view.detail, favorite };
-      }
-      this._library.items = this._library.items.map(flip);
-      this._resume = this._resume.map(flip);
-      this._recent = this._recent.map(flip);
+      this._patchItem(itemId, { favorite });
       this._render();
     };
     apply(!current);
@@ -1381,11 +1603,72 @@ class KinoCard extends CardBase {
         item_id: itemId,
         favorite: !current,
       });
+      // The Favoriten row is a query result, not a flag — rebuild it so a
+      // title just added appears there and one just removed leaves.
+      this._loadFavorites();
     } catch (err) {
       apply(current);
       this._actionError = err.message;
       this._render();
     }
+  }
+
+  /**
+   * Mark one film, episode, season or series as watched — or undo that.
+   *
+   * Optimistic like the heart, but a season cascades down in Jellyfin, so
+   * anything below the toggled entry is re-read rather than guessed at.
+   */
+  async _toggleWatched(itemId) {
+    const item = this._findItem(itemId);
+    if (!item) return;
+    const current = helpers.isWatched(item);
+    const cascades = item.kind === "season" || item.kind === "show";
+    const apply = (watched) => {
+      const patch = { watched };
+      // Season and series rows show a "still to watch" count, not a tick.
+      if (item.unplayedCount != null) {
+        patch.unplayedCount = watched ? 0 : item.unplayedCount || 1;
+      }
+      if (watched) patch.continueWatching = null;
+      this._patchItem(itemId, patch);
+      this._render();
+    };
+    apply(!current);
+    try {
+      await this._ws({
+        type: "kino/library/watched",
+        item_id: itemId,
+        watched: !current,
+      });
+    } catch (err) {
+      apply(current);
+      this._actionError = err.message;
+      this._render();
+      return;
+    }
+    // An episode changes its season's count; a season changes its episodes.
+    if (cascades && this._view.seasonId) {
+      await this._loadEpisodes();
+    }
+    if (this._view.detailId && (cascades || item.kind === "episode")) {
+      await this._reloadSeasons();
+    }
+  }
+
+  /** Refresh the season strip's watched counts, keeping the open season. */
+  async _reloadSeasons() {
+    if (!this._view.seasons) return;
+    try {
+      const result = await this._ws({
+        type: "kino/library/seasons",
+        series_id: this._view.detailId,
+      });
+      this._view.seasons = result.items || [];
+    } catch (err) {
+      /* the strip keeps the counts it had */
+    }
+    this._render();
   }
 
   async _forceRefresh() {
@@ -1798,19 +2081,31 @@ class KinoCard extends CardBase {
     }
   }
 
+  /** One home row, or nothing at all when the row would be empty. */
+  _homeRow(title, items, showResume, extra = "") {
+    if (!items || !items.length) return "";
+    return `<div class="section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <h3 style="margin:0">${title}</h3>
+        ${extra}
+      </div>
+      <div class="posterrow hscroll">${items
+        .map((t) => this._poster(t, showResume))
+        .join("")}</div>
+    </div>`;
+  }
+
   _renderLibraryHome() {
-    const resumeRow = this._resume.length
-      ? `<div class="section">
-           <h3>Weitersehen</h3>
-           <div class="posterrow hscroll">${this._resume.map((t) => this._poster(t, true)).join("")}</div>
-         </div>`
-      : "";
-    const recentRow = this._recent.length
-      ? `<div class="section">
-           <h3>Zuletzt hinzugefügt</h3>
-           <div class="posterrow hscroll">${this._recent.map((t) => this._poster(t, false)).join("")}</div>
-         </div>`
-      : "";
+    const resumeRow = this._homeRow("Weitersehen", this._resume, true);
+    const recentRow = this._homeRow("Zuletzt hinzugefügt", this._recent, false);
+    // Favourites are a filter, so this row can hand the whole list over to
+    // the library rather than stopping at the twelve that fit.
+    const favoriteRow = this._homeRow(
+      "Favoriten",
+      this._favorites,
+      true,
+      '<a class="link" data-act="open-favorites">Alle anzeigen</a>'
+    );
     return `
       <div class="section">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -1826,6 +2121,7 @@ class KinoCard extends CardBase {
         </div>
       </div>
       ${resumeRow}
+      ${favoriteRow}
       ${recentRow}`;
   }
 
@@ -1946,6 +2242,11 @@ class KinoCard extends CardBase {
       ...(filters.ratings || []).map((r) => ["rating", r, r]),
       ...(filters.people || []).map((p) => ["person", p.id, p.name]),
       ...(filters.audioLangs || []).map((l) => ["lang", l, helpers.langLabel(l)]),
+      ...(filters.subtitleLangs || []).map((l) => [
+        "sublang",
+        l,
+        `UT ${helpers.langLabel(l)}`,
+      ]),
       ...(filters.minRating != null
         ? [["minRating", String(filters.minRating), `★ ${filters.minRating}+`]]
         : []),
@@ -2114,10 +2415,9 @@ class KinoCard extends CardBase {
         ).join("")}
       </div>`;
 
-    // Series carry no audio streams of their own, so the language group
-    // would only ever say "0" there — it stays a movie filter.
-    const langs =
-      this._view.category === "shows" ? [] : this._facets.audioLanguages || [];
+    // A series has no streams of its own, but the catalogue lends it its
+    // episodes' languages — so both groups mean something in either category.
+    const langLabel = (v) => helpers.langLabel(v);
 
     return `<div class="sheet" data-sheet="filter" style="z-index:35">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -2127,8 +2427,10 @@ class KinoCard extends CardBase {
       </div>
       ${this._filterGroup("tags", "Format &amp; Status", multi(TAGS, "tag", f.tags))}
       ${this._filterGroup("genres", "Genre", multi(this._facets.genres || [], "genre", f.genres))}
+      ${this._filterGroup("people", "Besetzung &amp; Crew", this._renderPersonFilter())}
       ${this._filterGroup("ratings", "Altersfreigabe", multi(this._facets.ratings || [], "rating", f.ratings || []))}
-      ${this._filterGroup("langs", "Tonspur", multi(langs, "lang", f.audioLangs || [], (v) => helpers.langLabel(v)))}
+      ${this._filterGroup("langs", "Tonspur", multi(this._facets.audioLanguages || [], "lang", f.audioLangs || [], langLabel))}
+      ${this._filterGroup("sublangs", "Untertitel", multi(this._facets.subtitleLanguages || [], "sublang", f.subtitleLangs || [], langLabel))}
       ${this._filterGroup("score", "Bewertung", scoreBody)}
       ${this._filterGroup("countries", "Land", multi(this._facets.countries || [], "country", f.countries))}
       ${this._filterGroup("year", "Erscheinungsjahr", this._renderYearRange())}
@@ -2138,6 +2440,81 @@ class KinoCard extends CardBase {
         <button class="primary" data-role="filter-cta" data-act="close-filters">${this._filterPreview ?? this._library.total} Titel anzeigen</button>
       </div>
     </div>`;
+  }
+
+  /**
+   * The cast-and-crew filter: chosen names, a search field, its suggestions.
+   *
+   * A free-text name would be a guess — `/Persons` only ever offers people
+   * the catalogue actually credits, so a chosen name always returns titles.
+   */
+  _renderPersonFilter() {
+    return `<div class="personsearch">
+      <div class="chipwrap" data-role="person-chips">${this._renderPersonChips()}</div>
+      <input type="text" data-field="person-search" placeholder="Name suchen…"
+        value="${this._esc(this._view.personQuery || "")}" autocomplete="off">
+      <div data-role="person-hits">${this._renderPersonHits()}</div>
+    </div>`;
+  }
+
+  /** The people already filtered on: tap one to drop it again. */
+  _renderPersonChips() {
+    return (this._view.filters.people || [])
+      .map(
+        (p) => `<button class="pill" aria-pressed="true" data-act="toggle-person"
+          data-key="${this._esc(p.id)}" data-name="${this._esc(p.name)}"
+          title="${this._esc(p.name)} entfernen">${this._esc(p.name)} ✕</button>`
+      )
+      .join("");
+  }
+
+  /** Name suggestions under the field, minus the ones already chosen. */
+  _renderPersonHits() {
+    const hits = this._personHits;
+    if (hits == null) {
+      return (this._view.personQuery || "").trim().length
+        ? '<p class="searchnote">Mindestens zwei Buchstaben eingeben.</p>'
+        : "";
+    }
+    const chosen = new Set((this._view.filters.people || []).map((p) => p.id));
+    const rest = hits.filter((p) => !chosen.has(p.id));
+    if (!rest.length) {
+      return '<p class="searchnote">Keine passenden Namen in der Bibliothek.</p>';
+    }
+    const sig = this._kino ? this._kino.artworkSignature : null;
+    return `<ul class="personhits">${rest
+      .map((p) => {
+        const initials = (p.name || "")
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((w) => w[0] || "")
+          .join("")
+          .toUpperCase();
+        const img = p.imageTag
+          ? `<img loading="lazy" src="${helpers.artworkUrl(p.id, "Primary", sig)}" alt="" onerror="this.remove()">`
+          : "";
+        return `<li><button data-act="toggle-person" data-key="${this._esc(p.id)}"
+          data-name="${this._esc(p.name)}">
+          <span class="hitart">${this._esc(initials)}${img}</span>
+          <span>${this._esc(p.name)}</span>
+        </button></li>`;
+      })
+      .join("")}</ul>`;
+  }
+
+  /**
+   * Refresh the chosen names and the suggestions without a re-render.
+   *
+   * Rebuilding the sheet here would replace the input the user is typing in.
+   */
+  _patchPersonSearch() {
+    const sheet =
+      this._container && this._container.querySelector('.sheet[data-sheet="filter"]');
+    if (!sheet) return;
+    const chips = sheet.querySelector('[data-role="person-chips"]');
+    if (chips) chips.innerHTML = this._renderPersonChips();
+    const hits = sheet.querySelector('[data-role="person-hits"]');
+    if (hits) hits.innerHTML = this._renderPersonHits();
   }
 
   /**
@@ -2158,6 +2535,7 @@ class KinoCard extends CardBase {
       genre: f.genres,
       rating: f.ratings || [],
       lang: f.audioLangs || [],
+      sublang: f.subtitleLangs || [],
       country: f.countries,
     };
     for (const el of sheet.querySelectorAll('[data-act="toggle-filter"]')) {
@@ -2215,6 +2593,7 @@ class KinoCard extends CardBase {
     return `<div class="sheet" data-sheet="detail">
       <div style="display:flex;align-items:center;gap:10px">
         <a class="link" style="flex:1" data-act="close-detail">‹ Zurück</a>
+        ${this._watchedButton(item)}
         <button class="iconbtn" data-act="toggle-favorite" data-key="${this._esc(item.id)}"
           aria-pressed="${!!item.favorite}"
           title="${item.favorite ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen"}">${HEART_ICON}</button>
@@ -2269,6 +2648,7 @@ class KinoCard extends CardBase {
                   .join("")}</div>`
               : ""
           }
+          ${this._renderTrailer(item)}
           ${
             item.kind === "show"
               ? this._renderSeriesBody()
@@ -2281,9 +2661,76 @@ class KinoCard extends CardBase {
                        : ""
                    }`
           }
+          ${this._renderTracks(item)}
           ${this._renderPeople(item)}
           ${this._renderSimilar()}
         </div>
+      </div>
+    </div>`;
+  }
+
+  /** The "gesehen" toggle for one entry, as a labelled tick. */
+  _watchedButton(item) {
+    if (!item || item.kind === "show") return "";
+    const done = helpers.isWatched(item);
+    return `<button class="iconbtn" data-act="toggle-watched" data-key="${this._esc(item.id)}"
+      aria-pressed="${done}" title="${this._esc(helpers.watchedLabel(item))}"
+      style="color:${done ? "var(--kino-teal)" : "var(--kino-text3)"}">${CHECK_ICON}</button>`;
+  }
+
+  /**
+   * The trailer, watchable on the phone before the room is even on.
+   *
+   * Jellyfin's trailers are links to YouTube and the like, so this opens a
+   * tab rather than pretending Kino can stream them.
+   */
+  _renderTrailer(item) {
+    const trailers = item.trailers || [];
+    if (!trailers.length) return "";
+    // One trailer needs no name; several do, or they are three identical
+    // buttons.
+    return trailers
+      .slice(0, 3)
+      .map(
+        (trailer, index) => `<button class="ghost" style="width:100%;margin-top:10px"
+          data-act="trailer" data-key="${index}">▶ ${this._esc(
+            trailers.length > 1 ? trailer.name || "Trailer" : "Trailer ansehen"
+          )}</button>`
+      )
+      .join("");
+  }
+
+  /**
+   * Every audio and subtitle track the file carries (F17).
+   *
+   * The one-line `audioFormat` above names the first stream only; a disc with
+   * a German and an English mix, plus four subtitle tracks, is a different
+   * proposition, and that is exactly what decides whether tonight works.
+   */
+  _renderTracks(item) {
+    const audio = helpers.sortTracks(item.audioTracks);
+    const subs = helpers.sortTracks(item.subtitleTracks);
+    if (!audio.length && !subs.length) return "";
+    const column = (title, tracks, empty) => `<div class="trackcol">
+      <h4>${title}</h4>
+      ${
+        tracks.length
+          ? `<ul class="tracklist">${tracks
+              .map(
+                (t) => `<li>
+                  <span style="flex:1;min-width:0">${this._esc(helpers.trackLabel(t))}</span>
+                  ${t.default ? '<span class="std" title="Standardspur">STD</span>' : ""}
+                </li>`
+              )
+              .join("")}</ul>`
+          : `<p class="searchnote">${empty}</p>`
+      }
+    </div>`;
+    return `<div class="section" style="margin-top:22px">
+      <h3>Tonspuren &amp; Untertitel</h3>
+      <div class="trackcols">
+        ${column(`Ton (${audio.length})`, audio, "Keine Tonspur.")}
+        ${column(`Untertitel (${subs.length})`, subs, "Keine Untertitel.")}
       </div>
     </div>`;
   }
@@ -2368,6 +2815,15 @@ class KinoCard extends CardBase {
           }</button>`
       )
       .join("")}</div>`;
+    // The open season can be ticked off in one go — Jellyfin cascades that
+    // down to every episode, which is what "Staffel gesehen" has to mean.
+    const season = seasons.find((s) => s.id === this._view.seasonId);
+    const seasonAction = season
+      ? `<button class="ghost" style="width:100%;margin:4px 0 10px"
+           data-act="toggle-watched" data-key="${this._esc(season.id)}">
+           ${this._esc(helpers.watchedLabel(season))}
+         </button>`
+      : "";
     const episodes = this._view.episodes;
     let list;
     if (!episodes) {
@@ -2377,7 +2833,7 @@ class KinoCard extends CardBase {
     } else {
       list = `<div>${episodes.map((ep) => this._episodeRow(ep)).join("")}</div>`;
     }
-    return strip + list;
+    return strip + seasonAction + list;
   }
 
   /** One tappable episode row: thumb, code · title, runtime, tick, resume. */
@@ -2404,7 +2860,9 @@ class KinoCard extends CardBase {
         <div class="meta">${this._esc(meta)}</div>
       </div>
       <div class="flags" style="display:flex;align-items:center;gap:8px">
-        ${ep.watched ? '<span class="seen" title="Gesehen">✓</span>' : ""}
+        <button class="iconbtn" data-act="toggle-watched" data-key="${this._esc(ep.id)}"
+          aria-pressed="${!!ep.watched}" title="${this._esc(helpers.watchedLabel(ep))}"
+          style="color:${ep.watched ? "var(--kino-teal)" : "var(--kino-text3)"}">${CHECK_ICON}</button>
         <span class="round" style="display:flex;align-items:center;justify-content:center">▶</span>
       </div>
     </div>`;
@@ -2682,6 +3140,20 @@ class KinoCard extends CardBase {
         this._render();
         await this._loadLibrary();
         break;
+      case "open-favorites": {
+        // The row shows twelve; the library shows all of them, filterable.
+        const filters = helpers.emptyFilters();
+        filters.tags = ["Favoriten"];
+        view.main = "library";
+        view.category = "movies";
+        view.query = "";
+        view.filters = filters;
+        this._filterPreview = null;
+        this._facetCounts = null;
+        this._render();
+        await this._loadLibrary();
+        break;
+      }
       case "category":
         view.category = key;
         this._render();
@@ -2694,6 +3166,8 @@ class KinoCard extends CardBase {
       case "open-filters":
         view.filterSheet = true;
         this._filterPreview = null;
+        view.personQuery = "";
+        this._personHits = null;
         this._render();
         // Counts and the CTA total straight away, not first after a toggle.
         this._previewFilterCount();
@@ -2706,9 +3180,29 @@ class KinoCard extends CardBase {
         break;
       case "reset-filters":
         view.filters = helpers.emptyFilters();
+        view.personQuery = "";
+        this._personHits = null;
         this._render();
         this._previewFilterCount();
         break;
+      case "toggle-person": {
+        // Adding a name clears the field, so the next one starts fresh.
+        const people = view.filters.people || [];
+        const has = people.some((p) => p.id === key);
+        view.filters.people = has
+          ? people.filter((p) => p.id !== key)
+          : [...people, { id: key, name: target.dataset.name || "?" }];
+        if (!has) {
+          view.personQuery = "";
+          this._personHits = null;
+          const field = this._container.querySelector('[data-field="person-search"]');
+          if (field) field.value = "";
+        }
+        this._patchPersonSearch();
+        this._syncFilterChips();
+        this._previewFilterCount();
+        break;
+      }
       case "toggle-group": {
         // Fold in place — a re-render mid-scroll is exactly what made the
         // sheet jump.
@@ -2749,6 +3243,7 @@ class KinoCard extends CardBase {
             country: "countries",
             rating: "ratings",
             lang: "audioLangs",
+            sublang: "subtitleLangs",
           }[kind];
           const list = f[bucket] || [];
           if (act === "toggle-filter" && bucket === "tags") {
@@ -2804,6 +3299,15 @@ class KinoCard extends CardBase {
       case "toggle-favorite":
         await this._toggleFavorite(key);
         break;
+      case "toggle-watched":
+        await this._toggleWatched(key);
+        break;
+      case "trailer": {
+        const trailer = ((view.detail || {}).trailers || [])[Number(key)];
+        // A trailer lives on YouTube, not on the NAS — the browser plays it.
+        if (trailer) window.open(trailer.url, "_blank", "noopener,noreferrer");
+        break;
+      }
       case "force-refresh":
         await this._forceRefresh();
         break;
@@ -2979,7 +3483,13 @@ class KinoCard extends CardBase {
   }
 
   _onInput(event) {
-    if (event.target.dataset.field !== "query") return;
+    const field = event.target.dataset.field;
+    if (field === "person-search") {
+      this._view.personQuery = event.target.value;
+      this._searchPeople();
+      return;
+    }
+    if (field !== "query") return;
     this._view.query = event.target.value;
     // Incremental results as the user types, without a request per keystroke.
     if (this._searchTimer) clearTimeout(this._searchTimer);
