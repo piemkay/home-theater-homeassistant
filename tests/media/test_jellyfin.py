@@ -1361,6 +1361,26 @@ class TestSeriesLanguages:
         ]
         assert len(sweeps) == 1
 
+    async def test_the_sweep_gets_more_time_than_an_ordinary_read(self):
+        """It is the one read that grows with the library, not with the page."""
+
+        class TimingSession(SeriesSession):
+            def __init__(self):
+                super().__init__()
+                self.timeouts: list[float | None] = []
+
+            async def request(self, method, url, *, params=None, timeout=None, **kw):
+                if (params or {}).get("IncludeItemTypes") == "Episode":
+                    self.timeouts.append(timeout)
+                return await super().request(method, url, params=params, **kw)
+
+        session = TimingSession()
+        await _client(session, timeout=15.0).facet_counts(
+            MediaQuery(category=Category.SHOWS)
+        )
+
+        assert session.timeouts == [90.0]
+
     async def test_a_failing_episode_sweep_leaves_the_series_browsable(self):
         class BrokenSession(SeriesSession):
             async def request(self, method, url, *, params=None, **kwargs):

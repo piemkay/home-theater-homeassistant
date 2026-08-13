@@ -101,6 +101,9 @@ _SCAN_TTL_SECONDS = 30.0
 #: are added, not while someone taps chips, so it is cached far longer.
 _EPISODE_INDEX_TTL_SECONDS = 900.0
 
+#: …and it is allowed to take far longer than an ordinary read.
+_EPISODE_SWEEP_TIMEOUT = 90.0
+
 #: Stream titles that mark a track as *about* the film rather than a way to
 #: watch it. Jellyfin has no flag for this, so the title is the only signal.
 _COMMENTARY_PATTERN = re.compile(
@@ -239,6 +242,7 @@ class JellyfinClient:
         params: Mapping[str, Any] | None = None,
         json: Mapping[str, Any] | None = None,
         raw: bool = False,
+        timeout: float | None = None,
     ) -> Any:
         url = f"{self._base}/{path.lstrip('/')}"
         headers = {"Authorization": self.authorization_header()}
@@ -254,7 +258,7 @@ class JellyfinClient:
                 params=clean,
                 json=json,
                 headers=headers,
-                timeout=self._timeout,
+                timeout=timeout if timeout is not None else self._timeout,
             )
         except (TimeoutError, asyncio.TimeoutError) as err:  # noqa: UP041 - two distinct classes on Python 3.10, which CI still runs
             raise MediaBackendError(
@@ -532,6 +536,11 @@ class JellyfinClient:
                 "EnableUserData": False,
                 "EnableTotalRecordCount": False,
             },
+            # Every episode with every stream on it: ~7 s for 2 962 episodes
+            # here, which already eats half the ordinary budget. This one read
+            # gets room to grow rather than silently timing out and taking the
+            # series language facets down with it.
+            timeout=_EPISODE_SWEEP_TIMEOUT,
         )
         audio: dict[str, set[str]] = {}
         subs: dict[str, set[str]] = {}
