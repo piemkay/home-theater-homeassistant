@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.6.1";
+const CARD_VERSION = "0.6.2";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -316,11 +316,22 @@ export const helpers = {
     return bits.join(" · ");
   },
 
-  /** Which tracks a person should see first: default, then file order. */
+  /**
+   * Which tracks a person should see first: the default one, then the ways
+   * to actually watch it, then the commentaries, then file order.
+   *
+   * The list is cut to its first few, so a commentary sitting at index 2
+   * would otherwise spend one of those slots on something nobody picked.
+   */
   sortTracks(tracks) {
     return (tracks || [])
       .slice()
-      .sort((a, b) => Number(!!b.default) - Number(!!a.default) || a.index - b.index);
+      .sort(
+        (a, b) =>
+          Number(!!b.default) - Number(!!a.default) ||
+          Number(!!a.commentary) - Number(!!b.commentary) ||
+          a.index - b.index
+      );
   },
 
   /**
@@ -716,6 +727,8 @@ footer {
 /* Detail sheet: community star and critics tomato in one row. */
 .scorerow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .score { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--kino-text2); }
+/* The same badge inside a tile's meta line, where it rides with the text. */
+.score.tiny { gap: 3px; font-size: inherit; font-weight: inherit; color: inherit; vertical-align: -1px; }
 
 /* Cast & crew: round portraits that scroll sideways, like Jellyfin's row. */
 .personrow { display: flex; gap: 12px; overflow-x: auto; padding: 4px 0 6px; }
@@ -784,6 +797,10 @@ footer {
   text-transform: uppercase; color: var(--kino-text3);
 }
 .trackcols { display: flex; gap: 20px; flex-wrap: wrap; }
+.trackmore {
+  border: none; background: transparent; padding: 6px 0 0; margin: 0;
+  font-family: inherit; font-size: 12px; cursor: pointer;
+}
 
 /* The CTA stays reachable however long the sheet grows. */
 .filtercta {
@@ -890,12 +907,23 @@ const TOMATO_FRESH_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" aria-
 const TOMATO_ROTTEN_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
   <path fill="#0ac855" d="M12 3l1.8 3.6 3.9-1.9-.9 3.9 4.7 1-3.7 2.7 2.8 3.9-4.7-1 .1 4.8-3-3.1-3 3.1.1-4.8-4.7 1 2.8-3.9L4.5 9.6l4.7-1-.9-3.9 3.9 1.9L12 3z"></path></svg>`;
 
+// The same two at grid size, where they sit inside an 11px meta line.
+const TOMATO_FRESH_SMALL = TOMATO_FRESH_ICON.replace(/width="13" height="13"/, 'width="10" height="10"');
+const TOMATO_ROTTEN_SMALL = TOMATO_ROTTEN_ICON.replace(/width="13" height="13"/, 'width="10" height="10"');
+
 /** The critics badge for one item, or "" when no score is on file. */
-function criticBadge(item) {
+function criticBadge(item, compact = false) {
   const label = helpers.criticLabel(item && item.criticRating);
   if (!label) return "";
-  const icon = item.criticRating >= 60 ? TOMATO_FRESH_ICON : TOMATO_ROTTEN_ICON;
-  return `<span class="score" title="Kritikerwertung (Rotten Tomatoes)">${icon}${label}</span>`;
+  const fresh = item.criticRating >= 60;
+  const icon = compact
+    ? fresh
+      ? TOMATO_FRESH_SMALL
+      : TOMATO_ROTTEN_SMALL
+    : fresh
+      ? TOMATO_FRESH_ICON
+      : TOMATO_ROTTEN_ICON;
+  return `<span class="score${compact ? " tiny" : ""}" title="Kritikerwertung (Rotten Tomatoes)">${icon}${label}</span>`;
 }
 
 const SORT_OPTIONS = [
@@ -940,6 +968,11 @@ const VIEW_MODES = [
 // How many chips a facet group shows before it offers "+ N weitere". Sized
 // so the common values fit on a phone screen without a scroll of their own.
 const FACET_CHIP_LIMIT = 14;
+
+// How many audio or subtitle tracks the detail sheet shows before it offers
+// the rest. Enough to answer "is it there", short enough that a 21-track
+// remux does not bury the cast row underneath it.
+const TRACK_PREVIEW = 3;
 
 // The filter sheet's groups, in the order they are rendered.
 const FILTER_GROUPS = [
@@ -1061,6 +1094,8 @@ class KinoCard extends CardBase {
       episodes: null,
       similar: null,
       overviewOpen: false,
+      // Which track column has been asked to show its whole list.
+      tracksExpanded: {},
       playingOpen: false,
       powerConfirm: false,
       activityMenu: false,
@@ -1519,6 +1554,7 @@ class KinoCard extends CardBase {
     view.seasonId = null;
     view.episodes = null;
     view.similar = null;
+    view.tracksExpanded = {};
   }
 
   async _loadResume() {
@@ -2193,6 +2229,20 @@ class KinoCard extends CardBase {
       </div>`;
   }
 
+  /**
+   * The meta line under a tile: `2016 · 106 Min · ★7.2 · 🍅84 %`.
+   *
+   * The critics score belongs on the wall, not only in the detail sheet —
+   * a community 7.2 and a critics 40 % are two different evenings, and the
+   * point of a grid is to choose without opening anything.
+   */
+  _metaLine(item) {
+    const text = helpers.itemMeta(item);
+    const critic = criticBadge(item, true);
+    if (!text && !critic) return '<div class="meta"></div>';
+    return `<div class="meta">${this._esc(text)}${critic ? ` ${critic}` : ""}</div>`;
+  }
+
   /** The badges and the resume bar that every layout shares. */
   _artOverlays(item, showResume) {
     return `
@@ -2214,7 +2264,7 @@ class KinoCard extends CardBase {
         ${this._artOverlays(item, showResume)}
       </div>
       <div class="title">${this._esc(helpers.itemTitle(item))}</div>
-      <div class="meta">${this._esc(helpers.itemMeta(item))}</div>
+      ${this._metaLine(item)}
     </div>`;
   }
 
@@ -2237,7 +2287,7 @@ class KinoCard extends CardBase {
         }</div>
         <div style="flex:1;min-width:0">
           <div class="title">${this._esc(helpers.itemTitle(item))}</div>
-          <div class="meta">${this._esc(helpers.itemMeta(item))}</div>
+          ${this._metaLine(item)}
         </div>
         <div class="flags">
           ${item.res4k ? '<span class="badge">4K</span>' : ""}
@@ -2267,7 +2317,7 @@ class KinoCard extends CardBase {
         ${this._artOverlays(item, true)}
       </div>
       <div class="title">${this._esc(helpers.itemTitle(item))}</div>
-      <div class="meta">${this._esc(helpers.itemMeta(item))}</div>
+      ${this._metaLine(item)}
     </div>`;
   }
 
@@ -2777,26 +2827,41 @@ class KinoCard extends CardBase {
     const audio = helpers.sortTracks(item.audioTracks);
     const subs = helpers.sortTracks(item.subtitleTracks);
     if (!audio.length && !subs.length) return "";
-    const column = (title, tracks, empty) => `<div class="trackcol">
-      <h4>${title}</h4>
-      ${
-        tracks.length
-          ? `<ul class="tracklist">${tracks
-              .map(
-                (t) => `<li>
-                  <span style="flex:1;min-width:0">${this._esc(helpers.trackLabel(t))}</span>
-                  ${t.default ? '<span class="std" title="Standardspur">STD</span>' : ""}
-                </li>`
-              )
-              .join("")}</ul>`
-          : `<p class="searchnote">${empty}</p>`
-      }
-    </div>`;
+    // A remux with 21 subtitle tracks would otherwise push the cast, the
+    // similar titles and everything below them off the bottom of the sheet.
+    // Three is what answers "can we watch this tonight"; the rest is one tap.
+    const expanded = this._view.tracksExpanded || {};
+    const column = (kind, title, tracks, empty) => {
+      const shown = expanded[kind] ? tracks : tracks.slice(0, TRACK_PREVIEW);
+      const rest = tracks.length - shown.length;
+      return `<div class="trackcol">
+        <h4>${title}</h4>
+        ${
+          tracks.length
+            ? `<ul class="tracklist">${shown
+                .map(
+                  (t) => `<li>
+                    <span style="flex:1;min-width:0">${this._esc(helpers.trackLabel(t))}</span>
+                    ${t.default ? '<span class="std" title="Standardspur">STD</span>' : ""}
+                  </li>`
+                )
+                .join("")}</ul>
+               ${
+                 rest > 0
+                   ? `<button class="link trackmore" data-act="expand-tracks" data-key="${kind}">
+                        + ${rest} weitere
+                      </button>`
+                   : ""
+               }`
+            : `<p class="searchnote">${empty}</p>`
+        }
+      </div>`;
+    };
     return `<div class="section" style="margin-top:22px">
       <h3>Tonspuren &amp; Untertitel</h3>
       <div class="trackcols">
-        ${column(`Ton (${audio.length})`, audio, "Keine Tonspur.")}
-        ${column(`Untertitel (${subs.length})`, subs, "Keine Untertitel.")}
+        ${column("audio", `Ton (${audio.length})`, audio, "Keine Tonspur.")}
+        ${column("subtitle", `Untertitel (${subs.length})`, subs, "Keine Untertitel.")}
       </div>
     </div>`;
   }
@@ -3279,6 +3344,10 @@ class KinoCard extends CardBase {
         view.facetsExpanded = { ...view.facetsExpanded, [key]: true };
         this._render();
         break;
+      case "expand-tracks":
+        view.tracksExpanded = { ...view.tracksExpanded, [key]: true };
+        this._render();
+        break;
       case "toggle-group": {
         // Fold in place — a re-render mid-scroll is exactly what made the
         // sheet jump.
@@ -3395,6 +3464,7 @@ class KinoCard extends CardBase {
         view.episodes = null;
         view.similar = null;
         view.overviewOpen = false;
+        view.tracksExpanded = {};
         this._render();
         // Runs alongside the item fetch; it re-checks the open detail ID.
         this._loadSimilar(key);

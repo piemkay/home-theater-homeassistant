@@ -841,12 +841,12 @@ class TestScanSearch:
 
 
 class TestNewServerFilters:
-    async def test_person_filter_is_server_side(self):
+    async def test_one_name_is_server_side_and_exact(self):
         session = FakeSession(
             {"/Users/user-1/Items": {"Items": [], "TotalRecordCount": 0}}
         )
-        await _client(session).search(MediaQuery(person_ids=("p1", "p2")))
-        assert session.requests[0]["params"]["PersonIds"] == "p1|p2"
+        await _client(session).search(MediaQuery(person_ids=("p1",)))
+        assert session.requests[0]["params"]["PersonIds"] == "p1"
 
     async def test_min_community_rating_reaches_the_server(self):
         session = FakeSession(
@@ -1151,6 +1151,97 @@ class TestTracks:
 
         assert german.total == 1
         assert english.total == 0
+
+
+class TestSeveralPeople:
+    """Two stacked names mean "with both of them", like stacked genre chips.
+
+    Jellyfin can express neither: asked for two `|`-joined PersonIds the live
+    server dropped the filter and answered with 643 of 620 films.
+    """
+
+    CATALOGUE: ClassVar[dict[str, list[str]]] = {
+        # person -> the titles crediting them
+        "holland": ["homecoming", "far-from-home", "civil-war"],
+        "zendaya": ["homecoming", "far-from-home", "dune"],
+    }
+
+    def _session(self) -> FakeSession:
+        items = [
+            _scan_movie(i) for i in ("homecoming", "far-from-home", "civil-war", "dune")
+        ]
+        catalogue = self.CATALOGUE
+
+        class PeopleSession(FakeSession):
+            async def request(self, method, url, *, params=None, **kwargs):
+                await super().request(method, url, params=params, **kwargs)
+                params = dict(params or {})
+                person = params.get("PersonIds")
+                if person and "Fields" not in params:
+                    wanted = catalogue.get(person, [])
+                    return FakeResponse(200, {"Items": [{"Id": i} for i in wanted]})
+                if params.get("Ids"):
+                    keep = params["Ids"].split(",")
+                    return FakeResponse(
+                        200, {"Items": [i for i in items if i["Id"] in keep]}
+                    )
+                return FakeResponse(200, {"Items": items, "TotalRecordCount": 4})
+
+        return PeopleSession()
+
+    async def test_two_names_narrow_to_the_titles_crediting_both(self):
+        session = self._session()
+
+        page = await _client(session).search(
+            MediaQuery(person_ids=("holland", "zendaya"))
+        )
+
+        assert page.total == 2
+        assert {item.id for item in page.items} == {"homecoming", "far-from-home"}
+
+    async def test_the_scan_is_not_prefiltered_by_the_broken_parameter(self):
+        session = self._session()
+
+        await _client(session).search(MediaQuery(person_ids=("holland", "zendaya")))
+
+        scans = [
+            r
+            for r in session.requests
+            if "Fields" in r["params"] and "Ids" not in r["params"]
+        ]
+        assert scans, "the catalogue scan should have run"
+        assert "PersonIds" not in scans[0]["params"]
+
+    async def test_one_request_per_name_and_no_more(self):
+        session = self._session()
+
+        await _client(session).search(MediaQuery(person_ids=("holland", "zendaya")))
+
+        lookups = [
+            r["params"]["PersonIds"]
+            for r in session.requests
+            if "PersonIds" in r["params"]
+        ]
+        assert lookups == ["holland", "zendaya"]
+
+    async def test_names_with_nothing_in_common_return_nothing(self):
+        session = self._session()
+
+        page = await _client(session).search(
+            MediaQuery(person_ids=("holland", "nobody"))
+        )
+
+        assert page.total == 0
+        # …and the second lookup is the last one: an empty intersection
+        # cannot be rescued by asking about a third name.
+        lookups = [r for r in session.requests if "PersonIds" in r["params"]]
+        assert len(lookups) == 2
+
+    async def test_facet_counts_see_the_same_narrowed_universe(self):
+        counts = await _client(self._session()).facet_counts(
+            MediaQuery(person_ids=("holland", "zendaya"))
+        )
+        assert counts["total"] == 2
 
 
 class TestLanguageCodes:

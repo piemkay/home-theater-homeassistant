@@ -1142,6 +1142,55 @@ describe("collapsible filter sheet (0.5.0)", () => {
   });
 });
 
+describe("critics score on the wall (0.6.2)", () => {
+  const card = () => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = { artworkSignature: "sig" };
+    c._view = { viewMode: "poster", gridSize: "m" };
+    return c;
+  };
+  const item = { id: "m1", title: "Heat", year: 1995, runtime: 170, rating: 7.9 };
+
+  test("the meta line carries the critics score beside the community one", () => {
+    const html = card()._metaLine({ ...item, criticRating: 84 });
+    assert.match(html, /1995 · 170 Min · ★7\.9/);
+    assert.match(html, /84 %/);
+    assert.match(html, /Kritikerwertung/);
+  });
+
+  test("a fresh score and a rotten one get different tomatoes", () => {
+    const fresh = card()._metaLine({ ...item, criticRating: 84 });
+    const rotten = card()._metaLine({ ...item, criticRating: 31 });
+    assert.notEqual(fresh, rotten);
+    assert.match(rotten, /31 %/);
+  });
+
+  test("no critics score, no badge — and the text is untouched", () => {
+    const html = card()._metaLine(item);
+    assert.match(html, /1995 · 170 Min · ★7\.9/);
+    assert.doesNotMatch(html, /%/);
+  });
+
+  test("every grid layout shows it", () => {
+    const scored = { ...item, criticRating: 84 };
+    for (const mode of ["poster", "posterCard", "thumb", "thumbCard", "list"]) {
+      assert.match(card()._tile(scored, mode), /84 %/, `missing in ${mode}`);
+    }
+  });
+
+  test("a title is still escaped around the badge", () => {
+    const html = card()._metaLine({
+      id: "x",
+      kind: "episode",
+      episodeCode: "S01E01",
+      title: "<script>",
+      criticRating: 84,
+    });
+    assert.match(html, /&lt;script&gt;/);
+    assert.doesNotMatch(html, /<script>/);
+  });
+});
+
 describe("grid size", () => {
   const item = { id: "abc", title: "Film", year: 2020 };
 
@@ -1277,6 +1326,58 @@ describe("detail sheet extras (0.5.0)", () => {
       const order = [...html.matchAll(/Deutsch · 7\.1 · DTS|Englisch · 5\.1 · AC3/g)];
       assert.equal(order[0][0], "Deutsch · 7.1 · DTS");
       assert.match(html, /class="std"/);
+    });
+
+    test("a long list is cut to three, with the rest one tap away", () => {
+      const many = {
+        ...movie,
+        audioTracks: [{ index: 1, language: "ger", default: true }],
+        subtitleTracks: Array.from({ length: 21 }, (_, i) => ({
+          index: i + 2,
+          language: "eng",
+          codec: `C${i}`,
+        })),
+      };
+      const html = detailCard(many)._renderDetailSheet();
+      assert.match(html, /Untertitel \(21\)/);
+      assert.match(html, /data-act="expand-tracks" data-key="subtitle"/);
+      assert.match(html, /\+ 18 weitere/);
+      assert.match(html, /Englisch · C2/);
+      assert.doesNotMatch(html, /Englisch · C20/);
+      // One audio track needs no expander of its own.
+      assert.doesNotMatch(html, /data-key="audio"/);
+    });
+
+    test("an expanded column shows everything", () => {
+      const many = {
+        ...movie,
+        subtitleTracks: Array.from({ length: 21 }, (_, i) => ({
+          index: i + 2,
+          language: "eng",
+          codec: `C${i}`,
+        })),
+      };
+      const c = detailCard(many);
+      c._view.tracksExpanded = { subtitle: true };
+      const html = c._renderDetailSheet();
+      assert.match(html, /Englisch · C20/);
+      assert.doesNotMatch(html, /weitere/);
+    });
+
+    test("a commentary never takes one of the three preview slots", () => {
+      const withEarlyCommentary = {
+        ...movie,
+        audioTracks: [
+          { index: 1, language: "eng", commentary: true },
+          { index: 2, language: "ger", codec: "DTS" },
+          { index: 3, language: "fre", codec: "AC3" },
+          { index: 4, language: "ita", codec: "AC3" },
+        ],
+      };
+      const html = detailCard(withEarlyCommentary)._renderDetailSheet();
+      assert.match(html, /Deutsch · DTS/);
+      assert.match(html, /Italienisch · AC3/);
+      assert.doesNotMatch(html, /Kommentar/);
     });
 
     test("a commentary says so, and a forced subtitle too", () => {

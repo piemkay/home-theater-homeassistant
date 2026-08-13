@@ -342,6 +342,7 @@ class JellyfinClient:
         # `_apply_client_side_filters` documents).
         if (
             len(query.genres) > 1
+            or len(query.person_ids) > 1
             or query.audio_langs
             or query.subtitle_langs
             or query.min_critic is not None
@@ -472,10 +473,17 @@ class JellyfinClient:
         }
         if query.search:
             params["SearchTerm"] = query.search
-        if query.person_ids:
-            params["PersonIds"] = "|".join(query.person_ids)
+        # One name narrows server-side and is exact. Several do not: Jellyfin
+        # neither ANDs nor ORs a `|`-joined PersonIds — asked for Tom Holland
+        # and Zendaya it returned 643 of 620 films, i.e. the filter fell off
+        # entirely (verified live). Several names are intersected below.
+        if len(query.person_ids) == 1:
+            params["PersonIds"] = query.person_ids[0]
         payload = await self._request("GET", f"/Users/{user}/Items", params=params)
         records = [_to_record(raw) for raw in (payload or {}).get("Items") or []]
+        if len(query.person_ids) > 1:
+            credited = await self._credited_by_all(query.person_ids, item_types)
+            records = [record for record in records if record.id in credited]
         # A series has no streams of its own; its languages are its episodes'.
         if "Series" in item_types:
             records = await self._with_episode_languages(records)
@@ -486,6 +494,43 @@ class JellyfinClient:
         }
         self._scan_cache[key] = (now, records)
         return records
+
+    async def _credited_by_all(
+        self, person_ids: tuple[str, ...], item_types: str
+    ) -> frozenset[str]:
+        """IDs of the titles that credit *every* one of these people.
+
+        Two stacked names mean "with both of them" — the same reading that
+        makes stacked genre chips narrow rather than widen. Jellyfin cannot
+        express it, so each name is asked for on its own and the answers are
+        intersected: one small ID-only request per name, and the first empty
+        intersection ends it.
+        """
+        user = self._require_user()
+        credited: set[str] | None = None
+        for person_id in person_ids:
+            payload = await self._request(
+                "GET",
+                f"/Users/{user}/Items",
+                params={
+                    "Recursive": True,
+                    "IncludeItemTypes": item_types,
+                    "PersonIds": person_id,
+                    "Limit": _SCAN_LIMIT,
+                    "EnableImages": False,
+                    "EnableUserData": False,
+                    "EnableTotalRecordCount": False,
+                },
+            )
+            ids = {
+                str(raw["Id"])
+                for raw in (payload or {}).get("Items") or []
+                if raw.get("Id")
+            }
+            credited = ids if credited is None else credited & ids
+            if not credited:
+                break
+        return frozenset(credited or ())
 
     async def _with_episode_languages(
         self, records: list[_ScanRecord]
