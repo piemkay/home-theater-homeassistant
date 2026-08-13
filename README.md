@@ -203,7 +203,9 @@ instead of offering a dead volume stepper.
   removable chips above the grid. Every group starts folded and remembers
   which ones you unfold.
 * **Cast & crew** is a name field, not free text: it searches Jellyfin's own
-  people, so a chosen name always returns titles. Stack several, drop any.
+  people, so a chosen name always returns titles. Stack several, drop any —
+  two names mean the titles crediting *both*, which Jellyfin itself cannot
+  express, so each name is asked for on its own and the answers intersected.
 * **Languages are one chip per language.** Files arrive tagged `ger`, `deu`,
   `de` or `de-DE`; all four are Deutsch. A director's commentary does not
   make a German film an English one. Series have no streams of their own, so
@@ -220,13 +222,16 @@ instead of offering a dead volume stepper.
   lines with "mehr"), genre chips, the age rating, the **trailer** (it opens
   in a tab — Jellyfin's trailers live on YouTube, so it plays on the phone
   before the room is even on), and **every audio and subtitle track the file
-  carries**, default first, with commentaries and forced subtitles marked.
+  carries**, default first, with commentaries and forced subtitles marked —
+  three per column, the rest one tap away, so a 21-track remux does not bury
+  the cast row under it.
   On a desktop the sheet is a centered panel with the poster beside the text.
 * **Gesehen can be set and unset** from the card: for a film, for a single
   episode, and for a whole season — which Jellyfin cascades down to its
   episodes.
-* Tiles carry 4K badges, resume bars, watched ticks, favorite hearts, and a
-  red mark with a reason when a title is missing the data it needs to play.
+* Tiles carry 4K badges, resume bars, watched ticks, favorite hearts, both
+  scores (community star and critics tomato), and a red mark with a reason
+  when a title is missing the data it needs to play.
 * Infinite scroll plus an explicit "Weitere Titel laden" button; a failed page
   append never throws away the titles already on screen.
 * Artwork comes through an authenticated Home Assistant proxy with signed,

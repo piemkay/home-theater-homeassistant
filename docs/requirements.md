@@ -436,6 +436,9 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
   Continue Watching, Unwatched, 4K.
 - **FR-51** **Advanced search** SHALL return results with poster, title and year, incrementally
   as the user types, with sensible handling of partial and multi-word queries.
+- **FR-51a** Every grid tile SHALL carry both scores that exist for it — the community
+  rating and the critics rating — in its meta line. A community 7.2 and a critics 40 % are
+  two different evenings, and the point of a grid is to choose without opening anything.
 - **FR-52** **Advanced filtering** SHALL be available and combinable. Baseline:
   watched/unwatched, resolution, recently added. Further facets (genre, collection, year,
   rating, runtime, audio format) are **subject to the API spike** — included if the Zidoo API
@@ -445,7 +448,10 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
   server-side parameter and a client-side cut breaks pagination.
 - **FR-52a** Cast and crew SHALL be filterable by name, offered from the catalogue's own
   `/Persons` rather than as free text, with several names combinable and individually
-  removable. Several people narrow (AND), like stacked genre chips.
+  removable. Several people narrow (AND), like stacked genre chips — and Jellyfin can
+  express neither AND nor OR here: asked for two `|`-joined `PersonIds` the live server
+  dropped the filter and answered with 643 of 620 films. One name goes server-side, where
+  it is exact; several are asked for one at a time and intersected.
 - **FR-52b** Audio-track **and** subtitle-track languages SHALL each be their own filter, and
   SHALL be honest about what a title can be watched in: every track counts, not just the
   first; a title with two German mixes is German once; a commentary or audio-description
@@ -473,7 +479,10 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
 - **FR-56a** The detail view SHALL list **every** audio and subtitle track the file carries —
   language, channel layout, codec, the default one first, commentaries and forced subtitles
   marked — because the one-line audio format names the first stream only, and whether a
-  disc has a German mix is what decides whether tonight works.
+  disc has a German mix is what decides whether tonight works. Each column SHALL show its
+  first three and keep the rest one tap away: a 21-track remux otherwise pushes the cast
+  row and everything under it off the bottom of the sheet. A commentary SHALL never take
+  one of those three slots.
 - **FR-56b** A trailer, where the catalogue knows one, SHALL be watchable from the detail
   view on the phone, with the room off. Jellyfin's trailers are links to YouTube and the
   like, so this opens a browser tab rather than pretending Kino can stream them.

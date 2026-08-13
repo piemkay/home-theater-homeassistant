@@ -34,6 +34,9 @@ Requirements §13. "Automated" means an executable test asserts the behaviour;
 | A27 | Decide whether tonight works: every audio and subtitle track, before starting anything (0.6) | ✅ automated + **verified live** | `kino-card.test.js` "audio and subtitle tracks"; live: *Heat* lists 2 audio and 21 subtitle tracks, commentaries marked |
 | A28 | Watch the trailer on the phone with the room off (0.6) | partial | render covered by `kino-card.test.js` "trailers"; live 2026-08-13: *DTF St. Louis* → "Trailer ansehen" opened the official trailer |
 | A29 | Mark a film, an episode or a whole season gesehen — and undo it (0.6) | ✅ automated + **verified live** | `test_jellyfin.py::TestWatched`, `kino-card.test.js` "marking gesehen"; live: episode ⇒ season strip 7→6; season ⇒ all seven episodes ticked; both reversed cleanly |
+| A30 | Two stacked names mean "with both of them" (0.6.2) | ✅ automated + **verified live** | `test_jellyfin.py::TestSeveralPeople`; live: Tom Holland + Zendaya returned 643 of 620 films before the fix, the three Spider-Man films after |
+| A31 | Choose from the wall without opening anything: both scores on every tile (0.6.2) | ✅ automated + **verified live** | `kino-card.test.js` "critics score on the wall"; live: fresh and rotten tomatoes render in all five layouts, and a title without a critics score grows no badge |
+| A32 | A 21-track remux does not bury the rest of the detail sheet (0.6.2) | ✅ automated + **verified live** | `kino-card.test.js` "a long list is cut to three"; live: *Heat* shows 3 of 21 subtitles with "+ 18 weitere", cast row still on screen, commentaries last once expanded |
 
 ---
 
