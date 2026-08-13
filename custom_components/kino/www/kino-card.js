@@ -250,6 +250,51 @@ export const helpers = {
       ben: "Bengalisch",
       urd: "Urdu",
       und: "Unbekannt",
+      // The long tail the live library turned out to carry — an uppercased
+      // "MKD" on a chip tells nobody anything.
+      mac: "Mazedonisch",
+      bos: "Bosnisch",
+      alb: "Albanisch",
+      baq: "Baskisch",
+      glg: "Galicisch",
+      cym: "Walisisch",
+      wel: "Walisisch",
+      gle: "Irisch",
+      geo: "Georgisch",
+      arm: "Armenisch",
+      aze: "Aserbaidschanisch",
+      kaz: "Kasachisch",
+      kir: "Kirgisisch",
+      mon: "Mongolisch",
+      khm: "Khmer",
+      bur: "Birmanisch",
+      lao: "Laotisch",
+      nep: "Nepalesisch",
+      sin: "Singhalesisch",
+      mal: "Malayalam",
+      kan: "Kannada",
+      mar: "Marathi",
+      pan: "Panjabi",
+      guj: "Gujarati",
+      tgl: "Tagalog",
+      fil: "Filipino",
+      swa: "Suaheli",
+      afr: "Afrikaans",
+      amh: "Amharisch",
+      yid: "Jiddisch",
+      lat: "Latein",
+      haw: "Hawaiianisch",
+      fur: "Friaulisch",
+      div: "Dhivehi",
+      enm: "Mittelenglisch",
+      fao: "Färöisch",
+      ltz: "Luxemburgisch",
+      mlt: "Maltesisch",
+      epo: "Esperanto",
+      bre: "Bretonisch",
+      tib: "Tibetisch",
+      mao: "Maori",
+      zxx: "Ohne Sprache",
     };
     return names[String(code).toLowerCase()] || String(code).toUpperCase();
   },
@@ -892,6 +937,10 @@ const VIEW_MODES = [
   ["list", "Liste"],
 ];
 
+// How many chips a facet group shows before it offers "+ N weitere". Sized
+// so the common values fit on a phone screen without a scroll of their own.
+const FACET_CHIP_LIMIT = 14;
+
 // The filter sheet's groups, in the order they are rendered.
 const FILTER_GROUPS = [
   "tags",
@@ -999,6 +1048,8 @@ class KinoCard extends CardBase {
       sortDir: null,
       viewMode: readStoredViewMode(),
       gridSize: readStoredGridSize(),
+      // Which facet groups have been asked to show their whole list.
+      facetsExpanded: {},
       filters: helpers.emptyFilters(),
       filterSheet: false,
       filterCollapsed: readStoredCollapse(),
@@ -2362,12 +2413,27 @@ class KinoCard extends CardBase {
     };
     // A facet group with one lone value cannot narrow anything (F12) — but
     // it must not disappear while its only value is still selected.
-    const multi = (values, kind, selected, labelFor = (v) => v) =>
-      values.length > 1 || selected.length
-        ? `<div class="chipwrap">${values
-            .map((v) => chip(kind, v, labelFor(v), selected.includes(v)))
-            .join("")}</div>`
-        : "";
+    //
+    // The long groups are cut to their most common values, with everything
+    // still one tap away: this library carries 61 subtitle languages, and
+    // nobody scrolls past Bosnisch to reach Deutsch.
+    const multi = (values, kind, selected, labelFor = (v) => v) => {
+      if (values.length <= 1 && !selected.length) return "";
+      const expanded = (this._view.facetsExpanded || {})[kind];
+      const shown =
+        expanded || values.length <= FACET_CHIP_LIMIT
+          ? values
+          : values.filter((v, i) => i < FACET_CHIP_LIMIT || selected.includes(v));
+      const rest = values.length - shown.length;
+      return `<div class="chipwrap">${shown
+        .map((v) => chip(kind, v, labelFor(v), selected.includes(v)))
+        .join("")}${
+        rest > 0
+          ? `<button class="pill" style="border-style:dashed"
+               data-act="expand-facet" data-key="${kind}">+ ${rest} weitere</button>`
+          : ""
+      }</div>`;
+    };
 
     const scoreChips = (act, steps, current, labelFor) =>
       `<div class="chipwrap">${steps
@@ -3203,6 +3269,10 @@ class KinoCard extends CardBase {
         this._previewFilterCount();
         break;
       }
+      case "expand-facet":
+        view.facetsExpanded = { ...view.facetsExpanded, [key]: true };
+        this._render();
+        break;
       case "toggle-group": {
         // Fold in place — a re-render mid-scroll is exactly what made the
         // sheet jump.

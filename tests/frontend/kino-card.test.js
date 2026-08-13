@@ -1095,6 +1095,34 @@ describe("collapsible filter sheet (0.5.0)", () => {
     assert.match(html, /Deutsch\s*<span class="chipcount">2<\/span>/);
   });
 
+  test("a long facet list is cut down, with the rest one tap away", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `l${i}`);
+    const c = sheetCard();
+    c._facets = { ...c._facets, subtitleLanguages: many };
+    const html = c._renderFilterSheet();
+    assert.match(html, /data-act="expand-facet" data-key="sublang"/);
+    assert.match(html, /\+ 26 weitere/);
+    assert.doesNotMatch(html, /data-kind="sublang" data-key="l39"/);
+  });
+
+  test("a chosen value is never cut away, however far down the list", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `l${i}`);
+    const c = sheetCard({
+      filters: { ...helpers.emptyFilters(), subtitleLangs: ["l39"] },
+    });
+    c._facets = { ...c._facets, subtitleLanguages: many };
+    assert.match(c._renderFilterSheet(), /data-kind="sublang" data-key="l39"/);
+  });
+
+  test("an expanded group shows everything", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `l${i}`);
+    const c = sheetCard({ facetsExpanded: { sublang: true } });
+    c._facets = { ...c._facets, subtitleLanguages: many };
+    const html = c._renderFilterSheet();
+    assert.match(html, /data-kind="sublang" data-key="l39"/);
+    assert.doesNotMatch(html, /weitere/);
+  });
+
   test("both language groups exist, in either category", () => {
     for (const category of ["movies", "shows"]) {
       const html = sheetCard({ category })._renderFilterSheet();

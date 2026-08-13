@@ -132,6 +132,39 @@ _LANG_SYNONYMS = {
     "nno": "nor",
 }
 
+#: Two-letter ISO-639-1 codes, folded onto the same /B twins. Files tagged by
+#: different tools land in different standards, and the live library really
+#: does carry "en" beside "eng" and "zh-hans" beside "chi" — three spellings
+#: of one language is three chips that each find a third of the titles.
+_LANG_ISO1 = {
+    "aa": "aar", "ab": "abk", "af": "afr", "ak": "aka", "am": "amh",
+    "ar": "ara", "as": "asm", "az": "aze", "ba": "bak", "be": "bel",
+    "bg": "bul", "bn": "ben", "bo": "tib", "br": "bre", "bs": "bos",
+    "ca": "cat", "cs": "cze", "cy": "wel", "da": "dan", "de": "ger",
+    "dv": "div", "dz": "dzo", "el": "gre", "en": "eng", "eo": "epo",
+    "es": "spa", "et": "est", "eu": "baq", "fa": "per", "fi": "fin",
+    "fj": "fij", "fo": "fao", "fr": "fre", "fy": "fry", "ga": "gle",
+    "gd": "gla", "gl": "glg", "gu": "guj", "ha": "hau", "he": "heb",
+    "hi": "hin", "hr": "hrv", "ht": "hat", "hu": "hun", "hy": "arm",
+    "id": "ind", "is": "ice", "it": "ita", "iu": "iku", "ja": "jpn",
+    "jv": "jav", "ka": "geo", "kk": "kaz", "km": "khm", "kn": "kan",
+    "ko": "kor", "ku": "kur", "ky": "kir", "la": "lat", "lb": "ltz",
+    "lo": "lao", "lt": "lit", "lv": "lav", "mg": "mlg", "mi": "mao",
+    "mk": "mac", "ml": "mal", "mn": "mon", "mr": "mar", "ms": "may",
+    "mt": "mlt", "my": "bur", "nb": "nor", "ne": "nep", "nl": "dut",
+    "nn": "nor", "no": "nor", "oc": "oci", "or": "ori", "pa": "pan",
+    "pl": "pol", "ps": "pus", "pt": "por", "qu": "que", "rm": "roh",
+    "ro": "rum", "ru": "rus", "sa": "san", "si": "sin", "sk": "slo",
+    "sl": "slv", "so": "som", "sq": "alb", "sr": "srp", "sv": "swe",
+    "sw": "swa", "ta": "tam", "te": "tel", "tg": "tgk", "th": "tha",
+    "tk": "tuk", "tl": "tgl", "tr": "tur", "tt": "tat", "uk": "ukr",
+    "ur": "urd", "uz": "uzb", "vi": "vie", "yi": "yid", "yo": "yor",
+    "zh": "chi", "zu": "zul",
+}  # fmt: skip
+
+#: One more /T-to-/B pair the live library turned up.
+_LANG_SYNONYMS["mkd"] = "mac"
+
 #: Random re-randomises on every request, so paginated pages can repeat or
 #: skip titles — accepted; the card's grid stays usable and a refresh reshuffles.
 _SORT_FIELDS: dict[SortOrder, tuple[str, str]] = {
@@ -1006,12 +1039,21 @@ _NON_LANGUAGES = frozenset({"und", "zxx"})
 
 
 def _normalize_lang(code: Any) -> str | None:
-    """Fold one stream's language onto a single lowercase ISO-639-2 code."""
+    """Fold one stream's language onto a single lowercase ISO-639-2 code.
+
+    Files arrive tagged by whatever tool wrote them: "ger", "deu", "de" and
+    "de-DE" are one language, and a filter that offers all four finds a
+    quarter of the titles under each.
+    """
     if not code or not isinstance(code, str):
         return None
     value = code.strip().lower()
     if not value:
         return None
+    # "zh-hans", "pt-BR": the script or region says nothing about which
+    # language a person is looking for.
+    base = re.split(r"[-_]", value, maxsplit=1)[0]
+    value = _LANG_ISO1.get(base, base)
     return _LANG_SYNONYMS.get(value, value)
 
 

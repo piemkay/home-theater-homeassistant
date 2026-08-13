@@ -1153,6 +1153,56 @@ class TestTracks:
         assert english.total == 0
 
 
+class TestLanguageCodes:
+    """One language is one chip, however the file happened to spell it."""
+
+    async def test_every_spelling_of_german_is_one_language(self):
+        # The live library really does carry all of these side by side.
+        movie = dict(
+            MOVIE,
+            MediaStreams=[
+                _stream("Audio", 1, "ger"),
+                _stream("Audio", 2, "deu"),
+                _stream("Audio", 3, "de"),
+                _stream("Audio", 4, "de-DE"),
+            ],
+        )
+        session = FakeSession(
+            {"/Users/user-1/Items": {"Items": [movie], "TotalRecordCount": 1}}
+        )
+
+        counts = await _client(session).facet_counts(MediaQuery())
+
+        assert counts["audioLangs"] == {"ger": 1}
+
+    async def test_two_letter_and_suffixed_codes_fold_onto_the_three_letter_one(self):
+        movie = dict(
+            MOVIE,
+            MediaStreams=[
+                _stream("Subtitle", 1, "en"),
+                _stream("Subtitle", 2, "zh-hans"),
+                _stream("Subtitle", 3, "pt_BR"),
+                _stream("Subtitle", 4, "mkd"),
+            ],
+        )
+        session = FakeSession({"/Users/user-1/Items/abc123": movie})
+
+        item = await _client(session).item("abc123")
+
+        assert [t.language for t in item.subtitle_tracks] == [
+            "eng",
+            "chi",
+            "por",
+            "mac",
+        ]
+
+    async def test_an_unknown_code_survives_rather_than_vanishing(self):
+        movie = dict(MOVIE, MediaStreams=[_stream("Audio", 1, "xyz")])
+        session = FakeSession({"/Users/user-1/Items/abc123": movie})
+        item = await _client(session).item("abc123")
+        assert item.audio_tracks[0].language == "xyz"
+
+
 class TestTrailers:
     async def test_remote_trailers_reach_the_detail(self):
         movie = dict(
