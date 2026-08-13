@@ -190,16 +190,24 @@ instead of offering a dead volume stepper.
 
 ### The library
 
-* **Browse while off.** The library home (continue-watching and
-  recently-added rows, Filme/Serien) renders with the room dark; the play
+* **Browse while off.** The library home (Weitersehen, Favoriten and
+  Zuletzt hinzugefügt rows, Filme/Serien) renders with the room dark; the play
   button becomes "Kino starten und wiedergeben" and does both in one tap.
 * **Search** (debounced), **eight sort orders** (added, title, year, rating,
   runtime, last played, critics rating, random) with an explicit
   ascending/descending toggle.
 * **Filters**: 4K / HD / SD / 3D, watched / unwatched / continue-watching,
-  favorites, genres, age ratings (FSK & Co.), release-year range — combined
-  freely, applied server-side so pagination never lies, shown as removable
-  chips above the grid.
+  favorites, genres, cast & crew, age ratings (FSK & Co.), audio-track and
+  subtitle languages, community and critics minimums, release-year range —
+  combined freely, applied server-side so pagination never lies, shown as
+  removable chips above the grid. Every group starts folded and remembers
+  which ones you unfold.
+* **Cast & crew** is a name field, not free text: it searches Jellyfin's own
+  people, so a chosen name always returns titles. Stack several, drop any.
+* **Languages are one chip per language.** Files arrive tagged `ger`, `deu`,
+  `de` or `de-DE`; all four are Deutsch. A director's commentary does not
+  make a German film an English one. Series have no streams of their own, so
+  they are lent the languages their episodes carry.
 * **Six view modes** (Poster, Posterkarte, Vorschau, Vorschaukarte, Banner,
   Liste), remembered per browser.
 * **Favorites** are written back to Jellyfin from the heart toggle and
@@ -209,8 +217,14 @@ instead of offering a dead volume stepper.
   `S03E08 · Titel`, runtime, watched tick, resume bar — and every row plays or
   resumes that episode. "Weitersehen" names episodes by their series.
 * **Every detail sheet says what the film is**: synopsis (clamped to four
-  lines with "mehr"), genre chips and the age rating. On a desktop the sheet
-  is a centered panel with the poster beside the text.
+  lines with "mehr"), genre chips, the age rating, the **trailer** (it opens
+  in a tab — Jellyfin's trailers live on YouTube, so it plays on the phone
+  before the room is even on), and **every audio and subtitle track the file
+  carries**, default first, with commentaries and forced subtitles marked.
+  On a desktop the sheet is a centered panel with the poster beside the text.
+* **Gesehen can be set and unset** from the card: for a film, for a single
+  episode, and for a whole season — which Jellyfin cascades down to its
+  episodes.
 * Tiles carry 4K badges, resume bars, watched ticks, favorite hearts, and a
   red mark with a reason when a title is missing the data it needs to play.
 * Infinite scroll plus an explicit "Weitere Titel laden" button; a failed page
@@ -315,7 +329,7 @@ not once per poll).
 The card and panel talk to the integration over `hass.callWS`; the same
 commands are available to anything else that speaks the HA WebSocket API.
 Library and room-state commands (`kino/state`, `kino/activate`,
-`kino/library/search|item|seasons|episodes|resume|facets|favorite|refresh`, `kino/dry_run`,
+`kino/library/search|item|seasons|episodes|resume|facets|facet_counts|persons|favorite|watched|refresh`, `kino/dry_run`,
 `kino/restore_device`, `kino/dismiss_drift`) are available to any signed-in
 user; the panel's commands (`kino/config/*`, `kino/device_board`,
 `kino/device_test`, `kino/transition_log`, `kino/durations/reset`) require an

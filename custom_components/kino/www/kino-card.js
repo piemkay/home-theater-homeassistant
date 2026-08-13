@@ -3262,7 +3262,13 @@ class KinoCard extends CardBase {
           view.personQuery = "";
           this._personHits = null;
           const field = this._container.querySelector('[data-field="person-search"]');
-          if (field) field.value = "";
+          if (field) {
+            field.value = "";
+            // The caret has to go back into the field: without it the next
+            // keystroke is a Home Assistant hotkey, and typing a second name
+            // opens the global search instead (found live).
+            field.focus();
+          }
         }
         this._patchPersonSearch();
         this._syncFilterChips();
