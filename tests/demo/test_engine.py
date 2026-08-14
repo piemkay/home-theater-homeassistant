@@ -250,6 +250,28 @@ class TestShowcasePlayback:
         assert runtime.opened == ["c1"]
         assert "pause" in runtime.calls
 
+    async def test_a_complaint_does_not_follow_the_next_clip(self, runtime, settings):
+        runtime.track_complaint = "Tonspur fehlt"
+        engine = DemoEngine(runtime, settings)
+        clips = [make_clip("c1", 0, 1000), make_clip("c2", 0, 1000)]
+        await engine.start_showcase(Showcase(id="s", name="x", gap_seconds=0), clips)
+        # Let the first clip register its complaint, then clear the source.
+        for _ in range(60):
+            state = engine.state()
+            if state and state["warning"]:
+                break
+            await asyncio.sleep(0.005)
+        runtime.track_complaint = None
+        seen_on_second = "unset"
+        for _ in range(200):
+            state = engine.state()
+            if state and state["index"] == 1:
+                seen_on_second = state["warning"]
+                break
+            await asyncio.sleep(0.005)
+        await drain(engine)
+        assert seen_on_second is None
+
     async def test_pauses_at_the_end_of_a_clip(self, runtime, settings):
         engine = DemoEngine(runtime, settings)
         await engine.start_clip(make_clip("c1", 0, 2000))

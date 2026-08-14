@@ -320,6 +320,9 @@ class DemoEngine:
                 return
 
     async def _play_clip(self, run: _Run, clip: Clip, first: bool) -> str | None:
+        # A complaint belongs to the clip that caused it: carrying "this track
+        # is not on offer" from one clip onto the next one is a lie.
+        run.warning = None
         outcome = await self._slate(run, first=first)
         if outcome is not None:
             return outcome
