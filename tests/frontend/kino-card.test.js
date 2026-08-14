@@ -30,6 +30,35 @@ describe("formatTime", () => {
   });
 });
 
+describe("runtimeLabel", () => {
+  test("reads a film's length in hours, the way it gets said", () => {
+    assert.equal(helpers.runtimeLabel(113), "1 Std 53 Min");
+    assert.equal(helpers.runtimeLabel(120), "2 Std");
+    assert.equal(helpers.runtimeLabel(47), "47 Min");
+  });
+
+  test("an unknown length is left out rather than shown as zero", () => {
+    assert.equal(helpers.runtimeLabel(0), "");
+    assert.equal(helpers.runtimeLabel(null), "");
+    assert.equal(helpers.runtimeLabel(undefined), "");
+  });
+});
+
+describe("remainingLabel", () => {
+  test("says how much film is left", () => {
+    assert.equal(helpers.remainingLabel(1282, 6809), "noch 1:32:07");
+  });
+
+  test("never counts past the end", () => {
+    assert.equal(helpers.remainingLabel(7000, 6809), "noch 0:00");
+  });
+
+  test("is empty until the player reports a duration", () => {
+    assert.equal(helpers.remainingLabel(120, 0), "");
+    assert.equal(helpers.remainingLabel(120, null), "");
+  });
+});
+
 describe("formatEta", () => {
   test("is empty when nothing is pending", () => {
     assert.equal(helpers.formatEta(0), "");
@@ -819,6 +848,200 @@ describe("playing sheet", () => {
     const html = card._renderPlayingSheet();
     assert.match(html, /data-act="stop-playing"/);
     assert.doesNotMatch(html, /data-act="transport" data-key="media_stop"/);
+  });
+
+  /**
+   * The playback view shows the film, not just the transport: the catalogue
+   * entry behind `nowPlaying` supplies the poster, the meta line, the format
+   * badges, the synopsis, the cast and the similar row.
+   */
+  const ITEM = {
+    id: "m1",
+    title: "Edge of Tomorrow",
+    kind: "movie",
+    year: 2014,
+    runtime: 113,
+    genres: ["Sci-Fi", "Action"],
+    officialRating: "FSK 12",
+    videoFormat: "4K HDR",
+    audioFormat: "DTS-HD MA 7.1",
+    overview: "Cage stirbt und erwacht wieder.",
+    people: [{ id: "p1", name: "Tom Cruise", role: "Cage", type: "Actor" }],
+  };
+
+  const playingCard = (overrides = {}) => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = {
+      entities: { player: "media_player.kino" },
+      controls: {},
+      artworkSignature: "sig",
+      demo: {},
+      nowPlaying: overrides.nowPlaying !== undefined ? overrides.nowPlaying : { id: "m1" },
+    };
+    card._view = {
+      playingItemId: "m1",
+      playingItem: overrides.item !== undefined ? overrides.item : ITEM,
+      playingSimilar: overrides.similar || null,
+    };
+    card._hass = {
+      states: {
+        "media_player.kino": {
+          state: "playing",
+          attributes: {
+            media_title: "edge.of.tomorrow.2014.mkv",
+            media_duration: 6809,
+            media_position: 1282,
+          },
+        },
+      },
+    };
+    return card;
+  };
+
+  test("the hero carries the film's own title, length and formats", () => {
+    const html = playingCard()._renderPlayingSheet();
+    assert.match(html, /Edge of Tomorrow/);
+    // Not the filename the player reports.
+    assert.doesNotMatch(html, /edge\.of\.tomorrow/);
+    assert.match(html, /2014 · 1 Std 53 Min · Sci-Fi, Action/);
+    assert.match(html, /4K HDR/);
+    assert.match(html, /DTS-HD MA 7\.1/);
+    assert.match(html, /FSK 12/);
+  });
+
+  test("Handlung, Besetzung and Mehr wie dieser Titel follow the controls", () => {
+    const html = playingCard({
+      similar: [{ id: "s1", title: "Oblivion", year: 2013 }],
+    })._renderPlayingSheet();
+    const at = (needle) => html.indexOf(needle);
+    assert.ok(at("Handlung") > at('class="transport"'));
+    assert.ok(at("Besetzung &amp; Crew") > at("Handlung"));
+    assert.ok(at("Mehr wie dieser Titel") > at("Besetzung &amp; Crew"));
+    assert.match(html, /Oblivion/);
+  });
+
+  /**
+   * A file Kino could not match still has to play, pause and seek — the view
+   * falls back to what the player entity itself reports and simply leaves the
+   * film's own material out.
+   */
+  test("an unmatched file keeps the transport and drops the material", () => {
+    const html = playingCard({ nowPlaying: null, item: null })._renderPlayingSheet();
+    assert.match(html, /edge\.of\.tomorrow\.2014\.mkv/);
+    assert.match(html, /data-act="transport"/);
+    assert.match(html, /data-act="seek-to"/);
+    assert.doesNotMatch(html, /Handlung/);
+    assert.doesNotMatch(html, /Besetzung/);
+  });
+
+  test("the scrubber shows the remaining time, not just the two ends", () => {
+    const html = playingCard()._renderPlayingSheet();
+    assert.match(html, /data-time="elapsed">21:22/);
+    assert.match(html, /data-time="remaining">noch 1:32:07/);
+    assert.match(html, /data-time="duration">1:53:29/);
+  });
+
+  /**
+   * Tapping the bar is measured against the track, and the last second is
+   * kept — landing exactly on the end would stop the film.
+   */
+  test("tapping the scrubber seeks to that fraction of the film", async () => {
+    const card = playingCard();
+    const calls = [];
+    card._player = async (...args) => calls.push(args);
+    const strip = {
+      querySelector: () => ({ getBoundingClientRect: () => ({ left: 20, width: 200 }) }),
+    };
+    await card._seekToFraction(strip, { clientX: 120 });
+    assert.deepEqual(calls, [["media_seek", { seek_position: 3404.5 }]]);
+
+    calls.length = 0;
+    await card._seekToFraction(strip, { clientX: 9999 });
+    assert.deepEqual(calls, [["media_seek", { seek_position: 6808 }]]);
+  });
+
+  test("a title with no duration is not seekable", async () => {
+    const card = playingCard();
+    card._hass.states["media_player.kino"].attributes.media_duration = 0;
+    const calls = [];
+    card._player = async (...args) => calls.push(args);
+    await card._seekToFraction(
+      { querySelector: () => ({ getBoundingClientRect: () => ({ left: 0, width: 200 }) }) },
+      { clientX: 100 }
+    );
+    assert.deepEqual(calls, []);
+  });
+
+  /**
+   * The player view and the detail sheet can both be open, so one shared
+   * "mehr" flag would expand the synopsis nobody tapped.
+   */
+  test("each sheet's synopsis expands on its own flag", () => {
+    const card = Object.create(KinoCard.prototype);
+    const long = "x".repeat(400);
+    card._view = { overviewOpen: false, playingOverviewOpen: true };
+    const detail = card._renderOverview({ overview: long });
+    const playing = card._renderOverview({ overview: long }, "playingOverviewOpen");
+    assert.match(detail, /class="overview clamped"/);
+    assert.match(detail, /data-key="overviewOpen"/);
+    assert.doesNotMatch(playing, /clamped/);
+    assert.match(playing, /data-key="playingOverviewOpen"/);
+  });
+});
+
+describe("the playing view's catalogue entry", () => {
+  const makeCard = (nowPlaying) => {
+    const card = Object.create(KinoCard.prototype);
+    const asked = [];
+    card._kino = { nowPlaying };
+    card._view = { playingItemId: null, playingItem: null, playingSimilar: null };
+    card._render = () => {};
+    card._ws = async (msg) => {
+      asked.push(msg.type);
+      if (msg.type === "kino/library/item") return { id: msg.item_id, title: "X" };
+      return { items: [{ id: "s1" }] };
+    };
+    return [card, asked];
+  };
+
+  test("one fetch per title, not one per state poll", async () => {
+    const [card, asked] = makeCard({ id: "m1" });
+    await card._syncPlayingItem();
+    await card._syncPlayingItem();
+    await card._syncPlayingItem();
+    assert.deepEqual(asked.sort(), ["kino/library/item", "kino/library/similar"]);
+    assert.equal(card._view.playingItem.id, "m1");
+  });
+
+  test("the next film drops the last one's material before its own arrives", async () => {
+    const [card] = makeCard({ id: "m1" });
+    await card._syncPlayingItem();
+    card._view.playingSimilar = [{ id: "s1" }];
+    card._kino.nowPlaying = { id: "m2" };
+    const pending = card._syncPlayingItem();
+    // Synchronously, before either request comes back.
+    assert.equal(card._view.playingItem, null);
+    assert.equal(card._view.playingSimilar, null);
+    await pending;
+    assert.equal(card._view.playingItem.id, "m2");
+  });
+
+  test("a file with no catalogue entry asks for nothing", async () => {
+    const [card, asked] = makeCard(null);
+    await card._syncPlayingItem();
+    assert.deepEqual(asked, []);
+    assert.equal(card._view.playingItemId, null);
+  });
+
+  /** A catalogue that cannot answer must not take the transport down. */
+  test("a failed lookup leaves the view renderable", async () => {
+    const [card] = makeCard({ id: "m1" });
+    card._ws = async () => {
+      throw new Error("Bibliothek nicht erreichbar");
+    };
+    await card._syncPlayingItem();
+    assert.equal(card._view.playingItem, null);
+    assert.equal(card._actionError, undefined);
   });
 });
 

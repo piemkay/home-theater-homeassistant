@@ -29,6 +29,34 @@ export const helpers = {
     return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
   },
 
+  /**
+   * `noch 1:32:07` — how much film is left.
+   *
+   * The number people actually ask for mid-film. Empty while the player has
+   * not reported a duration yet, so the row shows nothing rather than a
+   * countdown from zero.
+   */
+  remainingLabel(position, duration) {
+    if (!duration) return "";
+    const left = Math.max(0, duration - position);
+    return `noch ${this.formatTime(left)}`;
+  },
+
+  /**
+   * Minutes -> `1 Std 53 Min`, the way a film's length gets said out loud.
+   *
+   * The poster grids stay on the compact `106 Min` — there the number is a
+   * sorting aid. In the player's hero it is the answer to "how long is this",
+   * and nobody counts 113 minutes into hours in their head.
+   */
+  runtimeLabel(minutes) {
+    if (!minutes) return "";
+    const h = Math.floor(minutes / 60);
+    const m = Math.round(minutes % 60);
+    if (!h) return `${m} Min`;
+    return m ? `${h} Std ${m} Min` : `${h} Std`;
+  },
+
   /** Remaining seconds -> a German ETA the second user can act on. */
   formatEta(seconds) {
     if (seconds == null || seconds <= 0) return "";
@@ -726,6 +754,8 @@ input[type="text"], select {
   min-height: 44px;
 }
 .label { font-size: 11px; color: var(--kino-text3); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+/* One labelled select. A class, not an inline margin, so a grid can drop it. */
+.selblock { margin-bottom: 12px; }
 
 .sheet {
   position: absolute; inset: 0; background: var(--kino-bg); z-index: 25;
@@ -752,7 +782,9 @@ footer {
 }
 .footthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .volrow { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-.volval { font-size: 11px; color: var(--kino-text2); width: 62px; text-align: center; font-variant-numeric: tabular-nums; }
+/* The dB reading is one line, never two: the row shrinks the spacer beside
+   it rather than the number itself. */
+.volval { font-size: 11px; color: var(--kino-text2); width: 62px; flex-shrink: 0; white-space: nowrap; text-align: center; font-variant-numeric: tabular-nums; }
 .round { width: 36px; height: 36px; border-radius: 18px; border: none; background: var(--kino-surface2); color: var(--kino-text2); font-size: 15px; cursor: pointer; flex-shrink: 0; }
 .round.ghosted { background: transparent; }
 .seek { border: none; background: transparent; color: var(--kino-text2); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
@@ -762,6 +794,86 @@ button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
   font-weight: 800; font-size: 15px; box-sizing: border-box;
   background: linear-gradient(0deg, rgba(0,0,0,.65), transparent);
 }
+
+/* -- Player view -----------------------------------------------------
+   The film leads: a full-bleed backdrop, its poster set into the bottom
+   edge, and the transport directly under it. Everything the title itself
+   carries — synopsis, cast, similar — follows below the controls, so the
+   view answers "what is this" without leaving the playback screen. */
+.sheet.hero { padding: 0; }
+.playhero {
+  position: relative; width: 100%; height: 200px; flex-shrink: 0;
+  background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 10px, var(--kino-surface) 10px, var(--kino-surface) 20px);
+}
+.playhero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Darkens the top for the two links and fades the bottom into the page, so
+   the poster and title sit on the card's own background, not on the still. */
+.playhero .veil {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,.5) 0%, transparent 35%, var(--kino-bg) 100%);
+}
+.playhero .links {
+  position: absolute; top: 14px; left: 16px; right: 16px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+/* These two sit on the darkened top of the artwork in either theme, so they
+   are light regardless of it — the theme's own text colour would be black on
+   black in light mode. The shadow covers the bright stills. */
+.playhero .links a { color: oklch(0.97 0.005 265); text-shadow: 0 1px 3px rgba(0,0,0,.65); }
+.playhero .links a.quiet { color: oklch(0.82 0.01 265); }
+.playbody { position: relative; padding: 0 20px 28px; margin-top: -64px; }
+.playhead { display: flex; gap: 14px; align-items: flex-end; margin-bottom: 16px; }
+.playposter {
+  position: relative; width: 104px; aspect-ratio: 2/3; flex-shrink: 0;
+  border-radius: 12px; overflow: hidden; border: 1px solid var(--kino-border);
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  background: repeating-linear-gradient(135deg, var(--kino-surface2), var(--kino-surface2) 8px, var(--kino-surface) 8px, var(--kino-surface) 16px);
+}
+.playposter img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.playtitle { min-width: 0; padding-bottom: 4px; }
+.playtitle h2 { font-size: 20px; line-height: 1.15; margin: 0 0 5px; }
+.playtitle .line { font-size: 11px; font-weight: 600; color: var(--kino-text2); margin-bottom: 6px; }
+.formats { display: flex; gap: 5px; flex-wrap: wrap; }
+.formats span {
+  font-size: 9px; font-weight: 800; padding: 3px 7px; border-radius: 5px;
+  border: 1px solid var(--kino-border); color: var(--kino-text2);
+}
+
+/* The scrubber. The 24px strip, not the 5px track, is what the thumb has to
+   hit; touch-action none keeps a stray drag from scrolling the sheet. */
+.scrub { position: relative; height: 24px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.scrub .track { position: relative; width: 100%; height: 5px; border-radius: 3px; background: var(--kino-surface2); }
+.scrub .track > div { height: 100%; background: var(--kino-gold); border-radius: 3px; }
+.scrub .knob {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 14px; height: 14px; border-radius: 7px; background: var(--kino-gold);
+  box-shadow: 0 0 0 4px oklch(0.78 0.15 75 / .25);
+}
+.times {
+  display: flex; justify-content: space-between; margin-bottom: 12px;
+  font-size: 11px; color: var(--kino-text3); font-variant-numeric: tabular-nums;
+}
+.times .rest { color: var(--kino-text2); }
+.transport { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 18px; }
+.transport .round { width: 44px; height: 44px; border-radius: 22px; background: transparent; font-size: 19px; }
+.transport .seek { width: 44px; height: 44px; font-size: 13px; }
+.transport .play {
+  width: 60px; height: 60px; border-radius: 30px; border: none; cursor: pointer;
+  background: var(--kino-gold); color: var(--kino-goldText); font-size: 21px;
+}
+/* Mute, Dim and the dB stepper read as one instrument, apart from the
+   selects below them. */
+.audiopanel {
+  padding: 14px; border-radius: 16px; margin-bottom: 14px;
+  background: var(--kino-surface); border: 1px solid var(--kino-border);
+}
+.audiopanel .volrow { margin-top: 0; }
+.audiopanel .volval { font-size: 13px; font-weight: 700; width: 70px; color: var(--kino-text); }
+.selgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 22px; }
+.selgrid .selblock { margin-bottom: 0; }
+.playsection { margin-bottom: 20px; }
+.playsection.divided { border-top: 1px solid var(--kino-border); padding-top: 18px; }
+.playsection h3 { margin-bottom: 8px; }
 
 /* Detail sheet: community star and critics tomato in one row. */
 .scorerow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
@@ -849,6 +961,9 @@ button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 }
 
 /* Detail sheet: synopsis and episode list (F2, F3). */
+.overviewwrap { margin: 14px 0 0; }
+/* In the player view the heading above it already provides the gap. */
+.playsection .overviewwrap { margin-top: 0; }
 .overview { font-size: 13px; color: var(--kino-text2); line-height: 1.55; margin: 0; }
 .overview.clamped {
   display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4;
@@ -904,6 +1019,8 @@ button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
     border: 1px solid var(--kino-border); border-radius: 18px;
     box-shadow: 0 24px 80px rgba(0,0,0,.55);
   }
+  /* 200px of a 720px-wide panel is a letterbox strip, not a hero. */
+  .playhero { height: 260px; }
 }
 @media (min-width: 900px) {
   .postergrid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
@@ -1289,6 +1406,14 @@ class KinoCard extends CardBase {
       // Which track column has been asked to show its whole list.
       tracksExpanded: {},
       playingOpen: false,
+      // The playback view's own copy of the film: which title it was fetched
+      // for, the catalogue entry, its similar row, and its "mehr" toggle.
+      // Derived from what is playing rather than from where the user is, so
+      // deliberately outside NAV_KEYS — a back step must not undo it.
+      playingItemId: null,
+      playingItem: null,
+      playingSimilar: null,
+      playingOverviewOpen: false,
       powerConfirm: false,
       activityMenu: false,
       musikSource: "spotify",
@@ -1456,8 +1581,18 @@ class KinoCard extends CardBase {
     for (const bar of this._container.querySelectorAll('[data-bar="media"] > div')) {
       bar.style.width = `${pct}%`;
     }
+    // The player view's scrubber: a filled length and the knob riding on it.
+    for (const fill of this._container.querySelectorAll("[data-fill='media']")) {
+      fill.style.width = `${pct}%`;
+    }
+    for (const knob of this._container.querySelectorAll("[data-knob='media']")) {
+      knob.style.left = `${pct}%`;
+    }
     for (const el of this._container.querySelectorAll("[data-time='elapsed']")) {
       el.textContent = helpers.formatTime(position);
+    }
+    for (const el of this._container.querySelectorAll("[data-time='remaining']")) {
+      el.textContent = helpers.remainingLabel(position, duration);
     }
     for (const el of this._container.querySelectorAll("[data-time='duration']")) {
       el.textContent = helpers.formatTime(duration);
@@ -1950,6 +2085,8 @@ class KinoCard extends CardBase {
       // against the new state whether or not anything else moved.
       const settled = this._settleDemoJump();
       if (changed || settled) this._render();
+      // Fetches only when the title changed, so the poll stays one request.
+      this._syncPlayingItem();
     } catch (err) {
       this._error = err.message || "Kino ist nicht erreichbar";
       this._render();
@@ -2098,6 +2235,58 @@ class KinoCard extends CardBase {
     } catch (err) {
       this._view.episodes = [];
       this._actionError = err.message;
+    }
+    this._render();
+  }
+
+  /**
+   * Keep the playback view's catalogue entry in step with what is playing.
+   *
+   * `nowPlaying` carries only what the player could match — an id and a
+   * title. Handlung, Besetzung and the format badges live on the catalogue
+   * entry, so it is fetched once per title and then left alone: the state
+   * poll runs every two seconds and must not turn into three requests.
+   *
+   * A film Kino could not match has no id, and the view falls back to what
+   * the player entity itself reports.
+   */
+  async _syncPlayingItem() {
+    const id = ((this._kino && this._kino.nowPlaying) || {}).id || null;
+    if (id === this._view.playingItemId) return;
+    this._view.playingItemId = id;
+    this._view.playingItem = null;
+    this._view.playingSimilar = null;
+    this._view.playingOverviewOpen = false;
+    if (!id) {
+      this._render();
+      return;
+    }
+    this._loadPlayingSimilar(id);
+    try {
+      const item = await this._ws({ type: "kino/library/item", item_id: id });
+      // The film may already have ended while this was on the wire.
+      if (this._view.playingItemId !== id) return;
+      this._view.playingItem = item;
+    } catch (err) {
+      // Not fatal: the transport is what this view is for, and it needs
+      // nothing from the catalogue.
+      this._view.playingItem = null;
+    }
+    this._render();
+  }
+
+  /** The playback view's "Mehr wie dieser Titel" row. */
+  async _loadPlayingSimilar(itemId) {
+    try {
+      const result = await this._ws({
+        type: "kino/library/similar",
+        item_id: itemId,
+        limit: 12,
+      });
+      if (this._view.playingItemId !== itemId) return;
+      this._view.playingSimilar = result.items || [];
+    } catch (err) {
+      this._view.playingSimilar = [];
     }
     this._render();
   }
@@ -2439,6 +2628,29 @@ class KinoCard extends CardBase {
     const target = Math.max(0, this._position(state) + seconds);
     await this._player("media_seek", {
       seek_position: duration ? Math.min(target, duration - 1) : target,
+    });
+  }
+
+  /**
+   * Jump to the spot on the scrubber that was tapped.
+   *
+   * The whole 24px strip is the target, not the 5px track, so a thumb hits
+   * it; the fraction is measured against the track inside it, which is what
+   * the fill and the knob are drawn against.
+   *
+   * Landing exactly on the end would stop the film, so the last second is
+   * kept — same guard as the ±10 s buttons.
+   */
+  async _seekToFraction(strip, event) {
+    const track = strip.querySelector(".track") || strip;
+    const box = track.getBoundingClientRect();
+    if (!box.width) return;
+    const state = this._hass.states[this._playerEntity];
+    const duration = state && state.attributes.media_duration;
+    if (!duration) return;
+    const fraction = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+    await this._player("media_seek", {
+      seek_position: Math.min(duration * fraction, duration - 1),
     });
   }
 
@@ -4083,9 +4295,15 @@ class KinoCard extends CardBase {
     </div>`;
   }
 
-  /** "Mehr wie dieser Titel" — Jellyfin's similar list, tap to drill on. */
-  _renderSimilar() {
-    const similar = this._view.similar;
+  /**
+   * "Mehr wie dieser Titel" — Jellyfin's similar list, tap to drill on.
+   *
+   * The detail sheet and the player view each keep their own list, because
+   * both can be on screen at once: opening a similar title from the player
+   * stacks its detail sheet on top, and that sheet's row must not be the row
+   * underneath it.
+   */
+  _renderSimilar(similar = this._view.similar) {
     if (!similar || !similar.length) return "";
     return `<div class="section" style="margin-top:22px">
       <h3>Mehr wie dieser Titel</h3>
@@ -4093,14 +4311,20 @@ class KinoCard extends CardBase {
     </div>`;
   }
 
-  /** The synopsis, clamped to ~4 lines with a "mehr" toggle (F3). */
-  _renderOverview(item) {
+  /**
+   * The synopsis, clamped to ~4 lines with a "mehr" toggle (F3).
+   *
+   * `key` names the flag the toggle writes. The detail sheet and the player
+   * view both show a synopsis and can both be open, so one shared flag would
+   * expand the one nobody tapped.
+   */
+  _renderOverview(item, key = "overviewOpen") {
     if (!item.overview) return "";
     const long = item.overview.length > 220;
-    const open = !!this._view.overviewOpen;
-    return `<div style="margin:14px 0 0">
-      <p class="overview${long && !open ? " clamped" : ""}" data-act="toggle-overview">${this._esc(item.overview)}</p>
-      ${long ? `<a class="link" data-act="toggle-overview" style="display:inline-block;margin-top:4px">${open ? "weniger" : "mehr"}</a>` : ""}
+    const open = !!this._view[key];
+    return `<div class="overviewwrap">
+      <p class="overview${long && !open ? " clamped" : ""}" data-act="toggle-overview" data-key="${key}">${this._esc(item.overview)}</p>
+      ${long ? `<a class="link" data-act="toggle-overview" data-key="${key}" style="display:inline-block;margin-top:4px">${open ? "weniger" : "mehr"}</a>` : ""}
     </div>`;
   }
 
@@ -4174,7 +4398,21 @@ class KinoCard extends CardBase {
     </div>`;
   }
 
-  /** The full playback view from the mockup. */
+  /**
+   * The playback view.
+   *
+   * The film leads: its backdrop is the hero, its poster is set into the
+   * bottom edge of that hero, and the transport sits directly beneath. Below
+   * the controls comes what the title itself carries — Handlung, Besetzung &
+   * Crew, Mehr wie dieser Titel — so "what are we actually watching" is
+   * answered without leaving the playback screen.
+   *
+   * Two sources feed it. The player entity gives the live parts (position,
+   * play state, volume); the catalogue entry behind `nowPlaying` gives the
+   * material. When the player is on a file Kino could not match, the entry is
+   * absent and the hero falls back to the entity's own title and picture —
+   * the transport works either way.
+   */
   _renderPlayingSheet() {
     const player = this._playerEntity;
     const state = player ? this._hass.states[player] : null;
@@ -4184,48 +4422,131 @@ class KinoCard extends CardBase {
     const position = this._position(state);
     const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
     const playing = state.state === "playing";
-    const title = attrs.media_title || "Wiedergabe";
+    const playingId = (this._kino.nowPlaying || {}).id || null;
+    // The catalogue entry, once it has arrived — see `_syncPlayingItem`.
+    const item =
+      this._view.playingItem && this._view.playingItem.id === playingId
+        ? this._view.playingItem
+        : null;
+    const title =
+      (item && helpers.itemTitle(item)) || attrs.media_title || "Wiedergabe";
     // A 16:9 frame showing a 2:3 poster crops two thirds of it away, so ask
     // for the real backdrop and keep the poster as the fallback.
-    const poster = attrs.entity_picture;
-    const item = this._kino.nowPlaying;
-    const art =
-      item && item.id
-        ? helpers.artworkUrl(item.id, "Backdrop", this._kino.artworkSignature)
-        : poster;
+    const picture = attrs.entity_picture;
+    const sig = this._kino.artworkSignature;
+    const art = playingId
+      ? helpers.artworkUrl(playingId, "Backdrop", sig)
+      : picture;
     const fallback =
-      art && poster && art !== poster
-        ? `this.onerror=null;this.src='${this._esc(poster)}'`
+      art && picture && art !== picture
+        ? `this.onerror=null;this.src='${this._esc(picture)}'`
         : "this.style.display='none'";
+    const poster = playingId
+      ? helpers.artworkUrl(playingId, "Primary", sig)
+      : picture;
 
-    return `<div class="sheet" data-sheet="playing" style="z-index:30">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <a class="link" data-act="collapse-playing">⌄ Minimieren</a>
-        <a class="link" style="color:var(--kino-text3)" data-act="stop-playing">Wiedergabe beenden</a>
-      </div>
-      <div class="backdrop">
+    return `<div class="sheet hero" data-sheet="playing" style="z-index:30">
+      <div class="playhero">
         ${art ? `<img src="${this._esc(art)}" alt="" onerror="${fallback}">` : ""}
-        <div class="caption">${this._esc(title)}</div>
+        <div class="veil"></div>
+        <div class="links">
+          <a class="link" style="font-size:13px" data-act="collapse-playing">⌄ Minimieren</a>
+          <a class="link quiet" data-act="stop-playing">Wiedergabe beenden</a>
+        </div>
       </div>
-      <div class="bar" data-bar="media" style="margin:16px 0 6px"><div style="width:${pct}%"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-bottom:20px">
-        <span data-time="elapsed">${helpers.formatTime(position)}</span>
-        <span data-time="duration">${helpers.formatTime(duration)}</span>
+      <div class="playbody">
+        <div class="playhead">
+          <div class="playposter">
+            ${poster ? `<img src="${this._esc(poster)}" alt="" onerror="this.style.display='none'">` : ""}
+          </div>
+          <div class="playtitle">
+            <h2>${this._esc(title)}</h2>
+            ${this._playerMetaLine(item)}
+            ${this._playerFormats(item)}
+          </div>
+        </div>
+        <div class="scrub" data-act="seek-to" title="Zu dieser Stelle springen">
+          <div class="track">
+            <div data-fill="media" style="width:${pct}%"></div>
+            <div class="knob" data-knob="media" style="left:${pct}%"></div>
+          </div>
+        </div>
+        <div class="times">
+          <span data-time="elapsed">${helpers.formatTime(position)}</span>
+          <span class="rest" data-time="remaining">${this._esc(helpers.remainingLabel(position, duration))}</span>
+          <span data-time="duration">${helpers.formatTime(duration)}</span>
+        </div>
+        <div class="transport">
+          <button class="round" data-act="transport" data-key="media_previous_track" title="Vorheriger Titel">⏮</button>
+          <button class="seek" data-act="seek" data-key="-${SEEK_STEP_SECONDS}" title="10 Sekunden zurück">⟲${SEEK_STEP_SECONDS}</button>
+          <button class="play" data-act="transport" data-key="${playing ? "media_pause" : "media_play"}"
+            title="${playing ? "Pause" : "Weiter"}">${playing ? "⏸" : "▶"}</button>
+          <button class="seek" data-act="seek" data-key="${SEEK_STEP_SECONDS}" title="10 Sekunden vor">${SEEK_STEP_SECONDS}⟳</button>
+          <button class="round" data-act="transport" data-key="media_next_track" title="Nächster Titel">⏭</button>
+        </div>
+        <div class="audiopanel">${this._renderVolumeRow(true)}</div>
+        ${this._renderPlayerSelects()}
+        ${this._renderPlayingOverview(item)}
+        ${this._renderPeople(item || {})}
+        ${this._renderSimilar(this._view.playingSimilar)}
+        ${this._renderCaptureBlock()}
       </div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:22px">
-        <button class="round ghosted" data-act="transport" data-key="media_previous_track" title="Vorheriger Titel">⏮</button>
-        <button class="seek" data-act="seek" data-key="-${SEEK_STEP_SECONDS}" title="10 Sekunden zurück">⟲${SEEK_STEP_SECONDS}</button>
-        <button class="round" style="width:52px;height:52px;border-radius:26px;background:var(--kino-gold);color:var(--kino-goldText)"
-          data-act="transport" data-key="${playing ? "media_pause" : "media_play"}">
-          ${playing ? "⏸" : "▶"}
-        </button>
-        <button class="seek" data-act="seek" data-key="${SEEK_STEP_SECONDS}" title="10 Sekunden vor">${SEEK_STEP_SECONDS}⟳</button>
-        <button class="round ghosted" data-act="transport" data-key="media_next_track" title="Nächster Titel">⏭</button>
-      </div>
-      ${this._renderVolumeRow(true)}
-      ${this._renderSoundSelects()}
-      ${this._renderTrackSelects()}
-      ${this._renderCaptureBlock()}
+    </div>`;
+  }
+
+  /** `2014 · 1 Std 53 Min · Sci-Fi, Action` under the title. */
+  _playerMetaLine(item) {
+    if (!item) return "";
+    const line = [
+      item.year,
+      helpers.runtimeLabel(item.runtime),
+      (item.genres || []).slice(0, 2).join(", "),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return line ? `<div class="line">${this._esc(line)}</div>` : "";
+  }
+
+  /**
+   * What the disc actually is: picture, sound, age rating.
+   *
+   * Outlined rather than filled — they label the file, they are not controls,
+   * and the only filled thing on this screen should be the play button.
+   */
+  _playerFormats(item) {
+    if (!item) return "";
+    const badges = [item.videoFormat, item.audioFormat, item.officialRating]
+      .filter(Boolean)
+      .map((text) => `<span>${this._esc(text)}</span>`)
+      .join("");
+    return badges ? `<div class="formats">${badges}</div>` : "";
+  }
+
+  /** Klang, Raumklang, Tonspur and Untertitel as one 2×2 block. */
+  _renderPlayerSelects() {
+    const controls = this._kino.controls || {};
+    // "none" is what the Trinnov reports when nothing is upmixed, but it
+    // refuses it as a choice — see `_renderSoundSelects`.
+    const blocks = [
+      [controls.preset, "Klang", []],
+      [controls.upmixer, "Raumklang", ["none"]],
+      [this._entity("audioTrack"), "Tonspur", []],
+      [this._entity("subtitleTrack"), "Untertitel", []],
+    ]
+      .map(([entityId, label, hidden]) =>
+        this._entitySelectBlock(entityId, label, hidden)
+      )
+      .filter(Boolean);
+    if (!blocks.length) return "";
+    return `<div class="selgrid">${blocks.join("")}</div>`;
+  }
+
+  /** The synopsis, under its own heading and above the cast. */
+  _renderPlayingOverview(item) {
+    if (!item || !item.overview) return "";
+    return `<div class="playsection divided">
+      <h3>Handlung</h3>
+      ${this._renderOverview(item, "playingOverviewOpen")}
     </div>`;
   }
 
@@ -4235,17 +4556,19 @@ class KinoCard extends CardBase {
    * One button, because that is how it actually happens: a scene reveals
    * itself as reference material only once it is over, so the capture
    * reaches backwards and the trim editor opens on the result.
+   *
+   * It closes the playback view — the last thing on the screen, under the
+   * film's own material, where it reads as an afterthought to watching
+   * rather than a second way to start something.
    */
   _renderCaptureBlock() {
     const player = this._playerEntity;
     const state = player ? this._hass.states[player] : null;
     if (!state || !["playing", "paused"].includes(state.state)) return "";
-    const window = (this._kino.demo && this._kino.demo.retroCaptureSeconds) || 60;
-    return `<div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--kino-border)">
-      <div class="label">Demo-Aufnahme</div>
+    // No caption: the trim editor opens on the captured span and shows the
+    // scope, so what it took is answered there rather than promised here.
+    return `<div>
       <button class="ghost" style="width:100%" data-act="demo-capture">⏺ Demo erstellen</button>
-      <p class="hint">Übernimmt die letzten ${window} Sekunden — Umfang und Feinschnitt
-        folgen im nächsten Schritt.</p>
       ${this._demoToast ? `<div class="okbox">${this._esc(this._demoToast)}</div>` : ""}
     </div>`;
   }
@@ -4335,7 +4658,7 @@ class KinoCard extends CardBase {
       current && current !== "unknown" && !options.includes(current);
     // Values stay raw — they are what the entity accepts. Only the visible
     // text is prettified (F8): "0: Off" reads "Aus", "none" reads "—".
-    return `<div style="margin-bottom:12px">
+    return `<div class="selblock">
       <div class="label">${this._esc(label)}</div>
       <select data-field="entity-select" data-key="${entityId}">
         ${orphan ? `<option value="" disabled selected>${this._esc(helpers.displayLabel(current))}</option>` : ""}
@@ -5482,10 +5805,13 @@ class KinoCard extends CardBase {
         await this._loadLibrary();
         break;
       }
-      case "toggle-overview":
-        view.overviewOpen = !view.overviewOpen;
+      case "toggle-overview": {
+        // The key names which sheet's synopsis was tapped — both can be open.
+        const flag = key || "overviewOpen";
+        view[flag] = !view[flag];
         this._render();
         break;
+      }
       case "select-season":
         view.seasonId = key;
         await this._loadEpisodes();
@@ -5526,6 +5852,9 @@ class KinoCard extends CardBase {
         break;
       case "seek":
         await this._seekBy(Number(key));
+        break;
+      case "seek-to":
+        await this._seekToFraction(target, event);
         break;
       case "dim":
         await this._toggleDim();
