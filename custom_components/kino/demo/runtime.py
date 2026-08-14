@@ -22,7 +22,7 @@ from ..const import DOMAIN, EVENT_DEMO_PLAYBACK
 from ..core.model import ActivityState
 from ..devices.madvr import MadvrDriver
 from ..devices.trinnov import TrinnovDriver
-from ..devices.zidoo import ZidooDriver
+from ..devices.zidoo import SUBTITLE_OFF_LABEL, ZidooDriver
 from .model import Clip
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,6 +33,10 @@ ACTIVITY_TIMEOUT_HEADROOM = 60.0
 
 #: Floor for the same, for an install whose devices are all quick.
 ACTIVITY_TIMEOUT_MIN = 120.0
+
+#: How long a just-opened file is given to publish its track list before a
+#: stored track choice is written off as unavailable.
+TRACK_LIST_TIMEOUT = 6.0
 
 
 class HassDemoRuntime:
@@ -199,25 +203,61 @@ class HassDemoRuntime:
             await asyncio.sleep(0.5)
         return False
 
-    async def apply_tracks(self, audio: str | None, subtitle: str | None) -> bool:
-        """Select tracks, and report whether anything was actually switched."""
+    async def apply_tracks(
+        self, audio: str | None, subtitle: str | None
+    ) -> tuple[bool, str | None]:
+        """Select tracks; report whether a switch happened, and any complaint.
+
+        A track that cannot be selected is a disappointment, not a failure:
+        the clip still plays, in whatever the file defaults to. Killing a
+        showcase over one stored label — a track list that has not repopulated
+        yet, or a file that was re-encoded since the clip was captured — would
+        be far worse than the wrong language for forty seconds.
+        """
+        driver = self._zidoo
+        if driver is None:
+            return False, None
+        switched = False
+        complaints: list[str] = []
+        for label, role, select, what in (
+            (audio, "audio_select", driver.select_audio_track, "Tonspur"),
+            (subtitle, "subtitle_select", driver.select_subtitle_track, "Untertitel"),
+        ):
+            if not label or driver.value_of(role) == label:
+                continue
+            if not await self._await_track_option(role, label):
+                complaints.append(f"{what} „{label}“ bietet der Player nicht an")
+                continue
+            try:
+                await select(label)
+                switched = True
+            except Exception as err:  # noqa: BLE001 - never fatal, see above
+                _LOGGER.warning("%s '%s' nicht gesetzt: %s", what, label, err)
+                complaints.append(f"{what} „{label}“ ließ sich nicht setzen")
+        return switched, (" · ".join(complaints) if complaints else None)
+
+    async def _await_track_option(self, role: str, label: str) -> bool:
+        """Wait briefly for a just-opened file's track list to carry `label`.
+
+        The track selects are helpers an automation fills from the player, so
+        for a second or two after a file opens they still hold the previous
+        file's list — or nothing at all.
+        """
         driver = self._zidoo
         if driver is None:
             return False
-        switched = False
-        if audio and driver.value_of("audio_select") != audio:
-            try:
-                await driver.select_audio_track(audio)
-                switched = True
-            except RuntimeError as err:
-                _LOGGER.warning("Tonspur '%s' nicht gesetzt: %s", audio, err)
-        if subtitle and driver.value_of("subtitle_select") != subtitle:
-            try:
-                await driver.select_subtitle_track(subtitle)
-                switched = True
-            except RuntimeError as err:
-                _LOGGER.warning("Untertitel '%s' nicht gesetzt: %s", subtitle, err)
-        return switched
+        deadline = self.now() + TRACK_LIST_TIMEOUT
+        while True:
+            options = driver.options_of(role)
+            if label in options:
+                return True
+            # "Aus" is translated to the player's own off entry at call time,
+            # so it is legitimate even when the literal string is not listed.
+            if role == "subtitle_select" and label == SUBTITLE_OFF_LABEL:
+                return True
+            if not options or self.now() >= deadline:
+                return False
+            await asyncio.sleep(0.5)
 
     async def seek(self, seconds: float) -> None:
         driver = self._zidoo

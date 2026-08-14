@@ -84,8 +84,15 @@ class DemoRuntime(Protocol):
     async def wait_for_playing(self, timeout: float) -> bool:
         """Wait for a confirmed playing state."""
 
-    async def apply_tracks(self, audio: str | None, subtitle: str | None) -> bool:
-        """Select tracks; return True only when a switch was actually issued."""
+    async def apply_tracks(
+        self, audio: str | None, subtitle: str | None
+    ) -> tuple[bool, str | None]:
+        """Select tracks.
+
+        Returns whether a switch was actually issued, and a complaint to show
+        when a stored track could not be selected — never an exception: the
+        clip still plays in whatever the file defaults to.
+        """
 
     async def seek(self, seconds: float) -> None:
         """Jump the player to an absolute position."""
@@ -364,7 +371,11 @@ class DemoEngine:
         # switch rather than to play-start. When the wanted tracks are already
         # active - the common case with a remux whose default is the lossless
         # track - nothing is issued and nothing is re-anchored.
-        await self._runtime.apply_tracks(clip.audio_track, clip.subtitle_track)
+        _, complaint = await self._runtime.apply_tracks(
+            clip.audio_track, clip.subtitle_track
+        )
+        if complaint:
+            self._warn(complaint)
 
         lead_in = float(self._settings.lead_in_seconds)
         await self._runtime.seek(max(0.0, clip.start_ms / 1000 - lead_in))
@@ -490,7 +501,11 @@ class DemoEngine:
                 )
         else:
             await self._runtime.resume()
-        await self._runtime.apply_tracks(clip.audio_track, clip.subtitle_track)
+        _, complaint = await self._runtime.apply_tracks(
+            clip.audio_track, clip.subtitle_track
+        )
+        if complaint:
+            self._warn(complaint)
 
         lead_in = float(self._settings.lead_in_seconds)
         await self._runtime.seek(max(0.0, clip.start_ms / 1000 - lead_in))

@@ -45,6 +45,8 @@ class FakeRuntime:
         self._confirm_calls = 0
         self.fail_play = False
         self.playing = False
+        #: What `apply_tracks` complains about, if anything.
+        self.track_complaint: str | None = None
 
     # -- clock --------------------------------------------------------------
 
@@ -75,9 +77,13 @@ class FakeRuntime:
     async def wait_for_playing(self, timeout: float) -> bool:
         return self.playing
 
-    async def apply_tracks(self, audio: str | None, subtitle: str | None) -> bool:
+    async def apply_tracks(
+        self, audio: str | None, subtitle: str | None
+    ) -> tuple[bool, str | None]:
         self.tracks.append((audio, subtitle))
-        return bool(audio or subtitle)
+        if self.track_complaint:
+            return False, self.track_complaint
+        return bool(audio or subtitle), None
 
     async def seek(self, seconds: float) -> None:
         self.calls.append("seek")
@@ -221,6 +227,28 @@ class TestShowcasePlayback:
         )
         await drain(engine)
         assert runtime.tracks == [("1: EN TrueHD", "Aus")]
+
+    async def test_a_track_the_player_refuses_warns_but_plays_on(
+        self, runtime, settings
+    ):
+        # Found live: a stored label the player's list no longer offers used
+        # to abort the whole showcase. The clip still plays, in whatever the
+        # file defaults to; the complaint is shown, not thrown.
+        runtime.track_complaint = "Tonspur „2: EN DTS“ bietet der Player nicht an"
+        engine = DemoEngine(runtime, settings)
+        await engine.start_clip(make_clip("c1", 0, 2000, audio_track="2: EN DTS"))
+        seen = None
+        for _ in range(60):
+            state = engine.state()
+            if state and state["warning"]:
+                seen = state["warning"]
+                break
+            await asyncio.sleep(0.005)
+        await drain(engine)
+        assert seen == "Tonspur „2: EN DTS“ bietet der Player nicht an"
+        # It played anyway: the file was opened and the clip ran to its end.
+        assert runtime.opened == ["c1"]
+        assert "pause" in runtime.calls
 
     async def test_pauses_at_the_end_of_a_clip(self, runtime, settings):
         engine = DemoEngine(runtime, settings)
