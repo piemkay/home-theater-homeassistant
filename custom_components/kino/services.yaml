@@ -51,3 +51,114 @@ refresh_library:
   description: >-
     Startet einen Neuabgleich der Jellyfin-Bibliothek. Hilft, wenn die
     NAS-Platten geschlafen haben und der erste Zugriff fehlgeschlagen ist.
+
+demo_capture:
+  name: Demo-Clip aufnehmen
+  description: >-
+    Merkt sich einen Ausschnitt des laufenden Titels als Demo-Clip. Ohne
+    Zeitangaben endet der Clip an der aktuellen Position und reicht so weit
+    zurück, wie in den Demo-Einstellungen hinterlegt ist — die Szene ist ja
+    schon vorbei, wenn sie sich als Demo-Material erweist.
+  fields:
+    start:
+      name: Start
+      description: "Startzeit, z. B. 1:12:04, 72:04 oder Sekunden. Leer lassen für den Rückgriff."
+      example: "1:12:04"
+      selector:
+        text:
+    end:
+      name: Ende
+      description: Endzeit. Leer lassen für die aktuelle Wiedergabeposition.
+      example: "1:13:04"
+      selector:
+        text:
+    name:
+      name: Name
+      description: Anzeigename. Leer lassen für „Titel — Start–Ende“.
+      selector:
+        text:
+    notes:
+      name: Notizen
+      description: Worauf soll man achten? Erscheint auf der Zwischentafel.
+      selector:
+        text:
+          multiline: true
+    tags:
+      name: Tags
+      description: Schlagworte, z. B. bass_heavy, atmos_heights, guest_safe.
+      selector:
+        object:
+    path:
+      name: Dateipfad
+      description: Nur nötig, wenn der laufende Titel nicht in der Bibliothek gefunden wurde.
+      selector:
+        text:
+
+demo_play_clip:
+  name: Demo-Clip abspielen
+  description: >-
+    Spielt einen einzelnen Clip ab — inklusive Vorlauf, damit die Signalkette
+    zum künstlerischen Start verriegelt ist.
+  fields:
+    clip_id:
+      name: Clip
+      description: ID des Clips.
+      required: true
+      selector:
+        text:
+
+demo_play_playlist:
+  name: Showcase abspielen
+  description: Spielt einen Showcase ab, Clip für Clip.
+  fields:
+    showcase_id:
+      name: Showcase
+      description: ID des Showcases.
+      required: true
+      selector:
+        text:
+
+demo_skip:
+  name: Clip überspringen
+  description: Springt im laufenden Showcase zum nächsten Clip.
+
+demo_replay:
+  name: Clip wiederholen
+  description: Spielt den aktuellen Clip noch einmal von vorn.
+
+demo_stop:
+  name: Demo beenden
+  description: >-
+    Beendet die laufende Demo und setzt Lautstärke, Preset und Profil auf die
+    vorherigen Werte zurück.
+
+demo_ab_start:
+  name: A/B-Vergleich starten
+  description: >-
+    Spielt einen Clip zweimal hintereinander und wechselt in der Pause die
+    Konfiguration. Der zweite Durchgang startet erst, wenn die Hardware das
+    neue Preset bestätigt hat.
+  fields:
+    clip_id:
+      name: Clip
+      description: ID des Clips.
+      required: true
+      selector:
+        text:
+    a:
+      name: Konfiguration A
+      description: "z. B. {preset: Kino Referenz, madvr: 1, barco: HDR 260 HDMI}"
+      selector:
+        object:
+    b:
+      name: Konfiguration B
+      description: Wie A, für den zweiten Durchgang.
+      selector:
+        object:
+    blind:
+      name: Blind-Vergleich
+      description: >-
+        Reihenfolge zufällig zuweisen und erst nach der Wahl aufdecken.
+      default: true
+      selector:
+        boolean:

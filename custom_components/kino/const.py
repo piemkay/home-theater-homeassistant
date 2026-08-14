@@ -27,15 +27,26 @@ SERVICE_ACTIVATE = "activate"
 SERVICE_DRY_RUN = "dry_run"
 SERVICE_RESTORE_DEVICE = "restore_device"
 SERVICE_REFRESH_LIBRARY = "refresh_library"
+SERVICE_DEMO_CAPTURE = "demo_capture"
+SERVICE_DEMO_PLAY_CLIP = "demo_play_clip"
+SERVICE_DEMO_PLAY_PLAYLIST = "demo_play_playlist"
+SERVICE_DEMO_SKIP = "demo_skip"
+SERVICE_DEMO_REPLAY = "demo_replay"
+SERVICE_DEMO_STOP = "demo_stop"
+SERVICE_DEMO_AB_START = "demo_ab_start"
 
 # Events fired for the existing `Kino -` automations (FR-84)
 EVENT_ACTIVITY_CHANGED = "kino_activity_changed"
 EVENT_TRANSITION_STARTED = "kino_transition_started"
 EVENT_TRANSITION_FINISHED = "kino_transition_finished"
 EVENT_DEVICE_DRIFT = "kino_device_drift"
+#: Fired around demo playback, always carrying ``demo: true`` so watch-history
+#: consumers can filter it out. A showcase must never "watch" ten films.
+EVENT_DEMO_PLAYBACK = "kino_demo_playback"
 
 # Storage
 STORAGE_KEY_DURATIONS = "kino.durations"
+STORAGE_KEY_DEMO = "kino.demo"
 STORAGE_VERSION = 1
 
 # Artwork proxy

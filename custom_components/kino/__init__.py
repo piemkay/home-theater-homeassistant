@@ -26,6 +26,7 @@ from .const import (
 )
 from .coordinator import KinoCoordinator, KinoRuntimeData
 from .core.schema import ConfigErrors
+from .demo.services import register_demo_services
 from .frontend import async_register_frontend
 from .http import async_register_http
 from .media.jellyfin import JellyfinClient
@@ -97,6 +98,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     runtime: KinoRuntimeData = entry.runtime_data
+    # A demo still running must not outlive the entry either, and stopping it
+    # is also what puts volume, preset and profile back.
+    await runtime.coordinator.demo.stop()
     # A transition still in flight must not outlive the entry — an abandoned
     # engine would keep driving hardware and pushing stale snapshots.
     await runtime.coordinator.engine.async_shutdown()
@@ -115,6 +119,7 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 def _coordinators(hass: HomeAssistant) -> list[KinoCoordinator]:
     return [runtime.coordinator for runtime in hass.data.get(DOMAIN, {}).values()]
+
 
 
 def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
@@ -200,3 +205,4 @@ def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
         schema=vol.Schema({vol.Required("device"): cv.string}),
     )
     hass.services.async_register(DOMAIN, SERVICE_REFRESH_LIBRARY, _refresh_library)
+    register_demo_services(hass)

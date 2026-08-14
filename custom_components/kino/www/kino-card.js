@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.6.2";
+const CARD_VERSION = "0.7.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -496,6 +496,44 @@ export const helpers = {
     if (activity.controlClass === "mixed") return "musik";
     return "handoff";
   },
+
+  /**
+   * Milliseconds as `H:MM:SS` — the only spelling a demo clip ever shows.
+   *
+   * Clips are stored in milliseconds and never displayed in them; this and
+   * `parseTimecode` are the only two places that translation happens, on
+   * this side exactly as in the integration's own model.
+   */
+  formatTimecode(milliseconds) {
+    const total = Math.max(0, Math.round((milliseconds || 0) / 1000));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+  },
+
+  /**
+   * A hand-typed timecode as milliseconds, forgivingly.
+   *
+   * `1:12:04`, `72:04` and a bare `4324` all resolve to the same instant, so
+   * the user can type roughly and nudge precisely. Anything that is not a
+   * timecode returns null rather than a wrong number.
+   */
+  parseTimecode(text) {
+    if (text == null) return null;
+    const parts = String(text).trim().split(":").map((p) => p.trim());
+    if (!parts.length || parts.some((p) => !/^\d+(\.\d+)?$/.test(p))) return null;
+    let seconds = 0;
+    for (const part of parts) seconds = seconds * 60 + parseFloat(part);
+    return Math.max(0, Math.round(seconds * 1000));
+  },
+
+  /** A tag's German label, falling back to the free-text tag itself. */
+  tagLabel(key, vocabulary) {
+    const entry = (vocabulary || []).find((v) => v.key === key);
+    return entry ? entry.label : key;
+  },
 };
 
 /* ------------------------------------------------------------------ *
@@ -879,6 +917,117 @@ footer {
   .detailmain { flex: 1; min-width: 0; }
   .detail-backdrop { display: none; }
 }
+
+/* -- demo mode ------------------------------------------------------- */
+
+.clipcard {
+  padding: 12px; border-radius: 14px; background: var(--kino-surface);
+  border: 1px solid var(--kino-border); cursor: pointer;
+}
+.clipcard .head { display: flex; gap: 12px; }
+.clipcard .art {
+  flex: 0 0 44px; width: 44px; height: 66px; border-radius: 8px;
+}
+.clipcard .body { flex: 1; min-width: 0; }
+.clipcard .name { font-size: 13px; font-weight: 800; }
+.clipcard .range {
+  font-size: 11px; color: var(--kino-text3); margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.clipcard .notes {
+  margin: 8px 0 0; font-size: 12px; color: var(--kino-text2); line-height: 1.5;
+}
+.tagchip {
+  height: 22px; display: inline-flex; align-items: center; padding: 0 9px;
+  border-radius: 11px; background: var(--kino-surface2);
+  color: var(--kino-text2); font-size: 10px; font-weight: 700;
+}
+.sclist { display: flex; flex-direction: column; gap: 10px; }
+.scrow {
+  padding: 16px; border-radius: 14px; background: var(--kino-surface);
+  border: 1px solid var(--kino-border); display: flex; align-items: center;
+  gap: 12px; cursor: pointer;
+}
+.scrow .name { font-size: 14px; font-weight: 800; }
+.scrow .meta { font-size: 11px; color: var(--kino-text3); margin-top: 3px; }
+.dashed {
+  width: 100%; padding: 12px; border-radius: 12px;
+  border: 1px dashed var(--kino-border); background: transparent;
+  color: var(--kino-text2); font-weight: 700; font-size: 12px; cursor: pointer;
+}
+.timefield {
+  width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 12px;
+  border: 1px solid var(--kino-border); background: var(--kino-surface);
+  color: var(--kino-text); font-size: 15px; font-weight: 700;
+  font-family: ui-monospace, monospace; text-align: center;
+}
+.nudges { display: flex; gap: 6px; margin-top: 6px; }
+.nudges button {
+  flex: 1; height: 30px; border-radius: 8px; border: none;
+  background: var(--kino-surface2); color: var(--kino-text2);
+  font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.preview {
+  padding: 12px; border-radius: 12px; background: var(--kino-surface);
+  border: 1px solid var(--kino-border);
+}
+.preview .transport {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+}
+.hint { margin: 8px 0 0; font-size: 10px; color: var(--kino-text3); line-height: 1.5; }
+.slate {
+  padding: 22px; border-radius: 16px; background: var(--kino-surface);
+  border: 1px solid var(--kino-border); margin-bottom: 16px;
+}
+.slate .next { font-size: 18px; font-weight: 800; line-height: 1.3; }
+.slate p { margin: 10px 0 0; font-size: 13px; color: var(--kino-text2); }
+.demorows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.demorow {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: 12px; border: 1px solid var(--kino-border); cursor: pointer;
+  background: transparent;
+}
+.demorow[aria-current="true"] { background: var(--kino-surface2); }
+.demorow .n { width: 18px; font-size: 11px; font-weight: 800; color: var(--kino-text3); }
+.demorow[aria-current="true"] .n { color: var(--kino-gold); }
+.demorow .nm {
+  flex: 1; font-size: 12px; font-weight: 700; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; text-align: left;
+}
+.demorow .du { font-size: 10px; color: var(--kino-text3); }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper .val {
+  font-size: 12px; font-weight: 700; width: 56px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.steprow {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.steprow > span { font-size: 12px; color: var(--kino-text2); font-weight: 700; }
+.abbox {
+  padding: 16px; border-radius: 14px; background: var(--kino-surface);
+  border: 1px solid var(--kino-border); margin-bottom: 10px;
+}
+.abfield { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.abfield > span {
+  width: 56px; flex-shrink: 0; font-size: 10px; color: var(--kino-text3);
+  font-weight: 700;
+}
+.abfield select, .abfield input { flex: 1; min-width: 0; }
+.abmid { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.warnbox {
+  margin: 0 0 14px; padding: 10px 12px; border-radius: 10px;
+  background: oklch(0.78 0.15 75 / 0.14);
+  border: 1px solid oklch(0.78 0.15 75 / 0.4);
+  font-size: 12px; color: var(--kino-text);
+}
+.okbox {
+  margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+  background: oklch(0.72 0.12 190 / 0.15);
+  border: 1px solid oklch(0.72 0.12 190 / 0.4);
+  font-size: 12px; color: var(--kino-text); font-weight: 600;
+}
 `;
 
 /* ------------------------------------------------------------------ *
@@ -1101,7 +1250,28 @@ class KinoCard extends CardBase {
       activityMenu: false,
       musikSource: "spotify",
       refreshing: false,
+      // -- demo mode ---------------------------------------------------
+      demoTab: "clips",
+      demoTagFilter: [],
+      // The trim editor's working copy: nothing is written until "speichern".
+      trim: null,
+      // The showcase editor's working copy, same rule.
+      scEdit: null,
+      // The A/B setup sheet's working copy.
+      abSetup: null,
     };
+    //: Clips, showcases, vocabulary and settings, fetched on demand.
+    this._demo = {
+      clips: [],
+      showcases: [],
+      vocabulary: [],
+      settings: {},
+      options: {},
+    };
+    this._demoAt = 0;
+    // Capture confirmations, shown briefly under the capture button.
+    this._demoToast = "";
+    this._demoToastTimer = null;
     this._library = {
       items: [],
       total: 0,
@@ -1242,13 +1412,57 @@ class KinoCard extends CardBase {
       // between updates, written straight into the two nodes that show it.
       this._tick();
     }, 2000);
+    // A demo's countdowns move faster than the state poll. The engine sends
+    // the phase's start and end as timestamps, so the numbers in between are
+    // arithmetic — no extra traffic, no re-render.
+    this._demoTimer = setInterval(() => this._tickDemo(), 250);
   }
 
   disconnectedCallback() {
     if (this._timer) clearInterval(this._timer);
+    if (this._demoTimer) clearInterval(this._demoTimer);
     if (this._searchTimer) clearTimeout(this._searchTimer);
     if (this._previewTimer) clearTimeout(this._previewTimer);
     if (this._personTimer) clearTimeout(this._personTimer);
+    if (this._demoToastTimer) clearTimeout(this._demoToastTimer);
+  }
+
+  /**
+   * Advance a running demo's countdown and clip bar between state polls.
+   *
+   * Only the nodes that carry a number are touched; rebuilding the overlay
+   * four times a second would fight every tap.
+   */
+  _tickDemo() {
+    if (!this._container) return;
+    const run = this._runningDemo;
+    if (!run) return;
+    const now = Date.now();
+    const ends = run.phaseEndsAt;
+    const started = run.phaseStartedAt;
+    for (const el of this._container.querySelectorAll("[data-demo='countdown']")) {
+      const left = ends ? Math.max(0, Math.ceil((ends - now) / 1000)) : 0;
+      el.textContent = ends ? `Weiter in ${left} s` : "";
+    }
+    if (!ends || !started || ends <= started) return;
+    const fraction = Math.min(1, Math.max(0, (now - started) / (ends - started)));
+    for (const bar of this._container.querySelectorAll("[data-demo='bar'] > div")) {
+      bar.style.width = `${fraction * 100}%`;
+    }
+    const clip = run.clip;
+    if (!clip) return;
+    const spanned = clip.startMs + fraction * (clip.endMs - clip.startMs);
+    for (const el of this._container.querySelectorAll("[data-demo='pos']")) {
+      el.textContent = helpers.formatTimecode(spanned);
+    }
+    for (const el of this._container.querySelectorAll("[data-demo='left']")) {
+      el.textContent = `noch ${helpers.formatTimecode(Math.max(0, ends - now))}`;
+    }
+  }
+
+  /** The demo the engine reports as running, or null. */
+  get _runningDemo() {
+    return (this._kino && this._kino.demo && this._kino.demo.running) || null;
   }
 
   /**
@@ -1546,6 +1760,33 @@ class KinoCard extends CardBase {
   }
 
   /** Forget everything the open detail sheet loaded. */
+  /** Open one title's detail sheet and fetch what it needs. */
+  async _openDetail(itemId) {
+    const view = this._view;
+    view.detailId = itemId;
+    view.detail = null;
+    view.seasons = null;
+    view.seasonId = null;
+    view.episodes = null;
+    view.similar = null;
+    view.overviewOpen = false;
+    view.tracksExpanded = {};
+    this._render();
+    // Runs alongside the item fetch; it re-checks the open detail ID.
+    this._loadSimilar(itemId);
+    try {
+      view.detail = await this._ws({ type: "kino/library/item", item_id: itemId });
+    } catch (err) {
+      view.detail = null;
+      this._actionError = err.message;
+    }
+    this._render();
+    // A show browses on: season strip, then that season's episodes (F2).
+    if (view.detail && view.detail.kind === "show") {
+      await this._loadSeasons(view.detail.id);
+    }
+  }
+
   _closeDetail() {
     const view = this._view;
     view.detailId = null;
@@ -1871,6 +2112,359 @@ class KinoCard extends CardBase {
     return this._activityByKey(this._kino.targetActivity || this._kino.activity);
   }
 
+  /* -- demo mode ------------------------------------------------------ */
+
+  /**
+   * Fetch clips, showcases and the tag vocabulary.
+   *
+   * The two-second state poll carries only the running demo and the two
+   * numbers the capture button needs; the dataset itself is asked for when
+   * something is about to show it.
+   */
+  async _loadDemo(force = false) {
+    if (!force && Date.now() - this._demoAt < 30000) return;
+    try {
+      const data = await this._ws({ type: "kino/demo/data" });
+      this._demo = data;
+      this._demoAt = Date.now();
+    } catch (err) {
+      this._actionError = err.message || "Demos sind nicht erreichbar";
+    }
+    this._render();
+  }
+
+  /**
+   * The demo dataset, empty until it has been fetched.
+   *
+   * The detail sheet renders long before anything asks for clips, so every
+   * reader goes through here rather than assuming the fetch has happened.
+   */
+  get _demoData() {
+    return this._demo || { clips: [], showcases: [], vocabulary: [], options: {} };
+  }
+
+  _clipById(clipId) {
+    return (this._demoData.clips || []).find((c) => c.id === clipId) || null;
+  }
+
+  /** Every clip of one title — the detail sheet's own entry point. */
+  _clipsOf(itemId) {
+    return (this._demoData.clips || []).filter((c) => c.itemId === itemId);
+  }
+
+  async _demoWs(message, failure) {
+    try {
+      return await this._ws(message);
+    } catch (err) {
+      this._actionError = err.message || failure;
+      this._render();
+      return null;
+    }
+  }
+
+  _toast(text) {
+    this._demoToast = text;
+    if (this._demoToastTimer) clearTimeout(this._demoToastTimer);
+    this._demoToastTimer = setTimeout(() => {
+      this._demoToast = "";
+      this._render();
+    }, 4000);
+  }
+
+  /**
+   * Open the trim editor on a span of the title that is playing.
+   *
+   * The retro capture is the path that gets used: a scene only reveals
+   * itself as demo material once it is over, so the span ends at the
+   * current position and reaches back the configured window.
+   */
+  _captureFromPlayer() {
+    const player = this._playerEntity;
+    const state = player ? this._hass.states[player] : null;
+    if (!state) return;
+    const position = this._position(state);
+    const window = (this._kino.demo && this._kino.demo.retroCaptureSeconds) || 60;
+    const item = this._kino.nowPlaying || {};
+    this._openTrim({
+      itemId: item.id || null,
+      title: state.attributes.media_title || item.title || "",
+      startMs: Math.max(0, Math.round((position - window) * 1000)),
+      endMs: Math.max(2000, Math.round(position * 1000)),
+    });
+  }
+
+  /** Take a whole title as one clip — the detail sheet's entry point. */
+  _captureWholeTitle(item) {
+    if (!item) return;
+    this._openTrim({
+      itemId: item.id,
+      title: item.title,
+      path: item.path || null,
+      startMs: 0,
+      endMs: Math.max(2000, (item.runtime || 1) * 60000),
+    });
+  }
+
+  /**
+   * Seed the trim editor.
+   *
+   * Audio and subtitle default to whatever the player has selected right
+   * now, because that is nearly always what the clip wants — the common
+   * case needs no input at all.
+   */
+  _openTrim(seed) {
+    const audio = this._entity("audioTrack");
+    const subtitle = this._entity("subtitleTrack");
+    const currentOf = (id) => {
+      const state = id ? this._hass.states[id] : null;
+      return state && state.state !== "unknown" && state.state !== "unavailable"
+        ? state.state
+        : null;
+    };
+    const existing = seed.id ? this._clipById(seed.id) : null;
+    this._view.trim = {
+      id: seed.id || null,
+      itemId: seed.itemId || null,
+      path: seed.path || null,
+      title: seed.title || "",
+      start: helpers.formatTimecode(seed.startMs || 0),
+      end: helpers.formatTimecode(seed.endMs || 0),
+      name: existing ? existing.name : "",
+      tags: existing ? [...existing.tags] : [],
+      notes: existing ? existing.notes || "" : "",
+      tagInput: "",
+      audioTrack: existing ? existing.audioTrack : currentOf(audio),
+      subtitleTrack: existing ? existing.subtitleTrack : currentOf(subtitle),
+      // The scope chips nudge relative to the end the capture arrived with.
+      anchorMs: seed.endMs || 0,
+      previewAt: null,
+      previewing: false,
+    };
+    this._render();
+  }
+
+  _openClipEdit(clipId) {
+    const clip = this._clipById(clipId);
+    if (!clip) return;
+    this._openTrim({
+      id: clip.id,
+      itemId: clip.itemId,
+      path: clip.path,
+      title: clip.title,
+      startMs: clip.startMs,
+      endMs: clip.endMs,
+    });
+  }
+
+  get _trimSpan() {
+    const trim = this._view.trim;
+    if (!trim) return { start: null, end: null, valid: false };
+    const start = helpers.parseTimecode(trim.start);
+    const end = helpers.parseTimecode(trim.end);
+    return { start, end, valid: start != null && end != null && end > start };
+  }
+
+  _setTrimSpan(startMs, endMs) {
+    const trim = this._view.trim;
+    if (!trim) return;
+    trim.start = helpers.formatTimecode(Math.max(0, startMs));
+    trim.end = helpers.formatTimecode(Math.max(0, endMs));
+    this._render();
+  }
+
+  /** ±5 s / ±1 s on one end — the same value the text field writes. */
+  _nudgeTrim(which, deltaSeconds) {
+    const { start, end } = this._trimSpan;
+    const current = which === "start" ? start : end;
+    if (current == null) return;
+    const next = Math.max(0, current + deltaSeconds * 1000);
+    if (which === "start") this._setTrimSpan(next, end ?? next);
+    else this._setTrimSpan(start ?? 0, next);
+  }
+
+  /** Move the whole span without changing its length. */
+  _shiftTrim(deltaSeconds) {
+    const { start, end, valid } = this._trimSpan;
+    if (!valid) return;
+    const offset = Math.max(deltaSeconds * 1000, -start);
+    this._setTrimSpan(start + offset, end + offset);
+  }
+
+  async _saveClip() {
+    const trim = this._view.trim;
+    const { start, end, valid } = this._trimSpan;
+    if (!trim || !valid) return;
+    const payload = {
+      id: trim.id || undefined,
+      itemId: trim.itemId,
+      path: trim.path,
+      title: trim.title,
+      startMs: start,
+      endMs: end,
+      name: trim.name,
+      tags: trim.tags,
+      notes: trim.notes,
+      audioTrack: trim.audioTrack,
+      subtitleTrack: trim.subtitleTrack,
+    };
+    const result = await this._demoWs(
+      { type: "kino/demo/clip/save", clip: payload },
+      "Clip konnte nicht gespeichert werden"
+    );
+    if (!result) return;
+    this._view.trim = null;
+    this._toast(
+      trim.id ? "Clip aktualisiert." : "Clip gespeichert — zu finden unter Demos."
+    );
+    await this._loadDemo(true);
+  }
+
+  async _deleteClip() {
+    const trim = this._view.trim;
+    if (!trim || !trim.id) return;
+    const result = await this._demoWs(
+      { type: "kino/demo/clip/delete", clip_id: trim.id },
+      "Clip konnte nicht gelöscht werden"
+    );
+    if (!result) return;
+    this._view.trim = null;
+    await this._loadDemo(true);
+  }
+
+  /**
+   * Play across the cut so it can be checked without scrubbing.
+   *
+   * Seeks are keyframe-bound, so this is what tells you whether the start
+   * actually landed where the number says.
+   */
+  async _previewCut(positionMs) {
+    const trim = this._view.trim;
+    if (!trim || !trim.itemId) return;
+    trim.previewing = true;
+    trim.previewAt = positionMs;
+    this._render();
+    const result = await this._demoWs(
+      {
+        type: "kino/demo/preview",
+        item_id: trim.itemId,
+        position_ms: Math.max(0, Math.round(positionMs)),
+        path: trim.path || null,
+      },
+      "Die Vorschau konnte nicht gestartet werden"
+    );
+    if (this._view.trim) this._view.trim.previewing = false;
+    if (result) this._render();
+  }
+
+  _openShowcaseEditor(showcaseId) {
+    const showcase = (this._demoData.showcases || []).find((s) => s.id === showcaseId);
+    this._view.scEdit = showcase
+      ? {
+          id: showcase.id,
+          name: showcase.name,
+          clips: [...showcase.clips],
+          advance: showcase.advance,
+          gapSeconds: showcase.gapSeconds,
+          referenceVolumeDb:
+            showcase.referenceVolumeDb == null ? -18 : showcase.referenceVolumeDb,
+        }
+      : {
+          id: null,
+          name: "",
+          clips: [],
+          advance: "auto",
+          gapSeconds: 8,
+          referenceVolumeDb: -18,
+        };
+    this._render();
+  }
+
+  async _saveShowcase() {
+    const edit = this._view.scEdit;
+    if (!edit || !edit.name.trim() || !edit.clips.length) return;
+    const result = await this._demoWs(
+      {
+        type: "kino/demo/showcase/save",
+        showcase: {
+          id: edit.id || undefined,
+          name: edit.name.trim(),
+          clips: edit.clips,
+          advance: edit.advance,
+          gapSeconds: edit.gapSeconds,
+          referenceVolumeDb: edit.referenceVolumeDb,
+        },
+      },
+      "Showcase konnte nicht gespeichert werden"
+    );
+    if (!result) return;
+    this._view.scEdit = null;
+    await this._loadDemo(true);
+  }
+
+  async _deleteShowcase() {
+    const edit = this._view.scEdit;
+    if (!edit || !edit.id) return;
+    const result = await this._demoWs(
+      { type: "kino/demo/showcase/delete", showcase_id: edit.id },
+      "Showcase konnte nicht gelöscht werden"
+    );
+    if (!result) return;
+    this._view.scEdit = null;
+    await this._loadDemo(true);
+  }
+
+  async _playDemo(message) {
+    const result = await this._demoWs(message, "Die Demo konnte nicht starten");
+    if (result) await this._refreshState();
+  }
+
+  async _demoControl(action, index) {
+    await this._demoWs(
+      { type: "kino/demo/control", action, ...(index == null ? {} : { index }) },
+      "Die Steuerung ist nicht angekommen"
+    );
+    await this._refreshState();
+  }
+
+  _openAbSetup(clipId) {
+    const options = this._demoData.options || {};
+    const presets = options.presets || [];
+    this._view.abSetup = {
+      clipId,
+      blind: true,
+      a: { preset: presets[0] || "", madvr: "", barco: "" },
+      b: { preset: presets[1] || presets[0] || "", madvr: "", barco: "" },
+    };
+    this._render();
+  }
+
+  /** Drop the empty fields: an unset side must not be "applied" as blank. */
+  _abConfig(side) {
+    const out = {};
+    for (const [key, value] of Object.entries(side)) {
+      if (value !== "" && value != null) out[key] = value;
+    }
+    return out;
+  }
+
+  async _startAb() {
+    const setup = this._view.abSetup;
+    if (!setup) return;
+    const result = await this._demoWs(
+      {
+        type: "kino/demo/ab_start",
+        clip_id: setup.clipId,
+        a: this._abConfig(setup.a),
+        b: this._abConfig(setup.b),
+        blind: setup.blind,
+      },
+      "Der Vergleich konnte nicht starten"
+    );
+    if (!result) return;
+    this._view.abSetup = null;
+    await this._refreshState();
+  }
+
   _render() {
     if (!this.shadowRoot) return;
     const root = this.shadowRoot;
@@ -1911,8 +2505,15 @@ class KinoCard extends CardBase {
     const focused = this.shadowRoot.activeElement;
     const focusField = focused && focused.dataset ? focused.dataset.field : null;
     const caret = focused && focused.selectionStart != null ? focused.selectionStart : null;
+    const demoRun = this._runningDemo;
     const sheetOpen =
-      this._view.detailId || this._view.playingOpen || this._view.filterSheet;
+      this._view.detailId ||
+      this._view.playingOpen ||
+      this._view.filterSheet ||
+      this._view.trim ||
+      this._view.scEdit ||
+      this._view.abSetup ||
+      demoRun;
     this._container.innerHTML = [
       this._renderHeader(),
       '<div class="scroller">',
@@ -1930,6 +2531,13 @@ class KinoCard extends CardBase {
       this._view.detailId ? this._renderDetailSheet() : "",
       this._view.playingOpen ? this._renderPlayingSheet() : "",
       this._view.filterSheet ? this._renderFilterSheet() : "",
+      // A running demo owns the screen: it sits above the detail and playing
+      // sheets, so tapping a clip's title while one runs cannot bury it.
+      demoRun ? this._renderDemoRun() : "",
+      demoRun ? this._renderAbRun() : "",
+      this._view.trim ? this._renderTrimSheet() : "",
+      this._view.scEdit ? this._renderShowcaseEditor() : "",
+      this._view.abSetup ? this._renderAbSetup() : "",
       this._view.powerConfirm ? this._renderPowerConfirm() : "",
     ].join("");
     this._signature = this._renderSignature();
@@ -2127,6 +2735,7 @@ class KinoCard extends CardBase {
   }
 
   _renderBody() {
+    if (this._view.main === "demos") return this._renderDemos();
     if (this._view.main === "library") return this._renderLibrary();
     const k = this._kino;
     const current = this._currentActivity;
@@ -2205,11 +2814,167 @@ class KinoCard extends CardBase {
         <div class="row">
           <button class="tile" style="text-align:center" data-act="open-library" data-key="movies">Filme</button>
           <button class="tile" style="text-align:center" data-act="open-library" data-key="shows">Serien</button>
+          <button class="tile" style="text-align:center" data-act="open-demos">Demos</button>
         </div>
       </div>
       ${resumeRow}
       ${favoriteRow}
       ${recentRow}`;
+  }
+
+  /* -- demo mode: the Demos tab --------------------------------------- */
+
+  _renderDemos() {
+    const tab = this._view.demoTab;
+    const chip = (key, label) =>
+      `<button class="pill" data-act="demo-tab" data-key="${key}"
+         aria-pressed="${tab === key}">${label}</button>`;
+    return `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <a class="link" data-act="back-home">‹ Zurück</a>
+        <h2 style="margin:0;flex:1">Demos</h2>
+      </div>
+      <div class="row" style="margin-bottom:12px;justify-content:flex-start">
+        ${chip("clips", "Clips")}${chip("showcases", "Showcases")}
+      </div>
+      ${tab === "clips" ? this._renderClipList() : this._renderShowcaseList()}`;
+  }
+
+  /**
+   * The clip library, filtered by tag.
+   *
+   * Tags carry their own count, and a chip that would empty the list is not
+   * offered at all — the same honesty the library's facets follow.
+   */
+  _renderClipList() {
+    const selected = this._view.demoTagFilter;
+    const clips = (this._demoData.clips || []).filter((c) =>
+      selected.every((tag) => c.tags.includes(tag))
+    );
+    const counts = {};
+    for (const clip of this._demoData.clips || []) {
+      for (const tag of clip.tags) counts[tag] = (counts[tag] || 0) + 1;
+    }
+    const vocabulary = this._demoData.vocabulary || [];
+    const known = vocabulary.map((v) => v.key);
+    const keys = [...known, ...Object.keys(counts).filter((k) => !known.includes(k))]
+      .filter((k) => counts[k] || selected.includes(k))
+      .sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+
+    if (!(this._demoData.clips || []).length) {
+      return `<div class="empty">
+        <p>Noch keine Demo-Clips.</p>
+        <p class="sub">Während der Wiedergabe auf „Demo erstellen“ tippen — der
+          Ausschnitt wird rückwirkend übernommen.</p>
+      </div>`;
+    }
+
+    return `
+      <div style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span class="label" style="margin:0">Nach Tags filtern</span>
+          ${selected.length ? '<a class="link" data-act="demo-tags-clear">Zurücksetzen</a>' : ""}
+        </div>
+        <div class="chipwrap">
+          ${keys
+            .map(
+              (key) => `<button class="pill" data-act="demo-tag" data-key="${this._esc(key)}"
+                 aria-pressed="${selected.includes(key)}">${this._esc(
+                   helpers.tagLabel(key, vocabulary)
+                 )}<span class="chipcount">${counts[key] || 0}</span></button>`
+            )
+            .join("")}
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">
+        ${clips.length} ${clips.length === 1 ? "Clip" : "Clips"}
+      </div>
+      <div class="sclist">
+        ${clips.map((clip) => this._clipCard(clip)).join("") ||
+          '<p class="empty">Kein Clip trägt alle gewählten Tags.</p>'}
+      </div>`;
+  }
+
+  _clipCard(clip) {
+    const art = clip.itemId
+      ? helpers.artworkUrl(clip.itemId, "Primary", this._kino.artworkSignature)
+      : null;
+    const vocabulary = this._demoData.vocabulary || [];
+    return `<div class="clipcard" data-act="demo-clip-edit" data-key="${this._esc(clip.id)}">
+      <div class="head">
+        <div class="art">
+          ${art ? `<img loading="lazy" src="${art}" alt="" onerror="this.style.display='none'">` : ""}
+        </div>
+        <div class="body">
+          <div class="name">${this._esc(clip.name)}</div>
+          <div class="range">${this._esc(
+            [clip.start + "–" + clip.end, clip.duration, helpers.displayLabel(clip.audioTrack)]
+              .filter((p) => p && p !== "—")
+              .join(" · ")
+          )}</div>
+          ${
+            clip.itemId
+              ? `<a class="link" style="display:inline-block;margin-top:4px"
+                   data-act="demo-open-title" data-key="${this._esc(clip.itemId)}"
+                   >${this._esc(clip.title || "Titel")} ›</a>`
+              : ""
+          }
+        </div>
+      </div>
+      ${
+        clip.tags.length
+          ? `<div class="chipwrap" style="margin-top:10px">${clip.tags
+              .map((t) => `<span class="tagchip">${this._esc(helpers.tagLabel(t, vocabulary))}</span>`)
+              .join("")}</div>`
+          : ""
+      }
+      ${clip.notes ? `<p class="notes">${this._esc(clip.notes)}</p>` : ""}
+      <div class="row" style="margin-top:12px">
+        <button class="primary" style="flex:1;padding:10px;font-size:12px"
+          data-act="demo-play-clip" data-key="${this._esc(clip.id)}">▶ Abspielen</button>
+        <button class="ghost" style="width:auto;padding:10px 14px;font-size:12px"
+          data-act="demo-ab" data-key="${this._esc(clip.id)}">A/B</button>
+      </div>
+    </div>`;
+  }
+
+  _renderShowcaseList() {
+    const showcases = this._demoData.showcases || [];
+    return `<div class="sclist">
+      ${showcases.map((sc) => this._showcaseRow(sc)).join("")}
+      <button class="dashed" data-act="demo-showcase-new">＋ Neuer Showcase</button>
+      <p class="hint">Showcase antippen, um Name, Reihenfolge und Wiedergabe zu bearbeiten.</p>
+    </div>`;
+  }
+
+  _showcaseRow(showcase) {
+    const clips = showcase.clips
+      .map((id) => this._clipById(id))
+      .filter(Boolean);
+    const total = clips.reduce((sum, c) => sum + c.durationMs, 0);
+    const minutes = Math.max(
+      1,
+      Math.round((total + clips.length * showcase.gapSeconds * 1000) / 60000)
+    );
+    const meta = [
+      `${showcase.clips.length} ${showcase.clips.length === 1 ? "Clip" : "Clips"}`,
+      `~${minutes} Min`,
+      showcase.advance === "auto" ? "Automatisch" : "Per Tipp",
+      showcase.referenceVolumeDb == null
+        ? null
+        : `Referenz ${showcase.referenceVolumeDb} dB`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `<div class="scrow" data-act="demo-showcase-edit" data-key="${this._esc(showcase.id)}">
+      <div style="flex:1;min-width:0">
+        <div class="name">${this._esc(showcase.name)}</div>
+        <div class="meta">${this._esc(meta)}</div>
+      </div>
+      <button class="round" style="width:44px;height:44px;border-radius:22px;background:var(--kino-gold);color:var(--kino-goldText);font-size:15px"
+        data-act="demo-play-showcase" data-key="${this._esc(showcase.id)}"
+        title="Showcase abspielen">▶</button>
+    </div>`;
   }
 
   _renderMusik() {
@@ -2777,12 +3542,46 @@ class KinoCard extends CardBase {
                        : ""
                    }`
           }
+          ${this._renderDetailClips(item)}
           ${this._renderTracks(item)}
           ${this._renderPeople(item)}
           ${this._renderSimilar()}
         </div>
       </div>
     </div>`;
+  }
+
+  /**
+   * The clips this title already has, plus the way to add another.
+   *
+   * A second natural entry point (spec §7): while browsing, playing one
+   * remembered scene should not mean going round by the Demos tab.
+   */
+  _renderDetailClips(item) {
+    if (!item || item.kind === "show" || item.kind === "season") return "";
+    const clips = this._clipsOf(item.id);
+    const vocabulary = this._demoData.vocabulary || [];
+    const rows = clips
+      .map(
+        (clip) => `<div class="eprow" style="cursor:default">
+          <div style="flex:1;min-width:0">
+            <div class="title">${this._esc(`${clip.name} · ${clip.start}–${clip.end}`)}</div>
+            <div class="meta">${this._esc(
+              clip.tags.map((t) => helpers.tagLabel(t, vocabulary)).join(" · ") || "Ohne Tags"
+            )}</div>
+          </div>
+          <button class="round" data-act="demo-play-clip" data-key="${this._esc(clip.id)}"
+            title="Clip abspielen">▶</button>
+        </div>`
+      )
+      .join("");
+    return `
+      ${clips.length ? `<div class="label" style="margin-top:20px">Demo-Clips</div>${rows}` : ""}
+      <div style="text-align:center;margin-top:14px">
+        <a class="link" style="color:var(--kino-text3);font-size:11px"
+          data-act="demo-capture-title" data-key="${this._esc(item.id)}"
+          >＋ Ganzen Titel als Demo-Clip übernehmen</a>
+      </div>`;
   }
 
   /** The "gesehen" toggle for one entry, as a labelled tick. */
@@ -3050,6 +3849,28 @@ class KinoCard extends CardBase {
       ${this._renderVolumeRow(true)}
       ${this._renderSoundSelects()}
       ${this._renderTrackSelects()}
+      ${this._renderCaptureBlock()}
+    </div>`;
+  }
+
+  /**
+   * "That was demo-worthy", from the player view.
+   *
+   * One button, because that is how it actually happens: a scene reveals
+   * itself as reference material only once it is over, so the capture
+   * reaches backwards and the trim editor opens on the result.
+   */
+  _renderCaptureBlock() {
+    const player = this._playerEntity;
+    const state = player ? this._hass.states[player] : null;
+    if (!state || !["playing", "paused"].includes(state.state)) return "";
+    const window = (this._kino.demo && this._kino.demo.retroCaptureSeconds) || 60;
+    return `<div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--kino-border)">
+      <div class="label">Demo-Aufnahme</div>
+      <button class="ghost" style="width:100%" data-act="demo-capture">⏺ Demo erstellen</button>
+      <p class="hint">Übernimmt die letzten ${window} Sekunden — Umfang und Feinschnitt
+        folgen im nächsten Schritt.</p>
+      ${this._demoToast ? `<div class="okbox">${this._esc(this._demoToast)}</div>` : ""}
     </div>`;
   }
 
@@ -3149,6 +3970,554 @@ class KinoCard extends CardBase {
           )
           .join("")}
       </select>
+    </div>`;
+  }
+
+  /* -- demo mode: the sheets ------------------------------------------ */
+
+  /**
+   * The trim editor.
+   *
+   * Scope chips and nudges write the same two values the text fields do, so
+   * the user can type roughly and correct precisely — and the note about
+   * keyframes is stated rather than hidden, because seeks land on the
+   * nearest one and the start really can be a second or two out.
+   */
+  _renderTrimSheet() {
+    const trim = this._view.trim;
+    if (!trim) return "";
+    const { start, end, valid } = this._trimSpan;
+    const nudges = (which) =>
+      [-5, -1, 1, 5]
+        .map(
+          (d) => `<button data-act="trim-nudge" data-key="${which}:${d}"
+             >${d > 0 ? "+" : "−"}${Math.abs(d)} s</button>`
+        )
+        .join("");
+    const vocabulary = this._demoData.vocabulary || [];
+    const free = trim.tags.filter((t) => !vocabulary.some((v) => v.key === t));
+    const chip = (key, label) =>
+      `<button class="pill" data-act="trim-tag" data-key="${this._esc(key)}"
+         aria-pressed="${trim.tags.includes(key)}">${this._esc(label)}</button>`;
+
+    return `<div class="sheet" data-sheet="trim" style="z-index:45">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <a class="link" style="color:var(--kino-text3)" data-act="trim-close">Verwerfen</a>
+        <h2 style="margin:0;flex:1;text-align:right">${
+          trim.id ? "Clip bearbeiten" : "Clip zuschneiden"
+        }</h2>
+      </div>
+      <div style="font-size:12px;color:var(--kino-text2);margin-bottom:14px;text-align:right">
+        ${this._esc(trim.title)}
+      </div>
+
+      <div class="label">Umfang</div>
+      <div class="chipwrap" style="margin-bottom:10px">
+        ${[
+          ["30", "Letzte 30 s"],
+          ["60", "Letzte 60 s"],
+          ["120", "Letzte 2 Min"],
+        ]
+          .map(
+            ([key, label]) =>
+              `<button class="pill" data-act="trim-scope" data-key="${key}">${label}</button>`
+          )
+          .join("")}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:16px">
+        <span style="font-size:10px;color:var(--kino-text3);flex-shrink:0">Verschieben</span>
+        ${[-60, -30, -10, 10, 30, 60]
+          .map(
+            (d) => `<button class="pill" style="flex:1;height:28px;padding:0;font-size:10px"
+               data-act="trim-shift" data-key="${d}">${d > 0 ? "+" : "−"}${Math.abs(d)}</button>`
+          )
+          .join("")}
+      </div>
+
+      <div class="row" style="margin-bottom:10px">
+        <div style="flex:1">
+          <div class="label">Start</div>
+          <input type="text" class="timefield" data-field="trim-start"
+            value="${this._esc(trim.start)}" inputmode="numeric">
+          <div class="nudges">${nudges("start")}</div>
+        </div>
+        <div style="flex:1">
+          <div class="label">Ende</div>
+          <input type="text" class="timefield" data-field="trim-end"
+            value="${this._esc(trim.end)}" inputmode="numeric">
+          <div class="nudges">${nudges("end")}</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">
+        <span style="font-size:12px;color:var(--kino-text2);font-weight:700"
+          data-role="trim-length">Länge: ${
+            valid ? helpers.formatTimecode(end - start) : "—"
+          }</span>
+        <span style="font-size:10px;color:var(--kino-text3)">Eingabe frei: 1:12:04, 72:04 oder Sekunden</span>
+      </div>
+
+      ${
+        trim.itemId
+          ? `<div class="preview">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                <span class="label" style="margin:0">Wiedergabe prüfen</span>
+                <span style="font-size:11px;color:var(--kino-text2);font-family:ui-monospace,monospace">${
+                  trim.previewAt == null ? "—" : helpers.formatTimecode(trim.previewAt)
+                }</span>
+              </div>
+              <div class="transport">
+                <a class="link" data-act="trim-preview" data-key="start">Start −3 s</a>
+                <button class="seek" data-act="trim-preview-seek" data-key="-10">⟲10</button>
+                <button class="round" style="background:var(--kino-gold);color:var(--kino-goldText)"
+                  data-act="trim-preview" data-key="here" title="Ab hier abspielen">▶</button>
+                <button class="seek" data-act="trim-preview-seek" data-key="10">10⟳</button>
+                <a class="link" data-act="trim-preview" data-key="end">Ende −3 s</a>
+              </div>
+            </div>
+            <p class="hint" style="margin-bottom:20px">
+              Sprünge landen auf dem nächsten Keyframe — der effektive Start kann
+              um 1–2 s abweichen.
+            </p>`
+          : `<p class="hint" style="margin-bottom:20px">Ohne Bibliothekseintrag ist keine Vorschau möglich.</p>`
+      }
+
+      <div class="label">Name</div>
+      <input type="text" data-field="trim-name" value="${this._esc(trim.name)}"
+        placeholder="${this._esc(this._defaultClipName(trim))}">
+      <p class="hint" style="margin-bottom:16px">
+        Start und Ende werden automatisch am Clip geführt — sie gehören nicht in den Namen.
+      </p>
+
+      <div class="label">Tags</div>
+      <div class="chipwrap" style="margin-bottom:8px">
+        ${vocabulary.map((v) => chip(v.key, v.label)).join("")}
+        ${free.map((t) => chip(t, t)).join("")}
+      </div>
+      <div class="row" style="margin-bottom:16px">
+        <input type="text" data-field="trim-tag" value="${this._esc(trim.tagInput)}"
+          placeholder="Eigenes Tag…" style="flex:1">
+        <button class="ghost" style="width:auto;padding:0 14px" data-act="trim-add-tag">Hinzufügen</button>
+      </div>
+
+      <div class="label">Notizen — worauf achten?</div>
+      <textarea data-field="trim-notes" rows="3"
+        placeholder="z. B. Subbass beim Deichbruch…"
+        style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:12px;border:1px solid var(--kino-border);background:var(--kino-surface);color:var(--kino-text);font-size:13px;margin-bottom:16px;font-family:inherit;resize:none">${this._esc(
+          trim.notes
+        )}</textarea>
+
+      <div class="row" style="margin-bottom:6px">
+        <div style="flex:1">${this._trimTrackSelect("audioTrack", "Tonspur")}</div>
+        <div style="flex:1">${this._trimTrackSelect("subtitleTrack", "Untertitel")}</div>
+      </div>
+      <p class="hint" style="margin-bottom:18px">Vorbelegt mit der aktuellen Auswahl des Players.</p>
+
+      <button class="primary" data-act="trim-save"
+        ${valid ? "" : "disabled style=\"opacity:0.5\""}>${
+          trim.id ? "Änderungen speichern" : "Clip speichern"
+        }</button>
+      ${
+        trim.id
+          ? `<button class="ghost" style="width:100%;margin-top:10px;color:var(--kino-red);border-color:oklch(0.65 0.19 25 / 0.4)"
+               data-act="trim-delete">Clip löschen</button>`
+          : ""
+      }
+    </div>`;
+  }
+
+  _defaultClipName(trim) {
+    const { start, end, valid } = this._trimSpan;
+    if (!valid) return trim.title || "Clip";
+    const span = `${helpers.formatTimecode(start)}–${helpers.formatTimecode(end)}`;
+    return trim.title ? `${trim.title} — ${span}` : span;
+  }
+
+  /**
+   * A track dropdown for the trim editor.
+   *
+   * The options come off the player's own live list, so a clip can never
+   * store a track the file does not carry. A clip that already names one the
+   * player is not offering right now keeps it, as a disabled entry.
+   */
+  _trimTrackSelect(field, label) {
+    const trim = this._view.trim;
+    const entityId = this._entity(field);
+    const state = entityId ? this._hass.states[entityId] : null;
+    const options = state ? (state.attributes.options || []).filter((o) => o !== "—") : [];
+    const current = trim[field];
+    if (!options.length) {
+      return `<div class="label">${label}</div>
+        <p class="hint" style="margin:0">${
+          current ? this._esc(helpers.displayLabel(current)) : "Der Player bietet keine Liste."
+        }</p>`;
+    }
+    const orphan = current && !options.includes(current);
+    return `<div class="label">${label}</div>
+      <select data-field="trim-${field}">
+        <option value=""${!current ? " selected" : ""}>Unverändert</option>
+        ${orphan ? `<option value="${this._esc(current)}" selected>${this._esc(helpers.displayLabel(current))}</option>` : ""}
+        ${options
+          .map(
+            (o) =>
+              `<option value="${this._esc(o)}"${current === o ? " selected" : ""}>${this._esc(
+                helpers.displayLabel(o)
+              )}</option>`
+          )
+          .join("")}
+      </select>`;
+  }
+
+  _renderShowcaseEditor() {
+    const edit = this._view.scEdit;
+    if (!edit) return "";
+    const inList = new Set(edit.clips);
+    const valid = !!edit.name.trim() && edit.clips.length > 0;
+    const rows = edit.clips.map((id, index) => {
+      const clip = this._clipById(id);
+      return `<div class="demorow" style="cursor:default">
+        <span class="n">${index + 1}</span>
+        <div style="flex:1;min-width:0">
+          <div class="nm">${this._esc(clip ? clip.name : "—")}</div>
+          <div class="du">${this._esc(clip ? clip.duration : "")}</div>
+        </div>
+        <button class="round" style="width:28px;height:28px" data-act="sc-move" data-key="${index}:-1" title="Nach oben">↑</button>
+        <button class="round" style="width:28px;height:28px" data-act="sc-move" data-key="${index}:1" title="Nach unten">↓</button>
+        <button class="round" style="width:28px;height:28px;color:var(--kino-red)" data-act="sc-remove" data-key="${index}" title="Entfernen">✕</button>
+      </div>`;
+    });
+    const addable = (this._demoData.clips || []).filter((c) => !inList.has(c.id));
+    return `<div class="sheet" data-sheet="scedit" style="z-index:46">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+        <a class="link" style="color:var(--kino-text3)" data-act="sc-close">Verwerfen</a>
+        <h2 style="margin:0;flex:1;text-align:right">${
+          edit.id ? "Showcase bearbeiten" : "Neuer Showcase"
+        }</h2>
+      </div>
+
+      <div class="label">Name</div>
+      <input type="text" data-field="sc-name" value="${this._esc(edit.name)}"
+        placeholder="z. B. Gäste-Demo" style="margin-bottom:16px">
+
+      <div class="label">Weiterschalten</div>
+      <div class="row" style="margin-bottom:16px">
+        <button class="pill" style="flex:1;height:36px" data-act="sc-advance" data-key="auto"
+          aria-pressed="${edit.advance === "auto"}">Automatisch</button>
+        <button class="pill" style="flex:1;height:36px" data-act="sc-advance" data-key="tap"
+          aria-pressed="${edit.advance === "tap"}">Per Tipp</button>
+      </div>
+
+      <div class="steprow">
+        <span>Pause zwischen Clips</span>
+        <div class="stepper">
+          <button class="round" data-act="sc-step" data-key="gapSeconds:-1">–</button>
+          <span class="val">${edit.gapSeconds} s</span>
+          <button class="round" data-act="sc-step" data-key="gapSeconds:1">+</button>
+        </div>
+      </div>
+      <div class="steprow" style="margin-bottom:20px">
+        <span>Referenzpegel</span>
+        <div class="stepper">
+          <button class="round" data-act="sc-step" data-key="referenceVolumeDb:-1">–</button>
+          <span class="val">${edit.referenceVolumeDb} dB</span>
+          <button class="round" data-act="sc-step" data-key="referenceVolumeDb:1">+</button>
+        </div>
+      </div>
+
+      <div class="label">Reihenfolge</div>
+      <div class="demorows">
+        ${rows.join("") || '<p class="hint" style="margin:0">Noch kein Clip gewählt.</p>'}
+      </div>
+
+      ${
+        addable.length
+          ? `<div class="label">Clip hinzufügen</div>
+             <div class="demorows">
+               ${addable
+                 .map(
+                   (clip) => `<button class="dashed" style="text-align:left;display:flex;align-items:center;gap:10px"
+                     data-act="sc-add" data-key="${this._esc(clip.id)}">
+                     <span style="flex:1;min-width:0">
+                       <span style="display:block;font-size:12px;font-weight:700;color:var(--kino-text)">${this._esc(clip.name)}</span>
+                       <span style="display:block;font-size:10px;color:var(--kino-text3)">${this._esc(
+                         [clip.title, clip.duration].filter(Boolean).join(" · ")
+                       )}</span>
+                     </span>
+                     <span style="color:var(--kino-gold);font-size:15px;font-weight:800">＋</span>
+                   </button>`
+                 )
+                 .join("")}
+             </div>`
+          : ""
+      }
+
+      <button class="primary" data-act="sc-save" ${valid ? "" : 'disabled style="opacity:0.5"'}>
+        ${edit.id ? "Änderungen speichern" : "Showcase anlegen"}
+      </button>
+      ${
+        edit.id
+          ? `<button class="ghost" style="width:100%;margin-top:10px;color:var(--kino-red);border-color:oklch(0.65 0.19 25 / 0.4)"
+               data-act="sc-delete">Showcase löschen</button>`
+          : ""
+      }
+    </div>`;
+  }
+
+  /**
+   * The A/B setup sheet.
+   *
+   * Presets and projector profiles come from the devices' own option lists;
+   * the Envy addresses its profiles by slot number and cannot enumerate
+   * them, so that one is a number field rather than a dropdown.
+   */
+  _renderAbSetup() {
+    const setup = this._view.abSetup;
+    if (!setup) return "";
+    const clip = this._clipById(setup.clipId);
+    const options = this._demoData.options || {};
+    const side = (letter) => {
+      const values = setup[letter];
+      const pick = (field, label, list) =>
+        !list || !list.length
+          ? ""
+          : `<div class="abfield">
+              <span>${label}</span>
+              <select data-field="ab-${letter}-${field}">
+                <option value=""${!values[field] ? " selected" : ""}>—</option>
+                ${list
+                  .map(
+                    (o) =>
+                      `<option value="${this._esc(o)}"${values[field] === o ? " selected" : ""}>${this._esc(o)}</option>`
+                  )
+                  .join("")}
+              </select>
+            </div>`;
+      return `<div class="abbox">
+        <div class="label" style="margin-bottom:10px">Konfiguration ${letter.toUpperCase()}</div>
+        ${pick("preset", "Klang", options.presets)}
+        <div class="abfield">
+          <span>madVR</span>
+          <input type="text" inputmode="numeric" placeholder="Profil-Nr."
+            data-field="ab-${letter}-madvr" value="${this._esc(values.madvr || "")}">
+        </div>
+        ${pick("barco", "Beamer", options.barcoProfiles)}
+      </div>`;
+    };
+    return `<div class="sheet" data-sheet="absetup" style="z-index:47">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <a class="link" data-act="ab-close">‹ Abbrechen</a>
+        <h2 style="margin:0;flex:1;text-align:right">A/B-Vergleich</h2>
+      </div>
+      <div style="font-size:12px;color:var(--kino-text2);margin-bottom:18px;text-align:right">
+        ${this._esc(clip ? clip.name : "")} — wird zweimal hintereinander abgespielt.
+      </div>
+      ${side("a")}
+      ${side("b")}
+      <div style="display:flex;align-items:center;gap:12px;margin:14px 0 20px">
+        <button class="pill" data-act="ab-blind" aria-pressed="${setup.blind}"
+          style="flex-shrink:0">Blind-Vergleich</button>
+        <span style="font-size:11px;color:var(--kino-text3);line-height:1.4">
+          Reihenfolge wird zufällig zugewiesen und erst nach der Wahl aufgedeckt.
+        </span>
+      </div>
+      <button class="primary" data-act="ab-start">Vergleich starten</button>
+    </div>`;
+  }
+
+  /* -- demo mode: the runtime overlays --------------------------------- */
+
+  _renderDemoRun() {
+    const run = this._runningDemo;
+    if (!run || run.mode === "ab") return "";
+    const clip = run.clip || {};
+    const phase = run.phase;
+    const controls = !["done", "wait", "error"].includes(phase);
+    const body = {
+      preparing: () => `<div class="slate">
+          <div class="label" style="margin-bottom:8px">Kino wird vorbereitet</div>
+          <p>Der Raum wird gestartet — die Demo beginnt, sobald Bild und Ton bereit sind.</p>
+        </div>`,
+      slate: () => `<div class="slate">
+          <div class="label" style="margin-bottom:8px">Als Nächstes</div>
+          <div class="next">${this._esc(clip.name || "")}</div>
+          <p>${this._esc(clip.notes || "Keine Notizen.")}</p>
+          <div style="margin-top:14px;font-size:11px;color:var(--kino-gold);font-weight:700"
+            data-demo="countdown"></div>
+        </div>`,
+      wait: () => `<div class="slate">
+          <div class="label" style="margin-bottom:8px">Als Nächstes</div>
+          <div class="next">${this._esc(clip.name || "")}</div>
+          <p>${this._esc(clip.notes || "Keine Notizen.")}</p>
+          <button class="primary" style="margin-top:16px" data-act="demo-next">Weiter — Clip starten</button>
+        </div>`,
+      leadin: () => `<div class="slate" style="display:flex;align-items:center;gap:12px">
+          <span class="dot pulsing" style="background:var(--kino-gold);flex-shrink:0"></span>
+          <div>
+            <div style="font-size:13px;font-weight:700">Vorlauf läuft — Signalkette synchronisiert</div>
+            <div style="font-size:11px;color:var(--kino-text3);margin-top:3px">
+              Start ${Math.round((this._kino.demo || {}).leadInSeconds || 8)} s vor dem
+              Clip-Anfang, damit Bild und Ton verriegelt sind.
+            </div>
+          </div>
+        </div>`,
+      playing: () => `<div style="margin-bottom:16px">
+          <div style="font-size:18px;font-weight:800;line-height:1.3;margin-bottom:10px">${this._esc(
+            clip.name || ""
+          )}</div>
+          ${
+            clip.notes
+              ? `<div style="padding:12px 14px;border-radius:12px;background:var(--kino-surface);border:1px solid var(--kino-border);margin-bottom:14px">
+                   <div class="label" style="margin-bottom:4px">Worauf achten</div>
+                   <p style="margin:0;font-size:12px;color:var(--kino-text2);line-height:1.5">${this._esc(clip.notes)}</p>
+                 </div>`
+              : ""
+          }
+          <div class="bar" data-demo="bar"><div style="width:0%"></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-top:6px">
+            <span data-demo="pos">${this._esc(clip.start || "")}</span>
+            <span data-demo="left">${
+              run.phaseEndsAt
+                ? `noch ${helpers.formatTimecode(Math.max(0, run.phaseEndsAt - Date.now()))}`
+                : ""
+            }</span>
+          </div>
+        </div>`,
+      done: () => `<div class="slate" style="text-align:center">
+          <div style="font-size:15px;font-weight:800">Showcase beendet</div>
+          <p style="margin:8px 0 16px">Lautstärke, Preset und Profil wurden auf die
+            vorherigen Werte zurückgesetzt.</p>
+          <button class="primary" data-act="demo-stop">Schließen</button>
+        </div>`,
+      error: () => `<div class="slate" style="text-align:center">
+          <div style="font-size:15px;font-weight:800">Die Demo wurde abgebrochen</div>
+          <p style="margin:8px 0 16px">${this._esc(run.warning || "")}</p>
+          <button class="primary" data-act="demo-stop">Schließen</button>
+        </div>`,
+    };
+    return `<div class="sheet" data-sheet="demorun" style="z-index:32">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:11px;color:var(--kino-gold);font-weight:800;letter-spacing:1px;text-transform:uppercase">
+          Demo · ${this._esc(run.name)}
+        </span>
+        <a class="link" style="color:var(--kino-text3)" data-act="demo-stop">Beenden</a>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-bottom:16px">
+        <span>Clip ${run.index + 1} von ${run.count}</span>
+        <span>${
+          ["done", "error"].includes(phase)
+            ? ""
+            : `Showcase: noch ~${helpers.formatTimecode(run.totalRemainingMs)}`
+        }</span>
+      </div>
+      ${run.warning && phase !== "error" ? `<div class="warnbox">${this._esc(run.warning)}</div>` : ""}
+      ${(body[phase] || body.slate)()}
+      ${
+        controls
+          ? `<div style="display:flex;align-items:center;justify-content:center;gap:22px;margin:6px 0 22px">
+              <button class="ghost" style="width:auto;border:none;background:transparent;font-size:12px"
+                data-act="demo-replay">⟲ Clip</button>
+              <button class="round" style="width:52px;height:52px;border-radius:26px;background:var(--kino-gold);color:var(--kino-goldText);font-size:18px"
+                data-act="demo-pause">${run.paused ? "▶" : "⏸"}</button>
+              <button class="ghost" style="width:auto;border:none;background:transparent;font-size:19px"
+                data-act="demo-skip">⏭</button>
+            </div>`
+          : ""
+      }
+      <div class="label">Clips im Showcase</div>
+      <div class="demorows">
+        ${(run.clips || [])
+          .map(
+            (c, index) => `<button class="demorow" aria-current="${index === run.index}"
+              data-act="demo-jump" data-key="${index}">
+              <span class="n">${index + 1}</span>
+              <span class="nm">${this._esc(c.name)}</span>
+              <span class="du">${this._esc(c.duration)}</span>
+            </button>`
+          )
+          .join("")}
+      </div>
+      <p class="hint">Wiedergabe trägt demo=true — sie erscheint nicht im Verlauf.</p>
+    </div>`;
+  }
+
+  _renderAbRun() {
+    const run = this._runningDemo;
+    if (!run || run.mode !== "ab") return "";
+    const phase = run.phase;
+    const clip = run.clip || {};
+    const describe = (config) =>
+      Object.entries(config || {})
+        .map(([key, value]) =>
+          key === "madvr" ? `madVR ${value}` : key === "barco" ? `Beamer ${value}` : value
+        )
+        .join(" · ");
+    const round = ["lead", "play"].includes(phase);
+    const body = round
+      ? `<div style="text-align:center">
+          <div style="font-size:26px;font-weight:800">Durchgang ${run.side}</div>
+          <div style="font-size:12px;color:var(--kino-text2);margin-top:6px">${
+            run.blind
+              ? "Konfiguration verborgen"
+              : this._esc(describe(run.currentConfig))
+          }</div>
+          ${
+            phase === "lead"
+              ? `<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px">
+                   <span class="dot pulsing" style="background:var(--kino-gold)"></span>
+                   <span style="font-size:11px;color:var(--kino-text3)">Vorlauf — Signalkette synchronisiert</span>
+                 </div>`
+              : `<div class="bar" data-demo="bar" style="margin-top:18px"><div style="width:0%"></div></div>`
+          }
+        </div>`
+      : phase === "gap"
+        ? `<div style="text-align:center">
+            <span class="dot pulsing" style="background:var(--kino-gold);display:inline-block"></span>
+            <div style="font-size:14px;font-weight:700;margin-top:10px">Konfiguration wird angewendet…</div>
+            <div style="font-size:11px;color:var(--kino-text3);margin-top:6px">
+              Der zweite Durchgang startet erst nach bestätigtem Preset.
+            </div>
+          </div>`
+        : phase === "decide"
+          ? `<div style="text-align:center">
+              <div style="font-size:16px;font-weight:800;margin-bottom:16px">Welcher Durchgang war besser?</div>
+              <div class="row">
+                <button class="ghost" style="flex:1;padding:20px;font-size:15px;font-weight:800"
+                  data-act="ab-pick" data-key="1">Durchgang 1</button>
+                <button class="ghost" style="flex:1;padding:20px;font-size:15px;font-weight:800"
+                  data-act="ab-pick" data-key="2">Durchgang 2</button>
+              </div>
+              <div style="display:flex;gap:20px;justify-content:center;margin-top:14px">
+                <a class="link" data-act="ab-replay" data-key="1">1 erneut hören</a>
+                <a class="link" data-act="ab-replay" data-key="2">2 erneut hören</a>
+              </div>
+            </div>`
+          : phase === "result"
+            ? `<div style="text-align:center">
+                <div style="font-size:16px;font-weight:800">Gewinner: Konfiguration ${this._esc(
+                  run.winner || ""
+                )} — ${this._esc(describe((run.configs || {})[run.winner]))}</div>
+                ${
+                  run.blind
+                    ? `<div style="font-size:12px;color:var(--kino-text2);margin-top:8px;line-height:1.5">
+                         Blind-Zuordnung: Durchgang 1 war ${this._esc(run.order[0])},
+                         Durchgang 2 war ${this._esc(run.order[1])}.
+                       </div>`
+                    : ""
+                }
+                <button class="primary" style="margin-top:20px" data-act="demo-stop">Schließen</button>
+              </div>`
+            : `<div style="text-align:center">
+                <span class="dot pulsing" style="background:var(--kino-gold);display:inline-block"></span>
+                <div style="font-size:14px;font-weight:700;margin-top:10px">Kino wird vorbereitet…</div>
+              </div>`;
+
+    return `<div class="sheet" data-sheet="abrun" style="z-index:37;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:11px;color:var(--kino-gold);font-weight:800;letter-spacing:1px;text-transform:uppercase">A/B-Vergleich</span>
+        <a class="link" style="color:var(--kino-text3)" data-act="demo-stop">Beenden</a>
+      </div>
+      <div style="font-size:12px;color:var(--kino-text2)">${this._esc(clip.name || "")}</div>
+      ${run.warning ? `<div class="warnbox" style="margin-top:14px">${this._esc(run.warning)}</div>` : ""}
+      <div class="abmid">${body}</div>
     </div>`;
   }
 
@@ -3293,6 +4662,199 @@ class KinoCard extends CardBase {
       case "back-home":
         view.main = "home";
         this._render();
+        break;
+
+      /* -- demo mode --------------------------------------------------- */
+      case "open-demos":
+        view.main = "demos";
+        view.demoTab = "clips";
+        this._render();
+        await this._loadDemo(true);
+        break;
+      case "demo-tab":
+        view.demoTab = key;
+        this._render();
+        break;
+      case "demo-tag":
+        view.demoTagFilter = helpers.toggleTag(view.demoTagFilter, key);
+        this._render();
+        break;
+      case "demo-tags-clear":
+        view.demoTagFilter = [];
+        this._render();
+        break;
+      case "demo-clip-edit":
+        this._openClipEdit(key);
+        break;
+      case "demo-open-title":
+        // The clip card's title link: straight into the title's own sheet.
+        view.main = "home";
+        await this._openDetail(key);
+        break;
+      case "demo-capture":
+        this._captureFromPlayer();
+        break;
+      case "demo-capture-title":
+        this._captureWholeTitle(view.detail);
+        break;
+      case "demo-play-clip":
+        view.detailId = null;
+        view.playingOpen = false;
+        await this._playDemo({ type: "kino/demo/play", clip_id: key });
+        break;
+      case "demo-play-showcase":
+        await this._playDemo({ type: "kino/demo/play", showcase_id: key });
+        break;
+      case "demo-pause": {
+        const run = this._runningDemo;
+        await this._demoControl(run && run.paused ? "resume" : "pause");
+        break;
+      }
+      case "demo-skip":
+        await this._demoControl("skip");
+        break;
+      case "demo-replay":
+        await this._demoControl("replay");
+        break;
+      case "demo-next":
+        await this._demoControl("next");
+        break;
+      case "demo-jump":
+        await this._demoControl("jump", Number(key));
+        break;
+      case "demo-stop":
+        await this._demoControl("stop");
+        break;
+
+      /* -- the trim editor --------------------------------------------- */
+      case "trim-close":
+        view.trim = null;
+        this._render();
+        break;
+      case "trim-scope": {
+        // Scope chips reach back from the end the capture arrived with, so
+        // tapping two of them in a row does not compound.
+        const trim = view.trim;
+        if (!trim) break;
+        const anchor = trim.anchorMs || this._trimSpan.end || 0;
+        this._setTrimSpan(Math.max(0, anchor - Number(key) * 1000), anchor);
+        break;
+      }
+      case "trim-shift":
+        this._shiftTrim(Number(key));
+        break;
+      case "trim-nudge": {
+        const [which, delta] = key.split(":");
+        this._nudgeTrim(which, Number(delta));
+        break;
+      }
+      case "trim-tag":
+        view.trim.tags = helpers.toggleTag(view.trim.tags, key);
+        this._render();
+        break;
+      case "trim-add-tag": {
+        const value = (view.trim.tagInput || "").trim();
+        if (!value) break;
+        if (!view.trim.tags.includes(value)) view.trim.tags = [...view.trim.tags, value];
+        view.trim.tagInput = "";
+        this._render();
+        break;
+      }
+      case "trim-preview": {
+        const { start, end } = this._trimSpan;
+        const at =
+          key === "start"
+            ? Math.max(0, (start || 0) - 3000)
+            : key === "end"
+              ? Math.max(0, (end || 0) - 3000)
+              : view.trim.previewAt != null
+                ? view.trim.previewAt
+                : Math.max(0, (start || 0) - 3000);
+        await this._previewCut(at);
+        break;
+      }
+      case "trim-preview-seek": {
+        const base = view.trim.previewAt != null ? view.trim.previewAt : this._trimSpan.start || 0;
+        await this._previewCut(Math.max(0, base + Number(key) * 1000));
+        break;
+      }
+      case "trim-save":
+        await this._saveClip();
+        break;
+      case "trim-delete":
+        await this._deleteClip();
+        break;
+
+      /* -- the showcase editor ------------------------------------------ */
+      case "demo-showcase-new":
+        this._openShowcaseEditor(null);
+        break;
+      case "demo-showcase-edit":
+        this._openShowcaseEditor(key);
+        break;
+      case "sc-close":
+        view.scEdit = null;
+        this._render();
+        break;
+      case "sc-advance":
+        view.scEdit.advance = key;
+        this._render();
+        break;
+      case "sc-step": {
+        const [field, delta] = key.split(":");
+        const bounds = { gapSeconds: [0, 60], referenceVolumeDb: [-60, 0] }[field];
+        view.scEdit[field] = Math.max(
+          bounds[0],
+          Math.min(bounds[1], view.scEdit[field] + Number(delta))
+        );
+        this._render();
+        break;
+      }
+      case "sc-move": {
+        const [index, direction] = key.split(":").map(Number);
+        const clips = [...view.scEdit.clips];
+        const target = index + direction;
+        if (target < 0 || target >= clips.length) break;
+        [clips[index], clips[target]] = [clips[target], clips[index]];
+        view.scEdit.clips = clips;
+        this._render();
+        break;
+      }
+      case "sc-remove":
+        view.scEdit.clips = view.scEdit.clips.filter((_, i) => i !== Number(key));
+        this._render();
+        break;
+      case "sc-add":
+        view.scEdit.clips = [...view.scEdit.clips, key];
+        this._render();
+        break;
+      case "sc-save":
+        await this._saveShowcase();
+        break;
+      case "sc-delete":
+        await this._deleteShowcase();
+        break;
+
+      /* -- A/B ----------------------------------------------------------- */
+      case "demo-ab":
+        this._openAbSetup(key);
+        break;
+      case "ab-close":
+        view.abSetup = null;
+        this._render();
+        break;
+      case "ab-blind":
+        view.abSetup.blind = !view.abSetup.blind;
+        this._render();
+        break;
+      case "ab-start":
+        await this._startAb();
+        break;
+      case "ab-pick":
+        await this._demoControl("pick", Number(key));
+        break;
+      case "ab-replay":
+        await this._demoControl("replay-side", Number(key));
         break;
       case "open-filters":
         view.filterSheet = true;
@@ -3457,28 +5019,7 @@ class KinoCard extends CardBase {
         await this._forceRefresh();
         break;
       case "open-detail":
-        view.detailId = key;
-        view.detail = null;
-        view.seasons = null;
-        view.seasonId = null;
-        view.episodes = null;
-        view.similar = null;
-        view.overviewOpen = false;
-        view.tracksExpanded = {};
-        this._render();
-        // Runs alongside the item fetch; it re-checks the open detail ID.
-        this._loadSimilar(key);
-        try {
-          view.detail = await this._ws({ type: "kino/library/item", item_id: key });
-        } catch (err) {
-          view.detail = null;
-          this._actionError = err.message;
-        }
-        this._render();
-        // A show browses on: season strip, then that season's episodes (F2).
-        if (view.detail && view.detail.kind === "show") {
-          await this._loadSeasons(view.detail.id);
-        }
+        await this._openDetail(key);
         break;
       case "close-detail":
         this._closeDetail();
@@ -3625,6 +5166,12 @@ class KinoCard extends CardBase {
         entity_id: event.target.dataset.key,
         option: event.target.value,
       });
+    } else if (field === "trim-audioTrack" || field === "trim-subtitleTrack") {
+      const which = field === "trim-audioTrack" ? "audioTrack" : "subtitleTrack";
+      this._view.trim[which] = event.target.value || null;
+    } else if (field && field.startsWith("ab-")) {
+      const [, side, key] = field.split("-");
+      this._view.abSetup[side][key] = event.target.value;
     }
   }
 
@@ -3635,11 +5182,62 @@ class KinoCard extends CardBase {
       this._searchPeople();
       return;
     }
+    // Demo fields are written straight into the working copy and never
+    // re-rendered from here: a re-render mid-word would move the caret, and
+    // nothing else on screen depends on the half-typed value.
+    const trim = this._view.trim;
+    if (trim && field === "trim-start") {
+      trim.start = event.target.value;
+      this._patchTrimLength();
+      return;
+    }
+    if (trim && field === "trim-end") {
+      trim.end = event.target.value;
+      this._patchTrimLength();
+      return;
+    }
+    if (trim && field === "trim-name") {
+      trim.name = event.target.value;
+      return;
+    }
+    if (trim && field === "trim-tag") {
+      trim.tagInput = event.target.value;
+      return;
+    }
+    if (trim && field === "trim-notes") {
+      trim.notes = event.target.value;
+      return;
+    }
+    if (this._view.scEdit && field === "sc-name") {
+      this._view.scEdit.name = event.target.value;
+      return;
+    }
+    if (this._view.abSetup && field && field.startsWith("ab-")) {
+      const [, side, key] = field.split("-");
+      this._view.abSetup[side][key] = event.target.value;
+      return;
+    }
     if (field !== "query") return;
     this._view.query = event.target.value;
     // Incremental results as the user types, without a request per keystroke.
     if (this._searchTimer) clearTimeout(this._searchTimer);
     this._searchTimer = setTimeout(() => this._loadLibrary(), 250);
+  }
+
+  /** Keep the length and the save button honest while a timecode is typed. */
+  _patchTrimLength() {
+    const sheet = this._container.querySelector('.sheet[data-sheet="trim"]');
+    if (!sheet) return;
+    const { start, end, valid } = this._trimSpan;
+    const label = sheet.querySelector("[data-role='trim-length']");
+    if (label) {
+      label.textContent = `Länge: ${valid ? helpers.formatTimecode(end - start) : "—"}`;
+    }
+    const save = sheet.querySelector('[data-act="trim-save"]');
+    if (save) {
+      save.disabled = !valid;
+      save.style.opacity = valid ? "" : "0.5";
+    }
   }
 }
 

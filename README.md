@@ -261,6 +261,54 @@ devices:
       dim: switch.trinnov_altitude_14683197_dim
 ```
 
+### Demos
+
+Short reference clips from the library, tagged, combined into showcases and
+replayed automatically — for showing the theater off and for validating a new
+calibration. **Demos** sits next to Filme and Serien on the library home.
+
+* **Capture is retrospective.** A scene only reveals itself as demo material
+  once it is over, so the player view has one button — "Demo erstellen" — that
+  ends the clip at the current position and reaches back a configurable window
+  (60 s by default). A whole title can be taken as one clip from its detail
+  sheet.
+* **The trim editor** opens on the result: scope chips (last 30 s / 60 s /
+  2 min), a shift row that moves the whole span, and ±5 s / ±1 s nudges on each
+  end — all writing the same two values the text fields hold, so you can type
+  roughly (`1:12:04`, `72:04` or bare seconds all parse) and correct precisely.
+  A transport plays across the cut so you can check it without scrubbing. Seeks
+  land on the nearest keyframe, and the editor says so rather than pretending
+  to frame accuracy.
+* **Tags** come from a curated vocabulary (Bass, Atmos-Höhen, Panning, Dialog,
+  HDR-Schwarz, HDR-Lichter, Gästetauglich, Spoiler) plus free text; the clip
+  list filters by them, each chip carrying its own count. `Gästetauglich` and
+  `Spoiler` are independent axes — a clip can be presentable *and* give the
+  ending away.
+* **Audio and subtitle tracks are per clip**, pre-filled from what the player
+  has selected at capture time, so the common case needs no input.
+* **Showcases** are ordered playlists with a gap between clips, a reference
+  level, and either automatic advance or wait-for-tap. During playback the card
+  shows the slate for what is coming, "worauf achten" while it runs, clip *x of
+  y*, the time left, and skip / replay / pause / jump-to-any-clip.
+* **Lead-in padding** is a global setting, not a per-clip fudge: the engine
+  seeks to `start − lead_in` (8 s by default) and lets the HDMI handshake burn
+  off, so stored timestamps always mark the artistic start. A mid-stream track
+  switch makes the processor renegotiate, so when a switch is actually issued
+  the lead-in re-anchors to it.
+* **The cut is scheduled, not observed.** Playback runs at 1× wall clock, so
+  each position poll predicts the end and the stop is scheduled for that
+  instant — the error is command latency, not the polling interval.
+* **A/B calibration**: one clip, two configurations (processor preset, madVR
+  profile, projector profile), played back to back. The B-side arms only once
+  the gap has elapsed *and* the hardware confirms the new preset, with a
+  timeout so a missed confirmation warns instead of hanging. In blind mode the
+  order is randomised and revealed only after you pick a winner.
+* **A showcase never "watches" ten films.** Demo playback carries `demo=true`
+  and is deliberately kept out of the catalogue's history.
+
+Volume, preset and profile are restored when a demo ends — including when it
+ends because Home Assistant reloaded the integration.
+
 ### Music and hand-off activities
 
 A `mixed` activity (Musik) gets source pills and explanatory text; a `handoff`
@@ -308,6 +356,7 @@ they look like `select.kino_aktivitat`, on a renamed device like
 | Volume `number` | Volume in dB with a soft ceiling — the processor stays authoritative |
 | `media_player` | Standard transport, source list = activities, artwork, IMDb/TMDb and format attributes — existing cards keep working |
 | Audio/subtitle `select` per Zidoo | Live track selection, no mirror helpers, no placeholder options |
+| Demo `sensor` | Demo mode: idle / playing / ab, with the running showcase, the clip and how much is left |
 | `button` ×3 | Retry, turn everything off, refresh library |
 
 ## Services
@@ -319,6 +368,10 @@ they look like `select.kino_aktivitat`, on a renamed device like
 | `kino.dry_run` | Return the computed delta **without executing it** (responds with the action list) |
 | `kino.restore_device` | Bring one drifted device back into line |
 | `kino.refresh_library` | Force a Jellyfin rescan |
+| `kino.demo_capture` | Remember a span of the running title as a demo clip; without timestamps it reaches back from the current position (responds with the clip id) |
+| `kino.demo_play_clip` / `kino.demo_play_playlist` | Play one clip, or a whole showcase |
+| `kino.demo_skip` / `kino.demo_replay` / `kino.demo_stop` | Runtime controls for a running demo |
+| `kino.demo_ab_start` | Start an A/B comparison of one clip |
 
 ## Events
 
@@ -327,7 +380,8 @@ The existing `Kino –` automations can trigger on these instead of on
 
 `kino_activity_changed`, `kino_transition_started`,
 `kino_transition_finished`, `kino_device_drift` (fired once per drift episode,
-not once per poll).
+not once per poll), `kino_demo_playback` (always carrying `demo: true`, so
+watch-history consumers can filter a showcase out).
 
 ## WebSocket API
 
@@ -336,7 +390,11 @@ commands are available to anything else that speaks the HA WebSocket API.
 Library and room-state commands (`kino/state`, `kino/activate`,
 `kino/library/search|item|seasons|episodes|resume|facets|facet_counts|persons|favorite|watched|refresh`, `kino/dry_run`,
 `kino/restore_device`, `kino/dismiss_drift`) are available to any signed-in
-user; the panel's commands (`kino/config/*`, `kino/device_board`,
+user, as are the demo commands (`kino/demo/data`, `kino/demo/clip/save|delete`,
+`kino/demo/showcase/save|delete`, `kino/demo/play`, `kino/demo/control`,
+`kino/demo/ab_start`, `kino/demo/preview`). `kino/demo/settings` and
+`kino/demo/transfer` (JSON export and import of the whole demo dataset) and the
+panel's commands (`kino/config/*`, `kino/device_board`,
 `kino/device_test`, `kino/transition_log`, `kino/durations/reset`) require an
 admin.
 
@@ -366,6 +424,10 @@ projector's cooldown behaviour, transcribed from ten days of recorded history.
 * [`docs/acceptance.md`](docs/acceptance.md) — the acceptance scenarios and how to run them
 
 ## Status
+
+Release **0.7 "Demo"**: reference clips, showcases and A/B calibration — capture
+from the player, trim on the phone, replay with lead-in padding and a scheduled
+cut, and keep all of it out of the watch history. On top of:
 
 Release **0.3 "Klar & Konsistent"**: the trust pass (off means off, the queued
 title stays on screen, stops get chips), one design language (names not keys,

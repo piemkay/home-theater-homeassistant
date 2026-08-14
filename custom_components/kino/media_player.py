@@ -206,6 +206,15 @@ class KinoMediaPlayer(KinoEntity, MediaPlayerEntity):
             return
         now = self._now()
         entry = self._catalogue_entry()
+        if self.coordinator.demo_active:
+            # Demo playback carries `demo=true` and stays out of the history
+            # (spec §4.4). Reporting it as idle closes any session that was
+            # open when the demo started, and opens none of its own — ten
+            # clips must not become ten watched films.
+            self._report_task = self.hass.async_create_task(
+                self._reporter.update(item_id=None, state="idle", position=None)
+            )
+            return
         self._report_task = self.hass.async_create_task(
             self._reporter.update(
                 item_id=(entry or {}).get("id"),

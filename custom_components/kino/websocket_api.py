@@ -24,6 +24,7 @@ from .config_store import ConfigNotFoundError, ConfigStore
 from .const import DOMAIN
 from .core.model import ControlClass
 from .core.schema import KNOWN_DRIVERS, ConfigErrors, validate
+from .demo.websocket import register_demo_commands
 from .devices.zidoo import ZidooDriver
 from .http import async_get_signer
 from .media.base import (
@@ -82,6 +83,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_board)
     websocket_api.async_register_command(hass, ws_device_test)
     websocket_api.async_register_command(hass, ws_durations_reset)
+    register_demo_commands(hass)
 
 
 #: One schema for everything that speaks in filters — search and the
@@ -543,6 +545,18 @@ def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
         "nowPlaying": coordinator.playing_item,
         # The title queued to play once the room is ready (F5).
         "pendingItem": coordinator.pending_item,
+        # Demo mode, kept light: the running showcase (or None) plus the two
+        # numbers the capture controls need. The dataset itself is fetched by
+        # `kino/demo/data`, not carried on every two-second poll.
+        "demo": {
+            "running": coordinator.demo.state(),
+            "leadInSeconds": coordinator.demo_store.settings.lead_in_seconds,
+            "retroCaptureSeconds": (
+                coordinator.demo_store.settings.retro_capture_seconds
+            ),
+            "clipCount": len(coordinator.demo_store.clips),
+            "showcaseCount": len(coordinator.demo_store.showcases),
+        },
         # One signature covers every poster until it expires, so the browser
         # can cache images by URL (see http.py).
         "artworkSignature": async_get_signer(hass).signature(),

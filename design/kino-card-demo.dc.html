@@ -1,0 +1,1760 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+  body{margin:0}
+  a{color:oklch(0.78 0.15 75)}
+  a:hover{color:oklch(0.85 0.15 75)}
+  @keyframes kino-pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+  @keyframes kino-sheet-in{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+  .kino-hscroll::-webkit-scrollbar{display:none}
+</style>
+</helmet>
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="393px,852px">
+<div style="width:100%;height:100%;display:flex;flex-direction:column;position:relative;font-family:'Manrope',system-ui,sans-serif;--bg:oklch(0.15 0.015 265);--surface:oklch(0.205 0.016 265);--surface2:oklch(0.25 0.017 265);--border:oklch(1 0 0 / 0.08);--text:oklch(0.97 0.005 265);--text2:oklch(0.72 0.01 265);--text3:oklch(0.5 0.01 265);--gold:oklch(0.78 0.15 75);--goldText:oklch(0.18 0.03 75);--teal:oklch(0.72 0.12 190);--red:oklch(0.65 0.19 25);background:var(--bg);color:var(--text);padding-top:54px;box-sizing:border-box">
+
+  <div style="padding:6px 20px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+    <span style="font-weight:800;font-size:15px;letter-spacing:1.5px;color:var(--text)">KINO</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="display:flex;align-items:center;gap:7px">
+        <span style="width:8px;height:8px;border-radius:5px;background:{{ globalStatusColor }};animation:{{ globalStatusAnim }}"></span>
+        <span style="font-size:12px;color:var(--text2);font-weight:600">{{ globalStatusLabel }}</span>
+      </div>
+      <button onClick="{{ askPowerOff }}" title="Kino ausschalten" style="width:32px;height:32px;border-radius:16px;border:none;background:var(--surface2);color:{{ powerIconColor }};display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;padding:0">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <circle cx="12" cy="13" r="8"></circle>
+          <line x1="12" y1="2" x2="12" y2="12"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="kino-hscroll" style="flex:1;overflow-y:auto;min-height:0;scrollbar-width:none">
+
+    <div style="padding:0 20px 12px">
+      <sc-if value="{{ showCompactSelector }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ toggleActivityMenu }}" style="padding:9px 14px;border-radius:20px;border:none;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;background:var(--surface2);color:var(--text);font-family:'Manrope',system-ui,sans-serif">
+          <span>{{ currentLabel }}</span>
+          <span style="font-size:10px;color:var(--text3)">{{ menuChevron }}</span>
+        </button>
+      </sc-if>
+      <sc-if value="{{ showActivityGrid }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:{{ gridMarginTop }}px">
+          <sc-for list="{{ activityTiles }}" as="act" hint-placeholder-count="4">
+            <button onClick="{{ act.onSelect }}" style="padding:16px;border-radius:14px;border:none;text-align:left;font-size:13px;font-weight:700;cursor:pointer;background:{{ act.bg }};color:{{ act.fg }};font-family:'Manrope',system-ui,sans-serif">{{ act.label }}</button>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ showDevices }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:0 20px 12px;display:flex;gap:8px;flex-wrap:wrap">
+        <sc-for list="{{ deviceChips }}" as="d" hint-placeholder-count="4">
+          <div onClick="{{ d.onToggle }}" style="padding:6px 10px;border-radius:14px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer">
+            <span style="width:7px;height:7px;border-radius:4px;background:{{ d.color }};animation:{{ d.anim }}"></span>
+            <span style="font-size:11px;color:var(--text2);font-weight:600">{{ d.label }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showBanner }}" hint-placeholder-val="{{ false }}">
+      <div style="margin:0 20px 12px;padding:14px;border-radius:14px;background:oklch(0.65 0.19 25 / 0.14);border:1px solid oklch(0.65 0.19 25 / 0.4);display:flex;flex-direction:column;gap:8px">
+        <strong style="font-size:13px;color:var(--text)">{{ bannerDeviceLabel }} antwortet nicht wie erwartet</strong>
+        <p style="margin:0;font-size:12px;color:var(--text2);line-height:1.5">{{ bannerText }}</p>
+        <div style="display:flex;gap:8px;margin-top:2px">
+          <button onClick="{{ restoreDevice }}" style="flex:1;padding:9px;border-radius:10px;border:none;background:var(--gold);color:var(--goldText);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Wiederherstellen</button>
+          <button onClick="{{ dismissBanner }}" style="padding:9px 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:600;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Ignorieren</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ transitioning }}" hint-placeholder-val="{{ false }}">
+      <div style="margin:0 20px 14px;padding:16px;border-radius:16px;background:var(--surface);border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-weight:700;font-size:14px">{{ transTitle }}</span>
+          <span style="font-size:11px;color:var(--text3)">{{ transEtaLabel }}</span>
+        </div>
+        <div style="height:6px;border-radius:3px;background:var(--surface2);overflow:hidden;margin:10px 0">
+          <div style="height:100%;width:{{ transProgress }}%;background:var(--gold);border-radius:3px"></div>
+        </div>
+        <span style="font-size:11px;color:var(--text3)">{{ transHint }}</span>
+      </div>
+    </sc-if>
+
+    <div style="padding:0 20px 100px">
+
+      <sc-if value="{{ isFilmFull }}" hint-placeholder-val="{{ false }}">
+        <div>
+          <div style="margin-bottom:20px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px" data-comment-anchor="20011c9b80-div">
+              <h3 style="margin:0;font-size:15px;font-weight:800">Filme &amp; Serien</h3>
+              <a onClick="{{ openLibrary }}" style="font-size:12px;font-weight:700;cursor:pointer">Erkunden</a>
+            </div>
+            <p style="font-size:12px;color:var(--text2);margin:0 0 12px;line-height:1.5" data-comment-anchor="962a3a908b-p">Durchsuchen, filtern und sortieren — die Bibliothek ist auch bei ausgeschaltetem Kino verfügbar.</p>
+            <div style="display:flex;gap:8px">
+              <button onClick="{{ openMovies }}" style="flex:1;padding:12px;border-radius:12px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:var(--surface2);color:var(--text)">Filme</button>
+              <button onClick="{{ openShows }}" style="flex:1;padding:12px;border-radius:12px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:var(--surface2);color:var(--text)">Serien</button>
+              <button onClick="{{ openDemos }}" style="flex:1;padding:12px;border-radius:12px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:var(--surface2);color:var(--text)">Demos</button>
+            </div>
+          </div>
+
+          <sc-if value="{{ hasContinueWatching }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-bottom:18px">
+              <h3 style="margin:0 0 10px;font-size:15px;font-weight:800">Weitersehen</h3>
+              <div class="kino-hscroll" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none">
+                <sc-for list="{{ continueWatching }}" as="t" hint-placeholder-count="2">
+                  <div onClick="{{ t.open }}" style="flex-shrink:0;width:120px;cursor:pointer">
+                    <div style="position:relative;width:120px;height:180px;border-radius:10px;overflow:hidden;background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 8px,var(--surface) 8px,var(--surface) 16px)">
+                      <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-family:ui-monospace,monospace;color:var(--text3)">POSTER</span>
+                      <div style="position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(0,0,0,0.4)">
+                        <div style="height:100%;width:{{ t.continueWatching }}%;background:var(--gold)"></div>
+                      </div>
+                    </div>
+                    <div style="font-size:12px;font-weight:700;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.title }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="margin-bottom:18px">
+            <h3 style="margin:0 0 10px;font-size:15px;font-weight:800">Zuletzt hinzugefügt</h3>
+            <div class="kino-hscroll" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none">
+              <sc-for list="{{ lastAdded }}" as="t" hint-placeholder-count="4">
+                <div onClick="{{ t.open }}" style="flex-shrink:0;width:120px;cursor:pointer">
+                  <div style="position:relative;width:120px;height:180px;border-radius:10px;overflow:hidden;background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 8px,var(--surface) 8px,var(--surface) 16px)">
+                    <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-family:ui-monospace,monospace;color:var(--text3)">POSTER</span>
+                  </div>
+                  <div style="font-size:12px;font-weight:700;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.title }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isNetflixHandoff }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:30px;padding:24px;border-radius:16px;background:var(--surface);border:1px solid var(--border);text-align:center">
+          <div style="width:40px;height:40px;border-radius:20px;background:var(--surface2);margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;letter-spacing:0.5px;color:var(--text2)">TV</div>
+          <p style="margin:0;font-size:14px;color:var(--text2);line-height:1.6">{{ handoffText }}</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isMusik }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:16px">
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button onClick="{{ selectSpotify }}" style="flex:1;padding:9px;border-radius:10px;border:none;font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ spotifyBg }};color:{{ spotifyFg }}">Spotify</button>
+            <button onClick="{{ selectTidal }}" style="flex:1;padding:9px;border-radius:10px;border:none;font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ tidalBg }};color:{{ tidalFg }}">Tidal</button>
+          </div>
+          <sc-if value="{{ isMusikSpotify }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:18px;border-radius:16px;background:var(--surface);border:1px solid var(--border)">
+              <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px">Spotify Connect · Zidoo</span>
+              <input type="text" placeholder="Künstler, Album oder Titel suchen…" style="width:100%;box-sizing:border-box;margin-top:10px;padding:11px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-family:'Manrope',system-ui,sans-serif">
+              <p style="margin:12px 0 0;font-size:12px;color:var(--text2)">Volle Steuerung direkt aus der Karte.</p>
+            </div>
+          </sc-if>
+          <sc-if value="{{ isMusikTidal }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:24px;border-radius:16px;background:var(--surface);border:1px solid var(--border);text-align:center">
+              <p style="margin:0;font-size:14px;color:var(--text2);line-height:1.6">Weiter in der Tidal-App auf deinem Handy — der Zidoo ist als Wiedergabeziel vorbereitet.</p>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSteamRoom }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:30px;padding:24px;border-radius:16px;background:var(--surface);border:1px solid var(--border);text-align:center">
+          <div style="width:40px;height:40px;border-radius:10px;background:var(--surface2);margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--text2)">S</div>
+          <p style="margin:0;font-size:14px;color:var(--text2);line-height:1.6">{{ roomText }}</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isAus }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:60px;text-align:center">
+          <div style="width:48px;height:48px;border-radius:24px;background:var(--surface);border:1px solid var(--border);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;color:var(--text3)">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <circle cx="12" cy="13" r="8"></circle>
+              <line x1="12" y1="2" x2="12" y2="12"></line>
+            </svg>
+          </div>
+          <p style="margin:0;font-size:14px;color:var(--text2)">Kino ist ausgeschaltet</p>
+          <p style="margin:6px 0 0;font-size:12px;color:var(--text3)">Aktivität oben wählen, um zu starten</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isLibrary }}" hint-placeholder-val="{{ false }}">
+        <div data-comment-anchor="5918981aaf-div">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+            <a onClick="{{ backHome }}" style="font-size:13px;font-weight:700;cursor:pointer">‹ Zurück</a>
+            <h2 style="margin:0;font-size:19px;font-weight:800;flex:1">{{ libraryTitle }}</h2>
+            <a onClick="{{ forceRefresh }}" style="font-size:12px;font-weight:700;cursor:pointer;color:var(--text2)">{{ refreshLabel }}</a>
+          </div>
+          <div class="kino-hscroll" style="display:flex;gap:8px;overflow-x:auto;margin-bottom:10px;scrollbar-width:none">
+            <sc-for list="{{ categoryChips }}" as="c" hint-placeholder-count="2">
+              <button onClick="{{ c.onSelect }}" style="flex-shrink:0;padding:9px 13px;border-radius:16px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ c.bg }};color:{{ c.fg }}">{{ c.label }}</button>
+            </sc-for>
+          </div>
+          <input type="text" value="{{ query }}" onChange="{{ setQuery }}" placeholder="Titel suchen…" style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;margin-bottom:12px;font-family:'Manrope',system-ui,sans-serif">
+          <div style="display:flex;gap:8px;margin-bottom:10px" data-comment-anchor="9eb7c9e6a6-div">
+            <button onClick="{{ openFilters }}" style="flex-shrink:0;height:38px;padding:0 14px;border-radius:12px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ filterButtonBg }};color:{{ filterButtonFg }}">{{ filterButtonLabel }}</button>
+            <select value="{{ sort }}" onChange="{{ onSortChange }}" style="flex:1;min-width:0;height:38px;padding:0 10px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:12px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ sortOptions }}" as="so" hint-placeholder-count="4">
+                <option value="{{ so.label }}">{{ so.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+          <sc-if value="{{ hasActiveFilters }}" hint-placeholder-val="{{ false }}">
+            <div class="kino-hscroll" style="display:flex;gap:8px;overflow-x:auto;margin-bottom:10px;scrollbar-width:none">
+              <sc-for list="{{ activeFilterChips }}" as="c" hint-placeholder-count="2">
+                <button onClick="{{ c.onRemove }}" style="flex-shrink:0;height:30px;padding:0 12px;border-radius:15px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">{{ c.label }} ✕</button>
+              </sc-for>
+            </div>
+          </sc-if>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:12px">{{ resultCountLabel }}</div>
+
+          <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
+            <p style="text-align:center;color:var(--text3);font-size:13px;margin-top:40px">{{ noResultsMessage }}</p>
+          </sc-if>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <sc-for list="{{ filteredTitles }}" as="t" hint-placeholder-count="6">
+              <div onClick="{{ t.open }}" style="cursor:pointer">
+                <div style="position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 8px,var(--surface) 8px,var(--surface) 16px)">
+                  <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-family:ui-monospace,monospace;color:var(--text3)">POSTER</span>
+                  <sc-if value="{{ t.res4k }}" hint-placeholder-val="{{ false }}">
+                    <span style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.6);color:var(--text);font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px">4K</span>
+                  </sc-if>
+                  <sc-if value="{{ t.continueWatching }}" hint-placeholder-val="{{ false }}">
+                    <div style="position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(0,0,0,0.4)">
+                      <div style="height:100%;width:{{ t.continueWatching }}%;background:var(--gold)"></div>
+                    </div>
+                  </sc-if>
+                </div>
+                <div style="font-size:12px;font-weight:700;margin-top:6px">{{ t.title }}</div>
+                <div style="font-size:11px;color:var(--text3)">{{ t.year }} · {{ t.runtime }} Min · ★{{ t.rating }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isDemos }}" hint-placeholder-val="{{ false }}">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+            <a onClick="{{ backHome }}" style="font-size:13px;font-weight:700;cursor:pointer">‹ Zurück</a>
+            <h2 style="margin:0;font-size:19px;font-weight:800;flex:1">Demos</h2>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <sc-for list="{{ demoTabChips }}" as="c" hint-placeholder-count="2">
+              <button onClick="{{ c.onSelect }}" style="flex-shrink:0;padding:9px 13px;border-radius:16px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ c.bg }};color:{{ c.fg }}">{{ c.label }}</button>
+            </sc-for>
+          </div>
+          <sc-if value="{{ isDemoClips }}" hint-placeholder-val="{{ true }}">
+            <div>
+              <div data-comment-anchor="05da6442e4-div" style="margin-bottom:12px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                  <span style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Nach Tags filtern</span>
+                  <sc-if value="{{ hasTagFilter }}" hint-placeholder-val="{{ false }}">
+                    <a onClick="{{ clearTagFilter }}" style="font-size:11px;font-weight:700;cursor:pointer">Zurücksetzen</a>
+                  </sc-if>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <sc-for list="{{ demoTagChips }}" as="t" hint-placeholder-count="6">
+                    <button onClick="{{ t.onSelect }}" style="height:30px;padding:0 11px;border-radius:15px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ t.bg }};color:{{ t.fg }};display:inline-flex;align-items:center;gap:5px">{{ t.label }}<span style="font-size:9px;opacity:0.65;font-variant-numeric:tabular-nums">{{ t.count }}</span></button>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="font-size:11px;color:var(--text3);margin-bottom:12px">{{ clipCountLabel }}</div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <sc-for list="{{ demoClipCards }}" as="c" hint-placeholder-count="4">
+                  <div onClick="{{ c.onOpen }}" style="padding:12px;border-radius:14px;background:var(--surface);border:1px solid var(--border);cursor:pointer">
+                    <div style="display:flex;gap:12px">
+                      <div style="flex-shrink:0;width:44px;height:66px;border-radius:8px;overflow:hidden;background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 6px,var(--surface) 6px,var(--surface) 12px);display:flex;align-items:center;justify-content:center">
+                        <span style="font-size:7px;font-family:ui-monospace,monospace;color:var(--text3)">POSTER</span>
+                      </div>
+                      <div style="flex:1;min-width:0">
+                        <div style="font-size:13px;font-weight:800">{{ c.name }}</div>
+                        <div style="font-size:11px;color:var(--text3);margin-top:3px;font-variant-numeric:tabular-nums">{{ c.rangeLine }}</div>
+                        <a onClick="{{ c.onTitle }}" style="display:inline-block;font-size:11px;font-weight:700;cursor:pointer;margin-top:4px">{{ c.titleLabel }} ›</a>
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+                      <sc-for list="{{ c.tagChips }}" as="tc" hint-placeholder-count="2">
+                        <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:11px;background:var(--surface2);color:var(--text2);font-size:10px;font-weight:700">{{ tc.label }}</span>
+                      </sc-for>
+                    </div>
+                    <p style="margin:8px 0 0;font-size:12px;color:var(--text2);line-height:1.5">{{ c.notes }}</p>
+                    <div style="display:flex;gap:8px;margin-top:12px">
+                      <button onClick="{{ c.onPlay }}" style="flex:1;padding:10px;border-radius:10px;border:none;background:var(--gold);color:var(--goldText);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">▶ Abspielen</button>
+                      <button onClick="{{ c.onAB }}" style="padding:10px 14px;border-radius:10px;border:none;background:var(--surface2);color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">A/B</button>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ isDemoShowcases }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <sc-for list="{{ showcaseCards }}" as="sc" hint-placeholder-count="2">
+                <div onClick="{{ sc.onOpen }}" style="padding:16px;border-radius:14px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:14px;font-weight:800">{{ sc.name }}</div>
+                    <div style="font-size:11px;color:var(--text3);margin-top:3px">{{ sc.metaLine }}</div>
+                  </div>
+                  <button onClick="{{ sc.onPlay }}" style="width:44px;height:44px;border-radius:22px;border:none;background:var(--gold);color:var(--goldText);font-size:15px;cursor:pointer;flex-shrink:0">▶</button>
+                </div>
+              </sc-for>
+              <button onClick="{{ openNewShowcase }}" style="width:100%;padding:12px;border-radius:12px;border:1px dashed var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">＋ Neuer Showcase</button>
+              <p style="margin:4px 0 0;font-size:11px;color:var(--text3);line-height:1.5" data-comment-anchor="5ea3d1e5a0-p">Showcase antippen, um Name, Reihenfolge und Wiedergabe zu bearbeiten.</p>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+
+  <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+    <div class="kino-hscroll" style="position:absolute;inset:0;background:var(--bg);z-index:25;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:none;padding-top:54px;box-sizing:border-box;animation:kino-sheet-in 0.2s ease-out" data-comment-anchor="8dc6d62d1d-div">
+      <div style="padding:0 20px 40px">
+        <a onClick="{{ closeDetail }}" style="font-size:13px;font-weight:700;cursor:pointer">‹ Zurück</a>
+        <div style="margin-top:12px;width:100%;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 10px,var(--surface) 10px,var(--surface) 20px);display:flex;align-items:center;justify-content:center">
+          <span style="font-size:11px;font-family:ui-monospace,monospace;color:var(--text3)">BACKDROP</span>
+        </div>
+        <h2 style="margin:14px 0 4px;font-size:20px;font-weight:800">{{ detailTitle.title }}</h2>
+        <div style="font-size:12px;color:var(--text2)">{{ detailTitle.metaLine }}</div>
+        <div style="font-size:11px;color:var(--text3);font-family:ui-monospace,monospace;margin-top:8px">{{ detailTitle.formatLine }}</div>
+        <p style="font-size:13px;color:var(--text2);font-style:italic;line-height:1.6;margin:14px 0">{{ detailTitle.tagline }}</p>
+
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Tonspur</div>
+          <div data-comment-anchor="434f090ba4-div">
+            <select value="{{ audioTrack }}" onChange="{{ onAudioChange }}" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ audioOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.label }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+        </div>
+        <div style="margin-bottom:20px">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Untertitel</div>
+          <div data-comment-anchor="5874000494-div">
+            <select value="{{ subtitle }}" onChange="{{ onSubtitleChange }}" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ subtitleOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.label }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+        </div>
+
+        <sc-if value="{{ hasDetailClips }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Demo-Clips</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ detailClips }}" as="c" hint-placeholder-count="1">
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--surface);border:1px solid var(--border)" data-comment-anchor="0be543bb45-div">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.rangeLabel }}</div>
+                    <div style="font-size:10px;color:var(--text3);margin-top:2px">{{ c.metaLine }}</div>
+                  </div>
+                  <button onClick="{{ c.onPlay }}" style="width:32px;height:32px;border-radius:16px;border:none;background:var(--surface2);color:var(--text);font-size:12px;cursor:pointer;flex-shrink:0">▶</button>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <button onClick="{{ startPlayback }}" style="width:100%;padding:15px;border-radius:14px;border:none;background:var(--gold);color:var(--goldText);font-weight:800;font-size:14px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif" data-comment-anchor="4b3b6329f3-button">{{ detailTitle.playLabel }}</button>
+        <sc-if value="{{ detailTitle.continueWatching }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ startPlaybackFromStart }}" style="width:100%;margin-top:8px;padding:13px;border-radius:14px;border:none;background:var(--surface2);color:var(--text2);font-weight:700;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Von Anfang abspielen</button>
+        </sc-if>
+        <div style="text-align:center;margin-top:14px">
+          <a onClick="{{ captureWholeDetail }}" style="font-size:11px;font-weight:700;cursor:pointer;color:var(--text3)" data-comment-anchor="b3fd6f9512-button">＋ Ganzen Titel als Demo-Clip übernehmen</a>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isPlaying }}" hint-placeholder-val="{{ false }}">
+    <div class="kino-hscroll" style="position:absolute;inset:0;background:var(--bg);z-index:30;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:none;padding-top:54px;box-sizing:border-box;animation:kino-sheet-in 0.2s ease-out" data-comment-anchor="0a163ae9c2-div">
+      <div style="padding:0 20px 40px" data-comment-anchor="06ca2d9387-div">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <a onClick="{{ collapsePlaying }}" style="font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">⌄ Minimieren</a>
+          <a onClick="{{ stopPlayback }}" style="font-size:12px;font-weight:700;cursor:pointer;color:var(--text3)" data-comment-anchor="6cb2d91907-a">Wiedergabe beenden</a>
+        </div>
+        <div style="width:100%;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 10px,var(--surface) 10px,var(--surface) 20px);display:flex;align-items:end;justify-content:flex-start;position:relative">
+          <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:ui-monospace,monospace;color:var(--text3)">WIEDERGABE</span>
+          <span style="position:relative;padding:12px 14px;font-weight:800;font-size:15px;background:linear-gradient(0deg,rgba(0,0,0,0.6),transparent);width:100%;box-sizing:border-box">{{ nowPlayingTitle.title }}</span>
+        </div>
+
+        <div style="margin:16px 0 6px;height:5px;border-radius:3px;background:var(--surface2);overflow:hidden">
+          <div style="height:100%;width:{{ playProgressPct }}%;background:var(--gold)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:20px">
+          <span>{{ playElapsedLabel }}</span>
+          <span>{{ playDurationLabel }}</span>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:22px">
+          <button onClick="{{ prevItem }}" style="border:none;background:transparent;color:var(--text2);font-size:19px;cursor:pointer">⏮</button>
+          <button onClick="{{ seekBack }}" style="border:none;background:transparent;color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">⟲10</button>
+          <div onClick="{{ togglePause }}" style="width:52px;height:52px;border-radius:26px;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--goldText);cursor:pointer">{{ playPauseGlyph }}</div>
+          <button onClick="{{ seekFwd }}" style="border:none;background:transparent;color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">10⟳</button>
+          <button onClick="{{ nextItem }}" style="border:none;background:transparent;color:var(--text2);font-size:19px;cursor:pointer">⏭</button>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:22px">
+          <button onClick="{{ toggleMute }}" style="height:30px;padding:0 12px;border-radius:15px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ muteBg }};color:{{ muteFg }}">Stumm</button>
+          <button onClick="{{ toggleDim }}" style="height:30px;padding:0 12px;border-radius:15px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ dimBg }};color:{{ dimFg }}">Dim</button>
+          <div style="flex:1"></div>
+          <button onClick="{{ volDown }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">–</button>
+          <span style="font-size:11px;color:var(--text2);width:56px;text-align:center;font-variant-numeric:tabular-nums">{{ volumeDb }}</span>
+          <button onClick="{{ volUp }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">+</button>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-bottom:20px">
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Trinnov · Preset</div>
+            <select value="{{ trinnovPreset }}" onChange="{{ onPresetChange }}" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ presetOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.label }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Upmixer</div>
+            <select value="{{ trinnovUpmixer }}" onChange="{{ onUpmixerChange }}" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ upmixerOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.label }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Tonspur</div>
+          <div data-comment-anchor="e9c1c59718-div">
+            <select value="{{ audioTrack }}" onChange="{{ onAudioChange }}" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ audioOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.label }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Untertitel</div>
+          <div data-comment-anchor="36e2b25dae-div">
+            <select value="{{ subtitle }}" onChange="{{ onSubtitleChange }}" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ subtitleOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.label }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+        </div>
+
+        <sc-if value="{{ showCapture }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border)">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Demo-Aufnahme</div>
+            <button onClick="{{ retroCapture }}" style="width:100%;padding:11px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif" data-comment-anchor="7980013bc4-button">⏺ Demo erstellen</button>
+            <p style="margin:8px 0 0;font-size:10px;color:var(--text3);line-height:1.5">Merkt sich die aktuelle Position — Umfang und Feinschnitt folgen im nächsten Schritt.</p>
+            <sc-if value="{{ captureToast }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:oklch(0.72 0.12 190 / 0.15);border:1px solid oklch(0.72 0.12 190 / 0.4);font-size:12px;color:var(--text);font-weight:600">{{ captureToast }}</div>
+            </sc-if>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ filterSheetOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="kino-hscroll" style="position:absolute;inset:0;background:var(--bg);z-index:35;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:none;padding-top:54px;box-sizing:border-box;animation:kino-sheet-in 0.2s ease-out">
+      <div style="padding:0 20px 40px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+          <a onClick="{{ closeFilters }}" style="font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">‹ Zurück</a>
+          <h2 style="margin:0;font-size:19px;font-weight:800;flex:1">Filter</h2>
+          <a onClick="{{ resetFilters }}" style="font-size:12px;font-weight:700;cursor:pointer;color:var(--text2);white-space:nowrap">Zurücksetzen</a>
+        </div>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Format &amp; Status</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+          <sc-for list="{{ tags }}" as="f" hint-placeholder-count="5">
+            <button onClick="{{ f.onSelect }}" style="height:34px;padding:0 13px;border-radius:17px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ f.bg }};color:{{ f.fg }}">{{ f.label }}</button>
+          </sc-for>
+        </div>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Genre</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+          <sc-for list="{{ genreTags }}" as="g" hint-placeholder-count="6">
+            <button onClick="{{ g.onSelect }}" style="height:34px;padding:0 13px;border-radius:17px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ g.bg }};color:{{ g.fg }}">{{ g.label }}</button>
+          </sc-for>
+        </div>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Land</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+          <sc-for list="{{ countryTags }}" as="c" hint-placeholder-count="5">
+            <button onClick="{{ c.onSelect }}" style="height:34px;padding:0 13px;border-radius:17px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ c.bg }};color:{{ c.fg }}">{{ c.label }}</button>
+          </sc-for>
+        </div>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Erscheinungsjahr</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+          <select value="{{ yearFrom }}" onChange="{{ setYearFrom }}" style="flex:1;height:40px;padding:0 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+            <sc-for list="{{ yearOptions }}" as="y" hint-placeholder-count="8">
+              <option value="{{ y.label }}">{{ y.label }}</option>
+            </sc-for>
+          </select>
+          <span style="color:var(--text3);font-size:13px">bis</span>
+          <select value="{{ yearTo }}" onChange="{{ setYearTo }}" style="flex:1;height:40px;padding:0 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+            <sc-for list="{{ yearOptions }}" as="y" hint-placeholder-count="8">
+              <option value="{{ y.label }}">{{ y.label }}</option>
+            </sc-for>
+          </select>
+        </div>
+
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Sortierung</div>
+        <select value="{{ sort }}" onChange="{{ onSortChange }}" style="width:100%;box-sizing:border-box;height:40px;padding:0 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif;margin-bottom:24px">
+          <sc-for list="{{ sortOptions }}" as="so" hint-placeholder-count="4">
+            <option value="{{ so.label }}">{{ so.label }}</option>
+          </sc-for>
+        </select>
+
+        <button onClick="{{ closeFilters }}" style="width:100%;padding:15px;border-radius:14px;border:none;background:var(--gold);color:var(--goldText);font-weight:800;font-size:14px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">{{ applyLabel }}</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ trimOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="kino-hscroll" style="position:absolute;inset:0;background:var(--bg);z-index:45;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:none;padding-top:54px;box-sizing:border-box;animation:kino-sheet-in 0.2s ease-out">
+      <div style="padding:0 20px 40px" data-comment-anchor="49fc9fb23c-div">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <a onClick="{{ closeTrim }}" style="font-size:13px;font-weight:700;cursor:pointer;color:var(--text2);white-space:nowrap">Verwerfen</a>
+          <h2 style="margin:0;font-size:19px;font-weight:800;flex:1;text-align:right">{{ trimHeading }}</h2>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:14px;text-align:right">{{ trimSourceLine }}</div>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Umfang</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+          <sc-for list="{{ trimQuickChips }}" as="q" hint-placeholder-count="4">
+            <button onClick="{{ q.onTap }}" style="height:30px;padding:0 12px;border-radius:15px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:var(--surface2);color:var(--text2)">{{ q.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:16px">
+          <span style="font-size:10px;color:var(--text3);flex-shrink:0">Verschieben</span>
+          <sc-for list="{{ trimShiftChips }}" as="q" hint-placeholder-count="6">
+            <button onClick="{{ q.onTap }}" style="flex:1;height:28px;border-radius:8px;border:none;background:var(--surface2);color:var(--text2);font-size:10px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">{{ q.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:10px">
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Start</div>
+            <input type="text" value="{{ trimStart }}" onChange="{{ onTrimStart }}" style="width:100%;box-sizing:border-box;padding:11px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:15px;font-weight:700;font-family:ui-monospace,monospace;text-align:center">
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <sc-for list="{{ startNudges }}" as="n" hint-placeholder-count="4">
+                <button onClick="{{ n.onTap }}" style="flex:1;height:30px;border-radius:8px;border:none;background:var(--surface2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">{{ n.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Ende</div>
+            <input type="text" value="{{ trimEnd }}" onChange="{{ onTrimEnd }}" style="width:100%;box-sizing:border-box;padding:11px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:15px;font-weight:700;font-family:ui-monospace,monospace;text-align:center">
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <sc-for list="{{ endNudges }}" as="n" hint-placeholder-count="4">
+                <button onClick="{{ n.onTap }}" style="flex:1;height:30px;border-radius:8px;border:none;background:var(--surface2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">{{ n.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">
+          <span style="font-size:12px;color:var(--text2);font-weight:700">Länge: {{ trimDurLabel }}</span>
+          <span style="font-size:10px;color:var(--text3)">Eingabe frei: 1:12:04, 72:04 oder Sekunden</span>
+        </div>
+        <div style="padding:12px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Wiedergabe prüfen</span>
+            <span style="font-size:11px;color:var(--text2);font-family:ui-monospace,monospace">{{ trimPosLabel }}</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:14px">
+            <a onClick="{{ trimJumpStart }}" style="font-size:11px;font-weight:700;cursor:pointer">Start −3 s</a>
+            <button onClick="{{ trimSeekBack }}" style="border:none;background:transparent;color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">⟲10</button>
+            <div onClick="{{ trimTogglePlay }}" style="width:40px;height:40px;border-radius:20px;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--goldText);cursor:pointer">{{ trimPlayGlyph }}</div>
+            <button onClick="{{ trimSeekFwd }}" style="border:none;background:transparent;color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">10⟳</button>
+            <a onClick="{{ trimJumpEnd }}" style="font-size:11px;font-weight:700;cursor:pointer">Ende −3 s</a>
+          </div>
+        </div>
+        <p style="margin:8px 0 20px;font-size:10px;color:var(--text3);line-height:1.5">Sprünge landen auf dem nächsten Keyframe — der effektive Start kann um 1–2 s abweichen.</p>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Name</div>
+        <input type="text" value="{{ trimName }}" onChange="{{ onTrimName }}" style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;margin-bottom:6px;font-family:'Manrope',system-ui,sans-serif" data-comment-anchor="a65a6d5638-input">
+        <p style="margin:0 0 16px;font-size:10px;color:var(--text3)">Start und Ende werden automatisch am Clip geführt — sie gehören nicht in den Namen.</p>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Tags</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <sc-for list="{{ trimVocabChips }}" as="f" hint-placeholder-count="6">
+            <button onClick="{{ f.onSelect }}" style="height:34px;padding:0 13px;border-radius:17px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ f.bg }};color:{{ f.fg }}">{{ f.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <input type="text" value="{{ trimTagInput }}" onChange="{{ onTrimTagInput }}" placeholder="Eigenes Tag…" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:'Manrope',system-ui,sans-serif">
+          <button onClick="{{ addFreeTag }}" style="padding:0 14px;border-radius:12px;border:none;background:var(--surface2);color:var(--text2);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Hinzufügen</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Notizen — worauf achten?</div>
+        <textarea value="{{ trimNotes }}" onChange="{{ onTrimNotes }}" rows="3" placeholder="z. B. Subbass beim Deichbruch…" style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;margin-bottom:16px;font-family:'Manrope',system-ui,sans-serif;resize:none"></textarea>
+        <div style="display:flex;gap:10px;margin-bottom:6px">
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Tonspur</div>
+            <select value="{{ trimAudio }}" onChange="{{ onTrimAudio }}" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ audioOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.label }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Untertitel</div>
+            <select value="{{ trimSubtitle }}" onChange="{{ onTrimSubtitle }}" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:13px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+              <sc-for list="{{ subtitleOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.label }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+        </div>
+        <p style="margin:0 0 18px;font-size:10px;color:var(--text3)">Vorbelegt mit der aktuellen Auswahl des Zidoo.</p>
+        <button onClick="{{ saveClip }}" style="width:100%;padding:15px;border-radius:14px;border:none;background:{{ saveBg }};color:{{ saveFg }};font-weight:800;font-size:14px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">{{ trimSaveLabel }}</button>
+        <sc-if value="{{ trimIsEdit }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ deleteClip }}" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px solid oklch(0.65 0.19 25 / 0.4);background:transparent;color:var(--red);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Clip löschen</button>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ demoOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="kino-hscroll" style="position:absolute;inset:0;background:var(--bg);z-index:32;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:none;padding-top:54px;box-sizing:border-box;animation:kino-sheet-in 0.2s ease-out">
+      <div style="padding:0 20px 40px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:11px;color:var(--gold);font-weight:800;letter-spacing:1px;text-transform:uppercase">Demo · {{ demoHeaderName }}</span>
+          <a onClick="{{ stopDemo }}" style="font-size:12px;font-weight:700;cursor:pointer;color:var(--text3)">Beenden</a>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:16px">
+          <span>{{ demoCounter }}</span><span>{{ demoTotalRemain }}</span>
+        </div>
+        <sc-if value="{{ demoIsSlate }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border);margin-bottom:16px">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Als Nächstes</div>
+            <div style="font-size:18px;font-weight:800;line-height:1.3">{{ slateName }}</div>
+            <p style="margin:10px 0 0;font-size:13px;color:var(--text2);line-height:1.6">{{ slateNotes }}</p>
+            <div style="margin-top:14px;font-size:11px;color:var(--gold);font-weight:700">{{ slateCountdown }}</div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ demoIsWait }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border);margin-bottom:16px">
+            <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Als Nächstes</div>
+            <div style="font-size:18px;font-weight:800;line-height:1.3">{{ slateName }}</div>
+            <p style="margin:10px 0 0;font-size:13px;color:var(--text2);line-height:1.6">{{ slateNotes }}</p>
+            <button onClick="{{ demoTapNext }}" style="width:100%;margin-top:16px;padding:12px;border-radius:12px;border:none;background:var(--gold);color:var(--goldText);font-weight:800;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Weiter — Clip starten</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ demoIsLeadin }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border);margin-bottom:16px;display:flex;align-items:center;gap:12px">
+            <span style="width:8px;height:8px;border-radius:5px;background:var(--gold);animation:kino-pulse 1.2s ease-in-out infinite;flex-shrink:0"></span>
+            <div>
+              <div style="font-size:13px;font-weight:700">Vorlauf läuft — Signalkette synchronisiert</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:3px">Start 8 s vor dem Clip-Anfang, damit Bild und Ton verriegelt sind.</div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ demoIsPlaying }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-bottom:16px">
+            <div style="font-size:18px;font-weight:800;line-height:1.3;margin-bottom:10px">{{ demoClipName }}</div>
+            <sc-if value="{{ hasDemoNotes }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--border);margin-bottom:14px">
+                <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Worauf achten</div>
+                <p style="margin:0;font-size:12px;color:var(--text2);line-height:1.5">{{ demoClipNotes }}</p>
+              </div>
+            </sc-if>
+            <div style="height:5px;border-radius:3px;background:var(--surface2);overflow:hidden">
+              <div style="height:100%;width:{{ demoClipPct }}%;background:var(--gold)"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:6px">
+              <span>{{ demoPosLabel }}</span><span>{{ demoClipRemainLabel }}</span>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ demoIsDone }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--border);margin-bottom:16px;text-align:center">
+            <div style="font-size:15px;font-weight:800">Showcase beendet</div>
+            <p style="margin:8px 0 16px;font-size:12px;color:var(--text2);line-height:1.5">Lautstärke, Preset und Profil wurden auf die vorherigen Werte zurückgesetzt.</p>
+            <button onClick="{{ stopDemo }}" style="width:100%;padding:12px;border-radius:12px;border:none;background:var(--gold);color:var(--goldText);font-weight:800;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Schließen</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ demoShowControls }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:center;gap:22px;margin:6px 0 22px">
+            <button onClick="{{ replayDemo }}" style="border:none;background:transparent;color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">⟲ Clip</button>
+            <div onClick="{{ pauseDemo }}" style="width:52px;height:52px;border-radius:26px;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--goldText);cursor:pointer">{{ demoPauseGlyph }}</div>
+            <button onClick="{{ skipDemo }}" style="border:none;background:transparent;color:var(--text2);font-size:19px;cursor:pointer">⏭</button>
+          </div>
+        </sc-if>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Clips im Showcase</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+          <sc-for list="{{ demoRows }}" as="r" hint-placeholder-count="3">
+            <div onClick="{{ r.onJump }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:{{ r.bg }};border:1px solid var(--border);cursor:pointer">
+              <span style="width:18px;font-size:11px;font-weight:800;color:{{ r.accent }}">{{ r.n }}</span>
+              <span style="flex:1;font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</span>
+              <span style="font-size:10px;color:var(--text3)">{{ r.dur }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <p style="margin:0;font-size:10px;color:var(--text3)">Wiedergabe trägt demo=true — sie erscheint nicht im Verlauf.</p>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ abSetupOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="kino-hscroll" style="position:absolute;inset:0;background:var(--bg);z-index:36;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:none;padding-top:54px;box-sizing:border-box;animation:kino-sheet-in 0.2s ease-out">
+      <div style="padding:0 20px 40px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <a onClick="{{ closeABSetup }}" style="font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">‹ Abbrechen</a>
+          <h2 style="margin:0;font-size:19px;font-weight:800;flex:1;text-align:right">A/B-Vergleich</h2>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:18px;text-align:right">{{ abClipName }} — wird zweimal hintereinander abgespielt.</div>
+        <div style="padding:16px;border-radius:14px;background:var(--surface);border:1px solid var(--border);margin-bottom:10px" data-comment-anchor="8425f9347c-div">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Konfiguration A</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:56px;flex-shrink:0;font-size:10px;color:var(--text3);font-weight:700">Trinnov</span>
+              <select value="{{ abAPreset }}" onChange="{{ onAPreset }}" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:12px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+                <sc-for list="{{ abPresetOptions }}" as="o" hint-placeholder-count="3">
+                  <option value="{{ o.label }}">{{ o.label }}</option>
+                </sc-for>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:56px;flex-shrink:0;font-size:10px;color:var(--text3);font-weight:700">madVR</span>
+              <select value="{{ abAProfile }}" onChange="{{ onAProfile }}" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:12px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+                <sc-for list="{{ abProfileOptions }}" as="o" hint-placeholder-count="3">
+                  <option value="{{ o.label }}">{{ o.label }}</option>
+                </sc-for>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:56px;flex-shrink:0;font-size:10px;color:var(--text3);font-weight:700">Barco</span>
+              <select value="{{ abABarco }}" onChange="{{ onABarco }}" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:12px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+                <sc-for list="{{ abBarcoOptions }}" as="o" hint-placeholder-count="3">
+                  <option value="{{ o.label }}">{{ o.label }}</option>
+                </sc-for>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div style="padding:16px;border-radius:14px;background:var(--surface);border:1px solid var(--border);margin-bottom:14px">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Konfiguration B</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:56px;flex-shrink:0;font-size:10px;color:var(--text3);font-weight:700">Trinnov</span>
+              <select value="{{ abBPreset }}" onChange="{{ onBPreset }}" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:12px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+                <sc-for list="{{ abPresetOptions }}" as="o" hint-placeholder-count="3">
+                  <option value="{{ o.label }}">{{ o.label }}</option>
+                </sc-for>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:56px;flex-shrink:0;font-size:10px;color:var(--text3);font-weight:700">madVR</span>
+              <select value="{{ abBProfile }}" onChange="{{ onBProfile }}" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:12px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+                <sc-for list="{{ abProfileOptions }}" as="o" hint-placeholder-count="3">
+                  <option value="{{ o.label }}">{{ o.label }}</option>
+                </sc-for>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:56px;flex-shrink:0;font-size:10px;color:var(--text3);font-weight:700">Barco</span>
+              <select value="{{ abBBarco }}" onChange="{{ onBBarco }}" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-size:12px;font-weight:700;font-family:'Manrope',system-ui,sans-serif">
+                <sc-for list="{{ abBarcoOptions }}" as="o" hint-placeholder-count="3">
+                  <option value="{{ o.label }}">{{ o.label }}</option>
+                </sc-for>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+          <button onClick="{{ toggleABBlind }}" style="flex-shrink:0;height:34px;padding:0 13px;border-radius:17px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ abBlindBg }};color:{{ abBlindFg }}">Blind-Vergleich</button>
+          <span style="font-size:11px;color:var(--text3);line-height:1.4">Reihenfolge wird zufällig zugewiesen und erst nach der Wahl aufgedeckt.</span>
+        </div>
+        <button onClick="{{ startAB }}" style="width:100%;padding:15px;border-radius:14px;border:none;background:var(--gold);color:var(--goldText);font-weight:800;font-size:14px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Vergleich starten</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ abRunOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:var(--bg);z-index:37;display:flex;flex-direction:column;padding:54px 20px 40px;box-sizing:border-box;animation:kino-sheet-in 0.2s ease-out">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:11px;color:var(--gold);font-weight:800;letter-spacing:1px;text-transform:uppercase">A/B-Vergleich</span>
+        <a onClick="{{ closeABRun }}" style="font-size:12px;font-weight:700;cursor:pointer;color:var(--text3)">Beenden</a>
+      </div>
+      <div style="font-size:12px;color:var(--text2)">{{ abClipName }}</div>
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center">
+        <sc-if value="{{ abIsRound }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center">
+            <div style="font-size:26px;font-weight:800">{{ abRoundLabel }}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:6px">{{ abRoundSub }}</div>
+            <sc-if value="{{ abIsLead }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px">
+                <span style="width:8px;height:8px;border-radius:5px;background:var(--gold);animation:kino-pulse 1.2s ease-in-out infinite"></span>
+                <span style="font-size:11px;color:var(--text3)">Vorlauf — Signalkette synchronisiert</span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ abIsPlay }}" hint-placeholder-val="{{ false }}">
+              <div style="height:5px;border-radius:3px;background:var(--surface2);overflow:hidden;margin-top:18px">
+                <div style="height:100%;width:{{ abPlayPct }}%;background:var(--gold)"></div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+        <sc-if value="{{ abIsGap }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:5px;background:var(--gold);animation:kino-pulse 1.2s ease-in-out infinite"></span>
+            <div style="font-size:14px;font-weight:700;margin-top:10px">{{ abGapStatus }}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:6px">Der zweite Durchgang startet erst nach bestätigtem Preset.</div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ abIsDecide }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center">
+            <div style="font-size:16px;font-weight:800;margin-bottom:16px">Welcher Durchgang war besser?</div>
+            <div style="display:flex;gap:10px">
+              <button onClick="{{ pickFirst }}" style="flex:1;padding:20px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:800;font-size:15px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Durchgang 1</button>
+              <button onClick="{{ pickSecond }}" style="flex:1;padding:20px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:800;font-size:15px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Durchgang 2</button>
+            </div>
+            <div style="display:flex;gap:20px;justify-content:center;margin-top:14px">
+              <a onClick="{{ abReplayFirst }}" style="font-size:12px;font-weight:700;cursor:pointer">1 erneut hören</a>
+              <a onClick="{{ abReplaySecond }}" style="font-size:12px;font-weight:700;cursor:pointer">2 erneut hören</a>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ abIsResult }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center">
+            <div style="font-size:16px;font-weight:800">{{ abResultText }}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.5">{{ abResultSub }}</div>
+            <button onClick="{{ closeABRun }}" style="width:100%;margin-top:20px;padding:13px;border-radius:12px;border:none;background:var(--gold);color:var(--goldText);font-weight:800;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Schließen</button>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ scEditOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="kino-hscroll" style="position:absolute;inset:0;background:var(--bg);z-index:38;display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:none;padding-top:54px;box-sizing:border-box;animation:kino-sheet-in 0.2s ease-out">
+      <div style="padding:0 20px 40px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+          <a onClick="{{ closeScEdit }}" style="font-size:13px;font-weight:700;cursor:pointer;color:var(--text2);white-space:nowrap">Verwerfen</a>
+          <h2 style="margin:0;font-size:19px;font-weight:800;flex:1;text-align:right">{{ scHeading }}</h2>
+        </div>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Name</div>
+        <input type="text" value="{{ scName }}" onChange="{{ onScName }}" style="width:100%;box-sizing:border-box;padding:11px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;margin-bottom:16px;font-family:'Manrope',system-ui,sans-serif">
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Weiterschalten</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <sc-for list="{{ scAdvanceChips }}" as="c" hint-placeholder-count="2">
+            <button onClick="{{ c.onSelect }}" style="flex:1;padding:9px;border-radius:16px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ c.bg }};color:{{ c.fg }}">{{ c.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:12px;color:var(--text2);font-weight:700">Pause zwischen Clips</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button onClick="{{ scGapDown }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">–</button>
+              <span style="font-size:12px;color:var(--text);font-weight:700;width:48px;text-align:center;font-variant-numeric:tabular-nums">{{ scGapLabel }}</span>
+              <button onClick="{{ scGapUp }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">+</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:12px;color:var(--text2);font-weight:700">Referenzpegel</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button onClick="{{ scVolDown }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">–</button>
+              <span style="font-size:12px;color:var(--text);font-weight:700;width:48px;text-align:center;font-variant-numeric:tabular-nums">{{ scVolLabel }}</span>
+              <button onClick="{{ scVolUp }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">+</button>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Reihenfolge</div>
+        <sc-if value="{{ scHasRows }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+            <sc-for list="{{ scRows }}" as="r" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:var(--surface);border:1px solid var(--border)">
+                <span style="width:16px;font-size:11px;font-weight:800;color:var(--text3)">{{ r.n }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</div>
+                  <div style="font-size:10px;color:var(--text3)">{{ r.dur }}</div>
+                </div>
+                <button onClick="{{ r.onUp }}" style="width:28px;height:28px;border-radius:14px;border:none;background:var(--surface2);color:var(--text2);font-size:12px;cursor:pointer">↑</button>
+                <button onClick="{{ r.onDown }}" style="width:28px;height:28px;border-radius:14px;border:none;background:var(--surface2);color:var(--text2);font-size:12px;cursor:pointer">↓</button>
+                <button onClick="{{ r.onRemove }}" style="width:28px;height:28px;border-radius:14px;border:none;background:var(--surface2);color:var(--red);font-size:11px;cursor:pointer">✕</button>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ scHasAddRows }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Clip hinzufügen</div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px">
+            <sc-for list="{{ scAddRows }}" as="r" hint-placeholder-count="2">
+              <div onClick="{{ r.onAdd }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:transparent;border:1px dashed var(--border);cursor:pointer">
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</div>
+                  <div style="font-size:10px;color:var(--text3)">{{ r.meta }}</div>
+                </div>
+                <span style="color:var(--gold);font-size:15px;font-weight:800">＋</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <button onClick="{{ saveShowcase }}" style="width:100%;padding:15px;border-radius:14px;border:none;background:{{ scSaveBg }};color:{{ scSaveFg }};font-weight:800;font-size:14px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">{{ scSaveLabel }}</button>
+        <sc-if value="{{ scIsEdit }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ deleteShowcase }}" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px solid oklch(0.65 0.19 25 / 0.4);background:transparent;color:var(--red);font-weight:700;font-size:12px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Showcase löschen</button>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ powerConfirmOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;z-index:40;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box">
+      <div style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:22px;animation:kino-sheet-in 0.16s ease-out">
+        <h3 style="margin:0 0 8px;font-size:16px;font-weight:800">Kino ausschalten?</h3>
+        <p style="margin:0 0 18px;font-size:13px;color:var(--text2);line-height:1.5">Alle Geräte werden heruntergefahren und das Licht wird wiederhergestellt.</p>
+        <div style="display:flex;gap:8px">
+          <button onClick="{{ cancelPowerOff }}" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:700;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Abbrechen</button>
+          <button onClick="{{ confirmPowerOff }}" style="flex:1;padding:12px;border-radius:12px;border:none;background:var(--gold);color:var(--goldText);font-weight:800;font-size:13px;cursor:pointer;font-family:'Manrope',system-ui,sans-serif">Ausschalten</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ showMediaFooter }}" hint-placeholder-val="{{ false }}">
+    <div style="flex-shrink:0;padding:10px 14px 30px;border-top:1px solid var(--border);background:var(--surface)" data-comment-anchor="f19d61010c-div">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:36px;height:36px;border-radius:8px;flex-shrink:0;background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 5px,var(--surface) 5px,var(--surface) 10px)"></div>
+        <div onClick="{{ expandPlaying }}" style="flex:1;overflow:hidden;cursor:pointer;min-width:0">
+          <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ nowPlayingTitle.title }}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+            <span style="font-size:10px;color:var(--text3);flex-shrink:0">{{ playElapsedLabel }}</span>
+            <div style="flex:1;height:3px;border-radius:2px;background:var(--surface2);overflow:hidden"><div style="height:100%;width:{{ playProgressPct }}%;background:var(--gold)"></div></div>
+            <span style="font-size:10px;color:var(--text3);flex-shrink:0">{{ playDurationLabel }}</span>
+          </div>
+        </div>
+        <button onClick="{{ togglePause }}" style="width:32px;height:32px;border-radius:16px;border:none;background:var(--gold);color:var(--goldText);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ playPauseGlyph }}</button>
+        <button onClick="{{ expandPlaying }}" style="width:32px;height:32px;border-radius:16px;border:none;background:transparent;color:var(--text2);font-size:13px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">⌃</button>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px">
+        <button onClick="{{ toggleMute }}" style="height:30px;padding:0 12px;border-radius:15px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ muteBg }};color:{{ muteFg }}">Stumm</button>
+        <button onClick="{{ volDown }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">–</button>
+        <span style="font-size:11px;color:var(--text2);width:56px;text-align:center;font-variant-numeric:tabular-nums">{{ volumeDb }}</span>
+        <button onClick="{{ volUp }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">+</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ showVolumeFooter }}" hint-placeholder-val="{{ false }}">
+    <div style="flex-shrink:0;padding:10px 16px 30px;border-top:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:12px">
+      <div style="flex:1;overflow:hidden">
+        <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ miniActivityLabel }}</div>
+      </div>
+      <button onClick="{{ toggleMute }}" style="height:30px;padding:0 12px;border-radius:15px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:'Manrope',system-ui,sans-serif;background:{{ muteBg }};color:{{ muteFg }}">Stumm</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button onClick="{{ volDown }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">–</button>
+        <span style="font-size:11px;color:var(--text2);width:56px;text-align:center;font-variant-numeric:tabular-nums">{{ volumeDb }}</span>
+        <button onClick="{{ volUp }}" style="width:30px;height:30px;border-radius:15px;border:none;background:var(--surface2);color:var(--text2);font-size:14px;cursor:pointer">+</button>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</x-import>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const ACTIVITIES = {
+  aus: { key:'aus', label:'Aus', devices:[], controlClass:'off', etaLabel:'ca. 1 Min' },
+  film: { key:'film', label:'Bibliothek', devices:['barco','trinnov','madvr','zidoo'], controlClass:'full', etaLabel:'ca. 1–6 Min (Beamer)' },
+  netflix: { key:'netflix', label:'Streaming', devices:['barco','trinnov','madvr','shield'], controlClass:'handoff', etaLabel:'ca. 1–5 Min', handoffText:'Weiter auf der Fernbedienung der Shield — Netflix, Prime, YouTube. Bild und Ton sind vorbereitet.' },
+  musik: { key:'musik', label:'Musik', devices:['trinnov'], controlClass:'mixed', etaLabel:'ca. 10 Sek.' },
+  steam: { key:'steam', label:'Steam', devices:['barco','trinnov'], controlClass:'room', etaLabel:'ca. 1–6 Min (Beamer)', roomText:'Nur Raumsteuerung. Bild und Ton werden vorbereitet, Steam läuft über den PC.' },
+};
+
+const DEVICE_LABELS = { barco:'Beamer', trinnov:'Trinnov', madvr:'madVR', zidoo:'Zidoo', shield:'Shield' };
+
+const TITLES = [
+  { id:1, title:'Nordlicht', year:2024, runtime:118, genre:'Drama', res4k:true, isNew:true, continueWatching:42, watched:false, rating:7.6, country:'Norwegen', tagline:'Ein Forscher kehrt nach zwanzig Jahren an den Ort seines größten Fehlers zurück.' },
+  { id:2, title:'Der Bote', year:2019, runtime:104, genre:'Thriller', res4k:false, isNew:false, continueWatching:0, watched:true, rating:6.9, country:'Deutschland', tagline:'Eine Nachricht, die niemand ankommen sehen sollte.' },
+  { id:3, title:'Sturmwarnung', year:2022, runtime:131, genre:'Action', res4k:true, isNew:false, continueWatching:0, watched:false, rating:7.1, country:'USA', tagline:'Vierundzwanzig Stunden, bevor die Küste verschwindet.' },
+  { id:4, title:'Kleine Fluchten', year:2021, runtime:96, genre:'Komödie', res4k:false, isNew:false, continueWatching:0, watched:false, rating:6.4, country:'Deutschland', tagline:'Drei Geschwister, ein Wohnwagen, kein Plan.' },
+  { id:5, title:'Der Letzte Sommer', year:2023, runtime:122, genre:'Drama', res4k:true, isNew:false, continueWatching:78, watched:false, rating:8.0, country:'Frankreich', tagline:'Ein letztes Haus am See, bevor es verkauft wird.' },
+  { id:6, title:'Schattenlinie', year:2020, runtime:109, genre:'Krimi', res4k:false, isNew:false, continueWatching:0, watched:false, rating:7.3, country:'Deutschland', tagline:'Die Akte war seit zehn Jahren geschlossen.' },
+  { id:7, title:'Feuerprobe', year:2024, runtime:140, genre:'Action', res4k:true, isNew:true, continueWatching:0, watched:false, rating:6.8, country:'USA', tagline:'Zwei Brüder, ein brennender Turm, keine Zeit.' },
+  { id:8, title:'Nachtzug', year:2018, runtime:98, genre:'Thriller', res4k:false, isNew:false, continueWatching:0, watched:false, rating:6.2, country:'Österreich', tagline:'Der letzte Zug hält nur einmal.' },
+  { id:9, title:'Windstille', year:2023, runtime:105, genre:'Drama', res4k:true, isNew:true, continueWatching:0, watched:false, rating:7.8, country:'Island', tagline:'Auf offener See wird jede Stille laut.' },
+  { id:10, title:'Die Weite', year:2017, runtime:128, genre:'Abenteuer', res4k:false, isNew:false, continueWatching:0, watched:true, rating:7.0, country:'USA', tagline:'Eine Karte, die weiterführt als gedacht.' },
+];
+
+const TAG_LABELS = { bass_heavy:'Bass', atmos_heights:'Atmos-Höhen', panning:'Panning', dialogue:'Dialog', hdr_blacks:'HDR-Schwarz', hdr_highlights:'HDR-Lichter', guest_safe:'Gästetauglich', spoilers:'Spoiler' };
+const SEED_CLIPS = [
+  { id:'c1', titleId:3, name:'Deichbruch', start:3720, end:3765, tags:['bass_heavy','guest_safe'], notes:'Subbass beim Deichbruch — die Kette muss bei −18 dB sauber bleiben.', audio:'EN 5.1', subtitle:'Aus' },
+  { id:'c2', titleId:7, name:'Treppenhaus', start:1560, end:1610, tags:['atmos_heights','panning','guest_safe'], notes:'Funkenflug wandert durch die Höhen, Rotation ab Sekunde 20.', audio:'EN 5.1', subtitle:'Aus' },
+  { id:'c3', titleId:9, name:'Funkspruch', start:2210, end:2250, tags:['dialogue'], notes:'Verständlichkeit: Flüstern vor Meeresrauschen.', audio:'DE 5.1', subtitle:'Aus' },
+  { id:'c4', titleId:1, name:'Polarnacht', start:480, end:540, tags:['hdr_blacks','guest_safe'], notes:'Schwarzwert der Polarnacht — Sterne dürfen nicht absaufen.', audio:'DE 5.1', subtitle:'Aus' },
+  { id:'c5', titleId:5, name:'Steg im Gegenlicht', start:3050, end:3095, tags:['hdr_highlights'], notes:'Spitzlichter auf dem Wasser — Roll-off beobachten.', audio:'DE 5.1', subtitle:'Deutsch' },
+  { id:'c6', titleId:3, name:'Finale dritter Akt', start:6800, end:6860, tags:['bass_heavy','spoilers'], notes:'Finale des dritten Akts — verrät die Auflösung.', audio:'EN 5.1', subtitle:'Aus' },
+];
+const SEED_SHOWCASES = [
+  { id:'s1', name:'Gäste-Demo', clips:['c1','c2','c4'], advance:'auto', gap:8, refVol:-18 },
+  { id:'s2', name:'Bass-Kalibrierung', clips:['c1','c6'], advance:'tap', gap:10, refVol:-24 },
+];
+const MADVR_PROFILES = ['—','HDR 260 nits','HDR dynamisch','SDR Referenz'];
+const BARCO_PROFILES = ['—','HDR 260 HDMI','SDR REC709','3D'];
+
+class Component extends DCLogic {
+  state = {
+    mainView:'home', activity:'aus', transitioning:false, transTarget:null, transProgress:0,
+    deviceStatus:{}, bannerOpen:false, degradedDevice:null,
+    detailId:null, playingId:null, playingOpen:false, isPlayingMedia:false, isPaused:false,
+    volume:62, muted:false, audioTrack:'DE 5.1', subtitle:'Aus',
+    query:'', selectedTags:[], sort:'Neu hinzugefügt', musikSource:'tidal',
+    refreshing:false, pendingPlay:false, playElapsed:0, activityMenuOpen:false,
+    libraryCategory:'movies', dimmed:false, filterSheetOpen:false, powerConfirmOpen:false,
+    selectedGenres:[], selectedCountries:[], yearFrom:2017, yearTo:2024, trinnovPreset:'Kino Referenz', trinnovUpmixer:'Neural:X',
+    clips:SEED_CLIPS, showcases:SEED_SHOWCASES, demoView:'clips', demoTagFilter:[],
+    trimOpen:false, trimStart:'', trimEnd:'', trimName:'', trimTags:[], trimNotes:'', trimTagInput:'', trimAudio:'', trimSubtitle:'', trimTitleId:null, previewing:false,
+    markInAt:null, captureToast:'', demo:null, abSetup:null, abRun:null, trimClipId:null, showcaseEdit:null,
+    trimAnchor:0, trimPos:0, trimPlaying:false,
+  };
+
+  componentDidMount() {
+    this.clock = setInterval(() => {
+      const s = this.state;
+      if (s.trimOpen && s.trimPlaying && this._trimT0 != null) {
+        this.setState({ trimPos: Math.max(0, this._trimP0 + (Date.now() - this._trimT0) / 1000) });
+      }
+      if (!s.isPlayingMedia || s.isPaused || !this._playAnchor) return;
+      const t = TITLES.find(x => x.id === s.playingId); if (!t) return;
+      const dur = t.runtime * 60;
+      const a = this._playAnchor;
+      this.setState({ playElapsed: Math.min(dur, a.offset + (Date.now() - a.at) / 1000) });
+    }, 500);
+  }
+
+  anchorClock(offset) { this._playAnchor = { at: Date.now(), offset: offset != null ? offset : this.state.playElapsed }; }
+
+  componentWillUnmount() {
+    if (this.timer) clearInterval(this.timer);
+    if (this.clock) clearInterval(this.clock);
+    if (this.restoreTimer) clearTimeout(this.restoreTimer);
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    if (this.demoTimer) clearInterval(this.demoTimer);
+    if (this.abTimer) clearInterval(this.abTimer);
+    if (this.previewTimer) clearTimeout(this.previewTimer);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+  }
+
+  selectActivity(key) {
+    if (key === this.state.activity && !this.state.transitioning) return;
+    if (this.timer) clearInterval(this.timer);
+    const from = ACTIVITIES[this.state.activity];
+    const to = ACTIVITIES[key];
+    const newStatus = {};
+    to.devices.forEach(d => {
+      newStatus[d] = (from.devices.includes(d) && this.state.deviceStatus[d] === 'ready') ? 'ready' : 'starting';
+    });
+    from.devices.forEach(d => { if (!to.devices.includes(d)) newStatus[d] = 'off'; });
+    this._targetKey = key;
+    this._startedAt = Date.now();
+    this._duration = 2600 + Math.random() * 900;
+    this.setState(s => ({ transitioning:true, transTarget:key, transProgress:0, deviceStatus:newStatus, bannerOpen:false, degradedDevice:null, activityMenuOpen:false,
+      mainView:'home', detailId:null, playingOpen:false,
+      isPlayingMedia: (key === 'film' && (s.pendingPlay || s.isPlayingMedia)) ? s.isPlayingMedia : false }));
+    this.timer = setInterval(() => this.tick(), 150);
+  }
+
+  tick() {
+    const progress = Math.min(100, ((Date.now() - this._startedAt) / this._duration) * 100);
+    this.setState({ transProgress: progress });
+    if (progress >= 100) {
+      clearInterval(this.timer);
+      this.finishTransition(this._targetKey);
+    }
+  }
+
+  finishTransition(key) {
+    const to = ACTIVITIES[key];
+    const finalStatus = {};
+    to.devices.forEach(d => finalStatus[d] = 'ready');
+    this.setState(s => {
+      const base = { activity:key, transitioning:false, transTarget:null, transProgress:0, deviceStatus:finalStatus, pendingPlay:false };
+      if (s.pendingPlay && key === 'film' && this._pendingTitleId) {
+        const t = TITLES.find(x => x.id === this._pendingTitleId);
+        const fromStart = this._pendingFromStart; this._pendingFromStart = false;
+        const startAt = (!fromStart && t && t.continueWatching) ? Math.round((t.continueWatching/100)*t.runtime*60) : 0;
+        this.anchorClock(startAt);
+        return { ...base, playingOpen:true, isPlayingMedia:true, isPaused:false,
+          playElapsed: startAt,
+          playingId: t ? t.id : s.playingId };
+      }
+      return base;
+    });
+    if (this._pendingDemo && key === 'film') { const spec = this._pendingDemo; this._pendingDemo = null; setTimeout(() => this.beginDemo(spec), 400); }
+  }
+
+  toggleDeviceDrift(deviceKey) {
+    if (this.state.transitioning) return;
+    const cur = this.state.deviceStatus[deviceKey];
+    if (cur === 'degraded') { this.setState({ bannerOpen:true, degradedDevice:deviceKey }); return; }
+    if (cur !== 'ready') return;
+    this.setState(s => ({ deviceStatus:{...s.deviceStatus,[deviceKey]:'degraded'}, bannerOpen:true, degradedDevice:deviceKey }));
+  }
+
+  restoreDevice() {
+    const d = this.state.degradedDevice; if (!d) return;
+    this.setState(s => ({ deviceStatus:{...s.deviceStatus,[d]:'starting'}, bannerOpen:false }));
+    this.restoreTimer = setTimeout(() => {
+      this.setState(s => ({ deviceStatus:{...s.deviceStatus,[d]:'ready'}, degradedDevice:null }));
+    }, 1300);
+  }
+
+  dismissBanner() { this.setState({ bannerOpen:false }); }
+  openFilters() { this.setState({ filterSheetOpen:true }); }
+  closeFilters() { this.setState({ filterSheetOpen:false }); }
+  resetFilters() { this.setState({ selectedTags:[], selectedGenres:[], selectedCountries:[], yearFrom:2017, yearTo:2024, query:'' }); }
+  toggleGenre(g) { this.setState(s => ({ selectedGenres: s.selectedGenres.includes(g) ? s.selectedGenres.filter(x=>x!==g) : [...s.selectedGenres, g] })); }
+  toggleCountry(c) { this.setState(s => ({ selectedCountries: s.selectedCountries.includes(c) ? s.selectedCountries.filter(x=>x!==c) : [...s.selectedCountries, c] })); }
+  setYearFrom(e) { const v = parseInt(e.target.value,10); this.setState(s => ({ yearFrom:v, yearTo: Math.max(v, s.yearTo) })); }
+  setYearTo(e) { const v = parseInt(e.target.value,10); this.setState(s => ({ yearTo:v, yearFrom: Math.min(v, s.yearFrom) })); }
+  askPowerOff() { this.setState({ powerConfirmOpen:true }); }
+  cancelPowerOff() { this.setState({ powerConfirmOpen:false }); }
+  confirmPowerOff() { this.setState({ powerConfirmOpen:false }); this.selectActivity('aus'); }
+  toggleActivityMenu() { if (this.state.transitioning) return; this.setState(s => ({ activityMenuOpen: !s.activityMenuOpen })); }
+  openLibrary(cat) { this.setState({ mainView:'library', libraryCategory: cat || 'movies' }); }
+  backHome() { this.setState({ mainView:'home' }); }
+  openDetail(id) { this.setState({ detailId:id }); }
+  closeDetail() { this.setState({ detailId:null }); }
+
+  startPlayback() {
+    const t = TITLES.find(x => x.id === this.state.detailId);
+    if (!t) return;
+    if (this.state.activity !== 'film') {
+      this._pendingTitleId = t.id;
+      this.setState({ pendingPlay:true, detailId:null });
+      this.selectActivity('film');
+      return;
+    }
+    const elapsed = t.continueWatching ? Math.round((t.continueWatching/100)*t.runtime*60) : 0;
+    this.anchorClock(elapsed);
+    this.setState({ playingOpen:true, isPlayingMedia:true, isPaused:false, playElapsed:elapsed, detailId:null, playingId:t.id });
+  }
+  startPlaybackFromStart() {
+    const t = TITLES.find(x => x.id === this.state.detailId);
+    if (!t) return;
+    if (this.state.activity !== 'film') {
+      this._pendingTitleId = t.id; this._pendingFromStart = true;
+      this.setState({ pendingPlay:true, detailId:null });
+      this.selectActivity('film');
+      return;
+    }
+    this.anchorClock(0);
+    this.setState({ playingOpen:true, isPlayingMedia:true, isPaused:false, playElapsed:0, detailId:null, playingId:t.id });
+  }
+  collapsePlaying() { this.setState({ playingOpen:false }); }
+  expandPlaying() { if (this.state.isPlayingMedia) this.setState({ playingOpen:true }); }
+  stopPlayback() { this.setState({ isPlayingMedia:false, playingOpen:false }); }
+  togglePause() { this.anchorClock(); this.setState(s => ({ isPaused: !s.isPaused })); }
+  seekBy(delta) {
+    const t = TITLES.find(x => x.id === this.state.playingId); if (!t) return;
+    const dur = t.runtime * 60;
+    const next = Math.max(0, Math.min(dur, this.state.playElapsed + delta));
+    this.anchorClock(next);
+    this.setState({ playElapsed: next });
+  }
+  toggleDim() { this.setState(s => ({ dimmed: !s.dimmed })); }
+  setPreset(v) { this.setState({ trinnovPreset:v }); }
+  setUpmixer(v) { this.setState({ trinnovUpmixer:v }); }
+
+  setVolume(delta) { this.setState(s => ({ volume: Math.max(0, Math.min(100, s.volume + delta)), muted:false })); }
+  toggleMute() { this.setState(s => ({ muted: !s.muted })); }
+  setAudioTrack(v) { this.setState({ audioTrack:v }); }
+  setSubtitle(v) { this.setState({ subtitle:v }); }
+  setQuery(e) { this.setState({ query: e.target.value }); }
+  toggleTag(tag) { this.setState(s => ({ selectedTags: s.selectedTags.includes(tag) ? s.selectedTags.filter(x => x !== tag) : [...s.selectedTags, tag] })); }
+  setSort(v) { this.setState({ sort:v }); }
+  setMusikSource(v) { this.setState({ musikSource:v }); }
+  forceRefresh() { if (this.state.refreshing) return; this.setState({ refreshing:true }); this.refreshTimer = setTimeout(() => this.setState({ refreshing:false }), 1000); }
+
+  fmt(sec) { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), ss = sec%60; return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}` : `${m}:${String(ss).padStart(2,'0')}`; }
+  parseT(str) { if (str == null) return null; const parts = String(str).trim().split(':').map(p => p.trim()).filter(p => p.length); if (!parts.length || parts.some(p => isNaN(p))) return null; let sec = 0; parts.forEach(p => { sec = sec*60 + parseFloat(p); }); return Math.max(0, Math.round(sec)); }
+  clipById(id) { return this.state.clips.find(c => c.id === id); }
+  clipTitle(c) { const t = TITLES.find(x => x.id === c.titleId); return t ? t.title : '—'; }
+
+  openDemos() { this.setState({ mainView:'demos' }); }
+  setDemoView(v) { this.setState({ demoView:v }); }
+  toggleDemoTag(k) { this.setState(s => ({ demoTagFilter: s.demoTagFilter.includes(k) ? s.demoTagFilter.filter(x=>x!==k) : [...s.demoTagFilter, k] })); }
+
+  openTrim(start, end, titleId) {
+    const t = TITLES.find(x => x.id === (titleId != null ? titleId : this.state.playingId)); if (!t) return;
+    this.setState(s => ({ trimOpen:true, trimClipId:null, trimTitleId:t.id, trimStart:this.fmt(start), trimEnd:this.fmt(end),
+      trimName:t.title, trimTags:[], trimNotes:'', trimTagInput:'',
+      trimAudio:s.audioTrack, trimSubtitle:s.subtitle, previewing:false, markInAt:null,
+      trimAnchor:end, trimPos:Math.max(0, start - 3), trimPlaying:false }));
+  }
+  captureWhole(titleId) {
+    const t = TITLES.find(x => x.id === titleId); if (!t) return;
+    this.openTrim(0, t.runtime * 60, titleId);
+  }
+  openClipEdit(id) {
+    const c = this.clipById(id); if (!c) return;
+    this.setState({ trimOpen:true, trimClipId:id, trimTitleId:c.titleId, trimStart:this.fmt(c.start), trimEnd:this.fmt(c.end),
+      trimName:c.name, trimTags:c.tags.slice(), trimNotes:c.notes || '', trimTagInput:'',
+      trimAudio:c.audio, trimSubtitle:c.subtitle, previewing:false,
+      trimAnchor:c.end, trimPos:Math.max(0, c.start - 3), trimPlaying:false });
+  }
+  deleteClip() {
+    const id = this.state.trimClipId; if (!id) return;
+    this.setState(s => ({ clips: s.clips.filter(c => c.id !== id),
+      showcases: s.showcases.map(sc => ({ ...sc, clips: sc.clips.filter(x => x !== id) })),
+      trimOpen:false, trimClipId:null }));
+  }
+  retroCapture() { const now = this.state.playElapsed; this.openTrim(Math.max(0, now-60), Math.max(2, now)); }
+  markIn() { this.setState({ markInAt: this.state.playElapsed }); }
+  markOut() { const a = this.state.markInAt; if (a == null) return; this.openTrim(a, Math.max(a+2, this.state.playElapsed)); }
+  closeTrim() { this.setState({ trimOpen:false, previewing:false, trimPlaying:false }); }
+  quickSel(n) {
+    const s = this.state;
+    if (n == null) { const t = TITLES.find(x => x.id === s.trimTitleId); if (!t) return; this.setState({ trimStart:this.fmt(0), trimEnd:this.fmt(t.runtime * 60) }); return; }
+    const end = s.trimAnchor || this.parseT(s.trimEnd) || 0;
+    this.setState({ trimStart:this.fmt(Math.max(0, end - n)), trimEnd:this.fmt(end) });
+  }
+  shiftSel(d) {
+    const a = this.parseT(this.state.trimStart), b = this.parseT(this.state.trimEnd);
+    if (a == null || b == null) return;
+    const off = Math.max(d, -a);
+    this.setState({ trimStart:this.fmt(a + off), trimEnd:this.fmt(b + off) });
+  }
+  trimSeek(d) { this.setState(s => { const p = Math.max(0, s.trimPos + d); this._trimP0 = p; this._trimT0 = Date.now(); return { trimPos:p }; }); }
+  trimJump(which) { const v = this.parseT(which === 'start' ? this.state.trimStart : this.state.trimEnd); if (v == null) return; const p = Math.max(0, v - 3); this._trimP0 = p; this._trimT0 = Date.now(); this.setState({ trimPos:p }); }
+  trimTogglePlay() { this.setState(s => { if (!s.trimPlaying) { this._trimP0 = s.trimPos; this._trimT0 = Date.now(); } return { trimPlaying: !s.trimPlaying }; }); }
+  nudgeTrim(which, delta) {
+    const cur = this.parseT(which === 'start' ? this.state.trimStart : this.state.trimEnd);
+    if (cur == null) return;
+    const v = this.fmt(Math.max(0, cur + delta));
+    this.setState(which === 'start' ? { trimStart:v } : { trimEnd:v });
+  }
+  toggleTrimTag(k) { this.setState(s => ({ trimTags: s.trimTags.includes(k) ? s.trimTags.filter(x=>x!==k) : [...s.trimTags, k] })); }
+  addFreeTag() { const v = this.state.trimTagInput.trim(); if (!v) return; this.setState(s => ({ trimTags: s.trimTags.includes(v) ? s.trimTags : [...s.trimTags, v], trimTagInput:'' })); }
+  previewCut() { if (this.state.previewing) return; this.setState({ previewing:true }); this.previewTimer = setTimeout(() => this.setState({ previewing:false }), 3000); }
+  saveClip() {
+    const s = this.state;
+    const start = this.parseT(s.trimStart), end = this.parseT(s.trimEnd);
+    if (start == null || end == null || end <= start) return;
+    const fields = { titleId:s.trimTitleId, name:s.trimName || 'Clip', start, end, tags:s.trimTags, notes:s.trimNotes, audio:s.trimAudio, subtitle:s.trimSubtitle };
+    if (s.trimClipId) {
+      this.setState(st => ({ clips: st.clips.map(c => c.id === st.trimClipId ? { ...c, ...fields } : c), trimOpen:false, trimClipId:null, captureToast:'Clip aktualisiert.' }));
+    } else {
+      const clip = { id:'c'+Date.now(), ...fields };
+      this.setState(st => ({ clips:[clip, ...st.clips], trimOpen:false, captureToast:'Clip gespeichert — zu finden unter Demos.' }));
+    }
+    this.toastTimer = setTimeout(() => this.setState({ captureToast:'' }), 3500);
+  }
+
+  startShowcase(id) {
+    const sc = this.state.showcases.find(x => x.id === id); if (!sc) return;
+    this.launchDemo({ name:sc.name, clipIds:sc.clips.slice(), advance:sc.advance, gap:sc.gap, refVol:sc.refVol });
+  }
+  startClipDemo(clipId) { const c = this.clipById(clipId); if (!c) return; this.launchDemo({ name:'Einzelclip', clipIds:[clipId], advance:'auto', gap:4, refVol:-18 }); }
+  launchDemo(spec) {
+    if (this.state.activity !== 'film') { this._pendingDemo = spec; this.selectActivity('film'); return; }
+    this.beginDemo(spec);
+  }
+  beginDemo(spec) {
+    if (this.demoTimer) clearInterval(this.demoTimer);
+    this.setState({ demo:{ ...spec, idx:0, phase:'slate', el:0, paused:false }, mainView:'home', playingOpen:false, detailId:null, abSetup:null, abRun:null });
+    this._demoT0 = Date.now();
+    this.demoTimer = setInterval(() => this.tickDemo(), 250);
+  }
+  demoPhaseDur(d) { if (d.phase==='slate') return d.idx===0 ? 3 : d.gap; if (d.phase==='leadin') return 4; if (d.phase==='playing') return 12; return Infinity; }
+  setDemoPhase(phase, idx) { this._demoT0 = Date.now(); this.setState(s => ({ demo:{ ...s.demo, phase, idx: idx != null ? idx : s.demo.idx, el:0, paused:false } })); }
+  ensureDemoTimer() { if (!this.demoTimer) this.demoTimer = setInterval(() => this.tickDemo(), 250); }
+  tickDemo() {
+    const d = this.state.demo; if (!d || d.paused) return;
+    const el = (Date.now() - this._demoT0) / 1000;
+    const dur = this.demoPhaseDur(d);
+    if (el < dur) { this.setState(s => s.demo ? ({ demo:{ ...s.demo, el } }) : null); return; }
+    if (d.phase === 'slate') { this.setDemoPhase('leadin'); return; }
+    if (d.phase === 'leadin') { this.setDemoPhase('playing'); return; }
+    if (d.phase === 'playing') {
+      if (d.idx >= d.clipIds.length - 1) { this.setDemoPhase('done'); clearInterval(this.demoTimer); this.demoTimer = null; return; }
+      if (d.advance === 'tap') { this.setDemoPhase('wait', d.idx + 1); return; }
+      this.setDemoPhase('slate', d.idx + 1); return;
+    }
+  }
+  demoTapNext() { this.ensureDemoTimer(); this.setDemoPhase('leadin'); }
+  pauseDemo() {
+    this.setState(s => {
+      const d = s.demo; if (!d) return null;
+      if (!d.paused) return { demo:{ ...d, paused:true } };
+      this._demoT0 = Date.now() - d.el * 1000;
+      return { demo:{ ...d, paused:false } };
+    });
+  }
+  skipDemo() { const d = this.state.demo; if (!d || d.phase === 'done') return; this.ensureDemoTimer(); if (d.idx >= d.clipIds.length-1) { this.setDemoPhase('done'); } else { this.setDemoPhase('leadin', d.idx+1); } }
+  replayDemoClip() { const d = this.state.demo; if (!d) return; this.ensureDemoTimer(); this.setDemoPhase('leadin'); }
+  jumpDemo(i) { this.ensureDemoTimer(); this.setDemoPhase('leadin', i); }
+  stopDemo() { if (this.demoTimer) clearInterval(this.demoTimer); this.demoTimer = null; this.setState({ demo:null }); }
+
+  openShowcaseEdit(id) {
+    const sc = this.state.showcases.find(x => x.id === id);
+    this.setState({ showcaseEdit: sc ? { id:sc.id, name:sc.name, clips:sc.clips.slice(), advance:sc.advance, gap:sc.gap, refVol:sc.refVol } : { id:null, name:'', clips:[], advance:'auto', gap:8, refVol:-18 } });
+  }
+  setScField(field, v) { this.setState(s => ({ showcaseEdit:{ ...s.showcaseEdit, [field]:v } })); }
+  scStep(field, delta, min, max) { this.setState(s => ({ showcaseEdit:{ ...s.showcaseEdit, [field]: Math.max(min, Math.min(max, s.showcaseEdit[field] + delta)) } })); }
+  scMove(i, dir) {
+    this.setState(s => {
+      const clips = s.showcaseEdit.clips.slice(); const j = i + dir;
+      if (j < 0 || j >= clips.length) return null;
+      const tmp = clips[i]; clips[i] = clips[j]; clips[j] = tmp;
+      return { showcaseEdit:{ ...s.showcaseEdit, clips } };
+    });
+  }
+  scRemove(i) { this.setState(s => ({ showcaseEdit:{ ...s.showcaseEdit, clips: s.showcaseEdit.clips.filter((_,k) => k !== i) } })); }
+  scAdd(id) { this.setState(s => ({ showcaseEdit:{ ...s.showcaseEdit, clips:[...s.showcaseEdit.clips, id] } })); }
+  saveShowcase() {
+    const e = this.state.showcaseEdit; if (!e || !e.name.trim() || !e.clips.length) return;
+    this.setState(s => {
+      const data = { name:e.name.trim(), clips:e.clips, advance:e.advance, gap:e.gap, refVol:e.refVol };
+      if (e.id) return { showcases: s.showcases.map(x => x.id === e.id ? { ...x, ...data } : x), showcaseEdit:null };
+      return { showcases:[...s.showcases, { id:'s'+Date.now(), ...data }], showcaseEdit:null };
+    });
+  }
+  deleteShowcase() { const e = this.state.showcaseEdit; if (!e || !e.id) return; this.setState(s => ({ showcases: s.showcases.filter(x => x.id !== e.id), showcaseEdit:null })); }
+  closeScEdit() { this.setState({ showcaseEdit:null }); }
+
+  openAB(clipId) { this.setState({ abSetup:{ clipId, aPreset:'Kino Referenz', bPreset:'Nacht', aProfile:'—', bProfile:'—', aBarco:'—', bBarco:'—', blind:true } }); }
+  setABField(field, v) { this.setState(s => ({ abSetup:{ ...s.abSetup, [field]:v } })); }
+  toggleABBlind() { this.setState(s => ({ abSetup:{ ...s.abSetup, blind:!s.abSetup.blind } })); }
+  closeABSetup() { this.setState({ abSetup:null }); }
+  startAB() {
+    const st = this.state.abSetup; if (!st) return;
+    const order = st.blind && Math.random() < 0.5 ? ['B','A'] : ['A','B'];
+    if (this.abTimer) clearInterval(this.abTimer);
+    this.setState({ abRun:{ ...st, order, stage:'lead1', el:0, winner:null, reached:false }, abSetup:null });
+    this._abT0 = Date.now();
+    this.abTimer = setInterval(() => this.tickAB(), 250);
+  }
+  abStageDur(stage) { return { lead1:3, play1:9, gap:4, lead2:3, play2:9 }[stage] || Infinity; }
+  setABStage(stage) { this._abT0 = Date.now(); this.setState(s => ({ abRun:{ ...s.abRun, stage, el:0 } })); }
+  tickAB() {
+    const r = this.state.abRun; if (!r) return;
+    const el = (Date.now() - this._abT0) / 1000;
+    if (el < this.abStageDur(r.stage)) { this.setState(s => s.abRun ? ({ abRun:{ ...s.abRun, el } }) : null); return; }
+    if (r.stage === 'lead1') return this.setABStage('play1');
+    if (r.stage === 'play1') return this.setABStage(r.reached ? 'decide' : 'gap');
+    if (r.stage === 'gap') return this.setABStage('lead2');
+    if (r.stage === 'lead2') return this.setABStage('play2');
+    if (r.stage === 'play2') { this.setState(s => ({ abRun:{ ...s.abRun, reached:true } })); return this.setABStage('decide'); }
+  }
+  abReplay(side) { if (this.abTimer == null) this.abTimer = setInterval(() => this.tickAB(), 250); this.setState(s => ({ abRun:{ ...s.abRun, reached:true } })); this.setABStage(side === 1 ? 'lead1' : 'lead2'); }
+  abPick(side) {
+    if (this.abTimer) { clearInterval(this.abTimer); this.abTimer = null; }
+    this.setState(s => ({ abRun:{ ...s.abRun, stage:'result', winner:s.abRun.order[side-1], pickedSide:side } }));
+  }
+  closeABRun() { if (this.abTimer) clearInterval(this.abTimer); this.abTimer = null; this.setState({ abRun:null }); }
+
+  demoVals() {
+    const s = this.state;
+    const fmt = sec => this.fmt(sec);
+    const clipDur = c => c.end - c.start;
+    const tagLabel = k => TAG_LABELS[k] || k;
+    let clips = s.clips;
+    if (s.demoTagFilter.length) clips = clips.filter(c => s.demoTagFilter.every(t => c.tags.includes(t)));
+    const stop = e => { if (e && e.stopPropagation) e.stopPropagation(); };
+    const demoClipCards = clips.map(c => ({
+      name:c.name,
+      rangeLine:`${fmt(c.start)}–${fmt(c.end)} · ${fmt(clipDur(c))} · ${c.audio}`,
+      titleLabel:this.clipTitle(c),
+      tagChips:c.tags.map(t => ({ label: tagLabel(t) })),
+      notes:c.notes,
+      onOpen:() => this.openClipEdit(c.id),
+      onTitle:e => { stop(e); this.openDetail(c.titleId); },
+      onPlay:e => { stop(e); this.startClipDemo(c.id); },
+      onAB:e => { stop(e); this.openAB(c.id); },
+    }));
+    const scMeta = sc => {
+      const total = sc.clips.reduce((a,id) => { const c = this.clipById(id); return a + (c ? clipDur(c) : 0); }, 0);
+      return `${sc.clips.length} Clips · ~${Math.max(1, Math.round((total + sc.clips.length*sc.gap)/60))} Min · ${sc.advance==='auto' ? 'Automatisch' : 'Per Tipp'} · Referenz ${sc.refVol} dB`;
+    };
+    const playingT = TITLES.find(x => x.id === s.playingId);
+    const tStart = this.parseT(s.trimStart), tEnd = this.parseT(s.trimEnd);
+    const trimValid = tStart != null && tEnd != null && tEnd > tStart;
+    const trimT = TITLES.find(x => x.id === s.trimTitleId);
+    const nud = which => [
+      { label:'−5 s', onTap:() => this.nudgeTrim(which,-5) },
+      { label:'−1 s', onTap:() => this.nudgeTrim(which,-1) },
+      { label:'+1 s', onTap:() => this.nudgeTrim(which,1) },
+      { label:'+5 s', onTap:() => this.nudgeTrim(which,5) },
+    ];
+    const vocabChips = Object.keys(TAG_LABELS).map(k => ({ label:tagLabel(k),
+      bg: s.trimTags.includes(k) ? 'var(--gold)' : 'var(--surface2)', fg: s.trimTags.includes(k) ? 'var(--goldText)' : 'var(--text2)',
+      onSelect:() => this.toggleTrimTag(k) }));
+    const freeChips = s.trimTags.filter(t => !TAG_LABELS[t]).map(t => ({ label:t, bg:'var(--gold)', fg:'var(--goldText)', onSelect:() => this.toggleTrimTag(t) }));
+    const d = s.demo;
+    let demoV = {};
+    if (d) {
+      const cur = this.clipById(d.clipIds[d.idx]);
+      const dur = cur ? clipDur(cur) : 0;
+      const frac = d.phase === 'playing' ? Math.min(1, d.el / 12) : 0;
+      const pos = cur ? cur.start + frac * dur : 0;
+      const clipRemain = d.phase === 'done' ? 0 : dur * (1 - frac);
+      let total = clipRemain;
+      for (let i = d.idx + 1; i < d.clipIds.length; i++) { const c = this.clipById(d.clipIds[i]); if (c) total += clipDur(c) + d.gap; }
+      const rows = d.clipIds.map((id, i) => {
+        const c = this.clipById(id);
+        return { n:String(i + 1), name: c ? c.name : '—', dur: c ? fmt(clipDur(c)) : '',
+          bg: i === d.idx ? 'var(--surface2)' : 'transparent',
+          accent: i === d.idx ? 'var(--gold)' : 'var(--text3)',
+          onJump:() => this.jumpDemo(i) };
+      });
+      demoV = {
+        demoOpen:true, demoHeaderName:d.name,
+        demoCounter:`Clip ${d.idx + 1} von ${d.clipIds.length}`,
+        demoTotalRemain: d.phase === 'done' ? '' : `Showcase: noch ~${fmt(total)}`,
+        demoIsSlate: d.phase === 'slate', demoIsWait: d.phase === 'wait',
+        demoIsLeadin: d.phase === 'leadin', demoIsPlaying: d.phase === 'playing', demoIsDone: d.phase === 'done',
+        demoShowControls: d.phase !== 'done' && d.phase !== 'wait',
+        slateName: cur ? cur.name : '', slateNotes: cur && cur.notes ? cur.notes : 'Keine Notizen.',
+        slateCountdown: d.phase === 'slate' ? `Weiter in ${Math.max(0, Math.ceil(this.demoPhaseDur(d) - d.el))} s` : '',
+        demoClipName: cur ? cur.name : '', demoClipNotes: cur && cur.notes ? cur.notes : '',
+        hasDemoNotes: !!(cur && cur.notes),
+        demoClipPct: frac * 100,
+        demoPosLabel: fmt(pos),
+        demoClipRemainLabel:`noch ${fmt(clipRemain)}`,
+        demoPauseGlyph: d.paused ? '▶' : '⏸',
+        demoRows: rows,
+        pauseDemo:() => this.pauseDemo(), skipDemo:() => this.skipDemo(), replayDemo:() => this.replayDemoClip(),
+        stopDemo:() => this.stopDemo(), demoTapNext:() => this.demoTapNext(),
+      };
+    }
+    const ab = s.abSetup; const abr = s.abRun;
+    const abClip = ab ? this.clipById(ab.clipId) : abr ? this.clipById(abr.clipId) : null;
+    let abRunV = {};
+    if (abr) {
+      const sideIdx = (abr.stage === 'lead2' || abr.stage === 'play2') ? 2 : 1;
+      const letter = abr.order[sideIdx-1];
+      const cfgOf = L => { const p = L === 'A' ? abr.aPreset : abr.bPreset, m = L === 'A' ? abr.aProfile : abr.bProfile, b = L === 'A' ? abr.aBarco : abr.bBarco;
+        return [p, m !== '—' ? m : null, b !== '—' ? b : null].filter(Boolean).join(' · '); };
+      const isRound = ['lead1','play1','lead2','play2'].includes(abr.stage);
+      abRunV = {
+        abRunOpen:true,
+        abIsRound:isRound,
+        abRoundLabel:`Durchgang ${sideIdx}`,
+        abRoundSub: abr.blind ? 'Konfiguration verborgen' : `Konfiguration ${letter}: ${cfgOf(letter)}`,
+        abIsLead: abr.stage === 'lead1' || abr.stage === 'lead2',
+        abIsPlay: abr.stage === 'play1' || abr.stage === 'play2',
+        abPlayPct: Math.min(100, (abr.el / 9) * 100),
+        abIsGap: abr.stage === 'gap',
+        abGapStatus: abr.el < 2 ? 'Konfiguration wird angewendet…' : '✓ Trinnov bestätigt — zweiter Durchgang startet',
+        abIsDecide: abr.stage === 'decide',
+        abIsResult: abr.stage === 'result',
+        abResultText: abr.winner ? `Gewinner: Konfiguration ${abr.winner} — ${cfgOf(abr.winner)}` : '',
+        abResultSub: abr.blind && abr.winner ? `Blind-Zuordnung: Durchgang 1 war ${abr.order[0]}, Durchgang 2 war ${abr.order[1]}.` : '',
+        pickFirst:() => this.abPick(1), pickSecond:() => this.abPick(2),
+        abReplayFirst:() => this.abReplay(1), abReplaySecond:() => this.abReplay(2),
+        closeABRun:() => this.closeABRun(),
+      };
+    }
+    const detailClipsRaw = s.detailId != null ? s.clips.filter(c => c.titleId === s.detailId) : [];
+    return {
+      openDemos:() => this.openDemos(),
+      isDemos: s.mainView === 'demos',
+      demoTabChips: [{ label:'Clips', key:'clips' }, { label:'Showcases', key:'showcases' }].map(c => ({
+        label:c.label, bg: s.demoView === c.key ? 'var(--gold)' : 'var(--surface2)', fg: s.demoView === c.key ? 'var(--goldText)' : 'var(--text2)', onSelect:() => this.setDemoView(c.key) })),
+      isDemoClips: s.demoView === 'clips', isDemoShowcases: s.demoView === 'showcases',
+      demoTagChips: (() => {
+        const counts = {};
+        s.clips.forEach(c => c.tags.forEach(t => { counts[t] = (counts[t] || 0) + 1; }));
+        const keys = [...Object.keys(TAG_LABELS), ...Object.keys(counts).filter(k => !TAG_LABELS[k])];
+        return keys.filter(k => (counts[k] || 0) > 0 || s.demoTagFilter.includes(k))
+          .sort((a,b) => (counts[b]||0) - (counts[a]||0))
+          .map(k => ({ label:tagLabel(k), count:String(counts[k] || 0),
+            bg: s.demoTagFilter.includes(k) ? 'var(--gold)' : 'var(--surface2)', fg: s.demoTagFilter.includes(k) ? 'var(--goldText)' : 'var(--text2)', onSelect:() => this.toggleDemoTag(k) }));
+      })(),
+      hasTagFilter: s.demoTagFilter.length > 0,
+      clearTagFilter:() => this.setState({ demoTagFilter:[] }),
+      clipCountLabel:`${demoClipCards.length} Clips`,
+      demoClipCards,
+      showcaseCards: s.showcases.map(sc => ({ name:sc.name, metaLine:scMeta(sc), onOpen:() => this.openShowcaseEdit(sc.id), onPlay:e => { stop(e); this.startShowcase(sc.id); } })),
+      openNewShowcase:() => this.openShowcaseEdit(null),
+      hasDetailClips: detailClipsRaw.length > 0,
+      detailClips: detailClipsRaw.map(c => ({ rangeLabel:`${c.name} · ${fmt(c.start)}–${fmt(c.end)}`,
+        metaLine: c.tags.map(tagLabel).join(' · ') || 'Ohne Tags', onPlay:() => { this.setState({ detailId:null }); this.startClipDemo(c.id); } })),
+      captureWholeDetail:() => this.captureWhole(s.detailId),
+      captureWholePlaying:() => this.captureWhole(s.playingId),
+      showCapture: s.isPlayingMedia && !!playingT,
+      retroCapture:() => this.retroCapture(), markIn:() => this.markIn(), markOut:() => this.markOut(),
+      markInLabel: s.markInAt != null ? `Mark In · ${fmt(s.markInAt)}` : 'Mark In',
+      markOutBg: s.markInAt != null ? 'var(--surface2)' : 'transparent',
+      markOutFg: s.markInAt != null ? 'var(--text)' : 'var(--text3)',
+      markInChipVisible: s.markInAt != null,
+      markInChipText: s.markInAt != null ? `Start markiert bei ${fmt(s.markInAt)} — „Mark Out“ schließt den Clip ab.` : '',
+      captureToast: s.captureToast || '',
+      trimOpen: s.trimOpen, closeTrim:() => this.closeTrim(),
+      trimSourceLine: trimT ? `${trimT.title}` : '',
+      trimStart: s.trimStart, trimEnd: s.trimEnd,
+      trimQuickChips: [
+        { label:'Letzte 30 s', onTap:() => this.quickSel(30) },
+        { label:'Letzte 60 s', onTap:() => this.quickSel(60) },
+        { label:'Letzte 2 Min', onTap:() => this.quickSel(120) },
+        { label:'Ganzes Video', onTap:() => this.quickSel(null) },
+      ],
+      trimShiftChips: [-60,-30,-10,10,30,60].map(d => ({ label:(d > 0 ? '+' : '−') + Math.abs(d), onTap:() => this.shiftSel(d) })),
+      trimPosLabel: this.fmt(s.trimPos),
+      trimPlayGlyph: s.trimPlaying ? '⏸' : '▶',
+      trimTogglePlay:() => this.trimTogglePlay(),
+      trimSeekBack:() => this.trimSeek(-10), trimSeekFwd:() => this.trimSeek(10),
+      trimJumpStart:() => this.trimJump('start'), trimJumpEnd:() => this.trimJump('end'),
+      onTrimStart: e => this.setState({ trimStart:e.target.value }), onTrimEnd: e => this.setState({ trimEnd:e.target.value }),
+      startNudges: nud('start'), endNudges: nud('end'),
+      trimDurLabel: trimValid ? fmt(tEnd - tStart) : '—',
+      previewLabel: s.previewing ? 'Vorschau läuft — ab Start −3 s über den Schnitt' : '▶ Schnitt prüfen (ab Start −3 s)',
+      previewBg: s.previewing ? 'var(--surface2)' : 'var(--surface)',
+      previewCut:() => this.previewCut(),
+      trimName: s.trimName, onTrimName: e => this.setState({ trimName:e.target.value }),
+      trimVocabChips: [...vocabChips, ...freeChips],
+      trimTagInput: s.trimTagInput, onTrimTagInput: e => this.setState({ trimTagInput:e.target.value }),
+      addFreeTag:() => this.addFreeTag(),
+      trimNotes: s.trimNotes, onTrimNotes: e => this.setState({ trimNotes:e.target.value }),
+      trimAudio: s.trimAudio, trimSubtitle: s.trimSubtitle,
+      onTrimAudio: e => this.setState({ trimAudio:e.target.value }), onTrimSubtitle: e => this.setState({ trimSubtitle:e.target.value }),
+      saveClip:() => this.saveClip(), deleteClip:() => this.deleteClip(),
+      trimIsEdit: !!s.trimClipId,
+      trimHeading: s.trimClipId ? 'Clip bearbeiten' : 'Clip zuschneiden',
+      trimSaveLabel: s.trimClipId ? 'Änderungen speichern' : 'Clip speichern',
+      saveBg: trimValid ? 'var(--gold)' : 'var(--surface2)', saveFg: trimValid ? 'var(--goldText)' : 'var(--text3)',
+      demoOpen:false, ...demoV,
+      scEditOpen: !!s.showcaseEdit,
+      ...(s.showcaseEdit ? (() => {
+        const e = s.showcaseEdit;
+        const inList = new Set(e.clips);
+        const valid = !!e.name.trim() && e.clips.length > 0;
+        return {
+          scHeading: e.id ? 'Showcase bearbeiten' : 'Neuer Showcase',
+          scSaveLabel: e.id ? 'Änderungen speichern' : 'Showcase anlegen',
+          scIsEdit: !!e.id,
+          scName: e.name, onScName: ev => this.setScField('name', ev.target.value),
+          scAdvanceChips: [{ label:'Automatisch', key:'auto' },{ label:'Per Tipp', key:'tap' }].map(c => ({ label:c.label,
+            bg: e.advance === c.key ? 'var(--gold)' : 'var(--surface2)', fg: e.advance === c.key ? 'var(--goldText)' : 'var(--text2)', onSelect:() => this.setScField('advance', c.key) })),
+          scGapLabel:`${e.gap} s`, scGapDown:() => this.scStep('gap', -1, 2, 30), scGapUp:() => this.scStep('gap', 1, 2, 30),
+          scVolLabel:`${e.refVol} dB`, scVolDown:() => this.scStep('refVol', -1, -60, 0), scVolUp:() => this.scStep('refVol', 1, -60, 0),
+          scRows: e.clips.map((id, i) => { const c = this.clipById(id); return {
+            n:String(i+1), name: c ? c.name : '—', dur: c ? fmt(clipDur(c)) : '',
+            onUp:() => this.scMove(i, -1), onDown:() => this.scMove(i, 1), onRemove:() => this.scRemove(i) }; }),
+          scHasRows: e.clips.length > 0,
+          scAddRows: s.clips.filter(c => !inList.has(c.id)).map(c => ({ name:c.name, meta:`${this.clipTitle(c)} · ${fmt(clipDur(c))}`, onAdd:() => this.scAdd(c.id) })),
+          scHasAddRows: s.clips.some(c => !inList.has(c.id)),
+          scSaveBg: valid ? 'var(--gold)' : 'var(--surface2)',
+          scSaveFg: valid ? 'var(--goldText)' : 'var(--text3)',
+          saveShowcase:() => this.saveShowcase(), deleteShowcase:() => this.deleteShowcase(), closeScEdit:() => this.closeScEdit(),
+        };
+      })() : {}),
+      abSetupOpen: !!ab,
+      abClipName: abClip ? abClip.name : '',
+      abAPreset: ab ? ab.aPreset : '', abBPreset: ab ? ab.bPreset : '',
+      abAProfile: ab ? ab.aProfile : '', abBProfile: ab ? ab.bProfile : '',
+      abABarco: ab ? ab.aBarco : '', abBBarco: ab ? ab.bBarco : '',
+      onAPreset: e => this.setABField('aPreset', e.target.value), onBPreset: e => this.setABField('bPreset', e.target.value),
+      onAProfile: e => this.setABField('aProfile', e.target.value), onBProfile: e => this.setABField('bProfile', e.target.value),
+      onABarco: e => this.setABField('aBarco', e.target.value), onBBarco: e => this.setABField('bBarco', e.target.value),
+      abPresetOptions: ['Kino Referenz','Musik','Nacht'].map(o => ({ label:o })),
+      abProfileOptions: MADVR_PROFILES.map(o => ({ label:o })),
+      abBarcoOptions: BARCO_PROFILES.map(o => ({ label:o })),
+      abBlindBg: ab && ab.blind ? 'var(--gold)' : 'var(--surface2)', abBlindFg: ab && ab.blind ? 'var(--goldText)' : 'var(--text2)',
+      toggleABBlind:() => this.toggleABBlind(), closeABSetup:() => this.closeABSetup(), startAB:() => this.startAB(),
+      abRunOpen:false, ...abRunV,
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const act = ACTIVITIES[s.activity];
+    const targetAct = s.transTarget ? ACTIVITIES[s.transTarget] : null;
+
+    const activityTiles = Object.values(ACTIVITIES)
+      .filter(a => a.key !== 'aus')
+      .map(a => {
+        const isCurrent = !s.transitioning ? a.key === s.activity : a.key === s.transTarget;
+        return { key:a.key, label:a.label, onSelect:() => this.selectActivity(a.key),
+          bg: isCurrent ? 'var(--gold)' : 'var(--surface2)', fg: isCurrent ? 'var(--goldText)' : 'var(--text2)' };
+      });
+
+    const colorFor = st => st==='ready' ? 'var(--teal)' : st==='starting' ? 'var(--gold)' : st==='degraded' ? 'var(--red)' : 'var(--text3)';
+    const displayDevices = s.transitioning ? targetAct.devices : act.devices;
+    const deviceChips = displayDevices.map(d => ({
+      key:d, label:DEVICE_LABELS[d], color:colorFor(s.deviceStatus[d]||'off'),
+      anim: (s.deviceStatus[d]||'off')==='starting' ? 'kino-pulse 1.2s ease-in-out infinite' : 'none',
+      onToggle:() => this.toggleDeviceDrift(d),
+    }));
+
+    const anyDegraded = Object.values(s.deviceStatus).includes('degraded');
+    const globalStatusColor = s.transitioning ? 'var(--gold)' : anyDegraded ? 'var(--red)' : s.activity==='aus' ? 'var(--text3)' : 'var(--teal)';
+    const globalStatusLabel = s.transitioning ? (s.transTarget === 'aus' ? 'Wird ausgeschaltet…' : `Wechsel zu ${targetAct.label}…`) : anyDegraded ? 'Degradiert' : s.activity==='aus' ? 'Ausgeschaltet' : (s.isPlayingMedia && !s.isPaused) ? 'Wiedergabe läuft' : 'Bereit';
+    const globalStatusAnim = s.transitioning ? 'kino-pulse 1.2s ease-in-out infinite' : 'none';
+
+    const showBanner = s.bannerOpen && !!s.degradedDevice;
+    const bannerDeviceLabel = s.degradedDevice ? DEVICE_LABELS[s.degradedDevice] : '';
+
+    const GENRES = ['Drama','Action','Thriller','Komödie','Krimi','Abenteuer'];
+    let filtered = s.libraryCategory === 'shows' ? [] : TITLES.filter(t => t.title.toLowerCase().includes(s.query.toLowerCase()));
+    s.selectedTags.forEach(tag => {
+      if (tag === '4K') filtered = filtered.filter(t => t.res4k);
+      if (tag === 'HD') filtered = filtered.filter(t => !t.res4k);
+      if (tag === 'Neu hinzugefügt') filtered = filtered.filter(t => t.isNew);
+      if (tag === 'Weitersehen') filtered = filtered.filter(t => t.continueWatching);
+      if (tag === 'Nicht gesehen') filtered = filtered.filter(t => !t.watched && !t.continueWatching);
+    });
+    if (s.selectedGenres.length) filtered = filtered.filter(t => s.selectedGenres.includes(t.genre));
+    if (s.selectedCountries.length) filtered = filtered.filter(t => s.selectedCountries.includes(t.country));
+    filtered = filtered.filter(t => t.year >= s.yearFrom && t.year <= s.yearTo);
+    if (s.sort === 'Titel') filtered = filtered.slice().sort((a,b) => a.title.localeCompare(b.title));
+    if (s.sort === 'Jahr') filtered = filtered.slice().sort((a,b) => b.year - a.year);
+    if (s.sort === 'Bewertung') filtered = filtered.slice().sort((a,b) => b.rating - a.rating);
+    if (s.sort === 'Neu hinzugefügt') filtered = filtered.slice().sort((a,b) => b.id - a.id);
+
+    const continueWatching = TITLES.filter(t => t.continueWatching);
+    const detailTitleRaw = TITLES.find(t => t.id === s.detailId);
+    const nowPlayingRaw = TITLES.find(t => t.id === s.playingId);
+    const dbFor = v => { if (s.muted) return 'Stumm'; const base = -58 + (v/100)*58; return (s.dimmed ? base - 20 : base).toFixed(1) + ' dB'; };
+    const fmtTime = sec => {
+      const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), ss = Math.floor(sec%60);
+      return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}` : `${m}:${String(ss).padStart(2,'0')}`;
+    };
+    const playDurationSec = nowPlayingRaw ? nowPlayingRaw.runtime*60 : 0;
+
+    const COUNTRIES = Array.from(new Set(TITLES.map(t => t.country))).sort();
+    const YEARS = Array.from(new Set(TITLES.map(t => t.year))).sort((a,b) => a - b);
+    const yearBounds = { min: YEARS[0], max: YEARS[YEARS.length-1] };
+    const yearActive = s.yearFrom > yearBounds.min || s.yearTo < yearBounds.max;
+    const activeFilterCount = s.selectedTags.length + s.selectedGenres.length + s.selectedCountries.length + (yearActive ? 1 : 0);
+    const activeChips = [
+      ...s.selectedTags.map(t => ({ label:t, onRemove:() => this.toggleTag(t) })),
+      ...s.selectedGenres.map(g => ({ label:g, onRemove:() => this.toggleGenre(g) })),
+      ...s.selectedCountries.map(c => ({ label:c, onRemove:() => this.toggleCountry(c) })),
+      ...(yearActive ? [{ label:`${s.yearFrom}–${s.yearTo}`, onRemove:() => this.setState({ yearFrom:yearBounds.min, yearTo:yearBounds.max }) }] : []),
+    ];
+
+    const showCompactSelector = s.activity !== 'aus' || s.transitioning;
+    const showActivityGrid = s.activity === 'aus' || (s.activityMenuOpen && !s.transitioning);
+    const anyOverlayOpen = s.detailId != null || s.playingOpen || s.filterSheetOpen || s.trimOpen || !!s.demo || !!s.abSetup || !!s.abRun || !!s.showcaseEdit;
+
+    const decorate = t => ({ ...t, metaLine: `${t.year} · ${t.runtime} Min · ${t.genre} · ★${t.rating}`,
+      formatLine: t.res4k ? '3840×2160p @23.976Hz · HDR10 · Dolby Atmos' : '1920×1080p @23.976Hz · SDR · DTS-HD MA',
+      playLabel: t.continueWatching ? `Fortsetzen bei ${fmtTime(Math.round(t.continueWatching/100*t.runtime*60))}` : 'Wiedergabe starten' });
+
+    return {
+      activityTiles, deviceChips, showDevices: deviceChips.length > 0,
+      showCompactSelector, showActivityGrid,
+      gridMarginTop: showCompactSelector ? 10 : 0,
+      currentLabel: s.transitioning ? (s.transTarget === 'aus' ? 'Wird ausgeschaltet…' : `Wechsel zu ${targetAct.label}…`) : act.label,
+      menuChevron: s.activityMenuOpen ? '▴' : '▾',
+      toggleActivityMenu:() => this.toggleActivityMenu(),
+      globalStatusColor, globalStatusLabel, globalStatusAnim,
+      powerIconColor: s.activity === 'aus' ? 'var(--text3)' : 'var(--text)',
+      transitioning: s.transitioning,
+      transTargetLabel: targetAct ? targetAct.label : '',
+      transTitle: !targetAct ? '' : (s.transTarget === 'aus' ? 'Kino wird ausgeschaltet' : `Wechsel zu ${targetAct.label}`),
+      transHint: !targetAct ? '' : (s.transTarget === 'aus'
+        ? 'Alle Geräte werden heruntergefahren, das Licht wird wiederhergestellt.'
+        : targetAct.devices.includes('barco')
+          ? 'Der Beamer dominiert die Umschaltung und wird zuerst gestartet.'
+          : 'Kein Beamer nötig — das geht schnell.'),
+      transProgress: Math.round(s.transProgress),
+      transEtaLabel: targetAct ? targetAct.etaLabel : '',
+      showBanner, bannerDeviceLabel,
+      bannerText: `${bannerDeviceLabel} wurde vermutlich per eigener Fernbedienung ausgeschaltet. Die Aktivität bleibt aktiv — es wird nichts automatisch zurückgesetzt.`,
+      restoreDevice:() => this.restoreDevice(), dismissBanner:() => this.dismissBanner(),
+
+      isFilmFull: s.activity==='film' && s.mainView==='home' && !s.transitioning,
+      isNetflixHandoff: s.activity==='netflix' && s.mainView==='home' && !s.transitioning,
+      isSteamRoom: s.activity==='steam' && s.mainView==='home' && !s.transitioning,
+      isMusik: s.activity==='musik' && s.mainView==='home' && !s.transitioning,
+      isMusikSpotify: s.activity==='musik' && s.musikSource==='spotify',
+      isMusikTidal: s.activity==='musik' && s.musikSource==='tidal',
+      isAus: s.activity==='aus' && s.mainView==='home' && !s.transitioning,
+      isLibrary: s.mainView==='library',
+      handoffText: act.handoffText || '', roomText: act.roomText || '',
+      spotifyBg: s.musikSource==='spotify' ? 'var(--gold)' : 'var(--surface2)',
+      spotifyFg: s.musikSource==='spotify' ? 'var(--goldText)' : 'var(--text2)',
+      tidalBg: s.musikSource==='tidal' ? 'var(--gold)' : 'var(--surface2)',
+      tidalFg: s.musikSource==='tidal' ? 'var(--goldText)' : 'var(--text2)',
+      selectSpotify:() => this.setMusikSource('spotify'), selectTidal:() => this.setMusikSource('tidal'),
+
+      hasContinueWatching: continueWatching.length > 0,
+      continueWatching: continueWatching.map(t => ({...t, open:() => this.openDetail(t.id)})),
+      lastAdded: TITLES.slice().sort((a,b) => b.id - a.id).slice(0,4).map(t => ({...t, open:() => this.openDetail(t.id)})),
+      openLibrary:() => this.openLibrary(), backHome:() => this.backHome(),
+
+      query: s.query, setQuery:e => this.setQuery(e),
+      openMovies:() => this.openLibrary('movies'), openShows:() => this.openLibrary('shows'),
+      libraryTitle: s.libraryCategory === 'shows' ? 'Bibliothek · Serien' : 'Bibliothek · Filme',
+      categoryChips: [{ label:'Filme', key:'movies' },{ label:'Serien', key:'shows' }].map(c => ({ label:c.label, bg: s.libraryCategory===c.key?'var(--gold)':'var(--surface2)', fg: s.libraryCategory===c.key?'var(--goldText)':'var(--text2)', onSelect:() => this.openLibrary(c.key) })),
+      tags: ['4K','HD','Neu hinzugefügt','Weitersehen','Nicht gesehen'].map(tag => ({ label:tag, bg: s.selectedTags.includes(tag)?'var(--gold)':'var(--surface2)', fg: s.selectedTags.includes(tag)?'var(--goldText)':'var(--text2)', onSelect:() => this.toggleTag(tag) })),
+      genreTags: GENRES.map(tag => ({ label:tag, bg: s.selectedGenres.includes(tag)?'var(--gold)':'var(--surface2)', fg: s.selectedGenres.includes(tag)?'var(--goldText)':'var(--text2)', onSelect:() => this.toggleGenre(tag) })),
+      countryTags: COUNTRIES.map(c => ({ label:c, bg: s.selectedCountries.includes(c)?'var(--gold)':'var(--surface2)', fg: s.selectedCountries.includes(c)?'var(--goldText)':'var(--text2)', onSelect:() => this.toggleCountry(c) })),
+      yearOptions: YEARS.map(y => ({ label:String(y) })),
+      yearFrom: String(s.yearFrom), yearTo: String(s.yearTo),
+      setYearFrom: e => this.setYearFrom(e), setYearTo: e => this.setYearTo(e),
+      filterSheetOpen: s.filterSheetOpen, openFilters:() => this.openFilters(), closeFilters:() => this.closeFilters(), resetFilters:() => this.resetFilters(),
+      activeFilterCount: activeFilterCount,
+      filterButtonLabel: activeFilterCount ? `Filter · ${activeFilterCount}` : 'Filter',
+      filterButtonBg: activeFilterCount ? 'var(--gold)' : 'var(--surface2)',
+      filterButtonFg: activeFilterCount ? 'var(--goldText)' : 'var(--text)',
+      activeFilterChips: activeChips,
+      hasActiveFilters: activeChips.length > 0,
+      resultCountLabel: `${filtered.length} Titel`,
+      applyLabel: `${filtered.length} Titel anzeigen`,
+      sort: s.sort,
+      onSortChange: e => this.setSort(e.target.value),
+      powerConfirmOpen: s.powerConfirmOpen, askPowerOff:() => this.askPowerOff(), cancelPowerOff:() => this.cancelPowerOff(), confirmPowerOff:() => this.confirmPowerOff(),
+      sortOptions: ['Neu hinzugefügt','Titel','Jahr','Bewertung'].map(o => ({ label:o, bg: s.sort===o?'var(--gold)':'var(--surface2)', fg: s.sort===o?'var(--goldText)':'var(--text2)', onSelect:() => this.setSort(o) })),
+      refreshing: s.refreshing, refreshLabel: s.refreshing ? 'Wird aktualisiert…' : 'Aktualisieren', forceRefresh:() => this.forceRefresh(),
+      noResults: filtered.length === 0,
+      noResultsMessage: s.libraryCategory === 'shows' ? 'Noch keine Serien in der Jellyfin-Bibliothek.' : 'Keine Treffer',
+      filteredTitles: filtered.map(t => ({...decorate(t), open:() => this.openDetail(t.id)})),
+
+      isDetail: s.detailId != null && !!detailTitleRaw,
+      detailTitle: detailTitleRaw ? decorate(detailTitleRaw) : null,
+      closeDetail:() => this.closeDetail(), startPlayback:() => this.startPlayback(), startPlaybackFromStart:() => this.startPlaybackFromStart(),
+
+      isPlaying: s.playingOpen && !!nowPlayingRaw,
+      nowPlayingTitle: nowPlayingRaw ? decorate(nowPlayingRaw) : null,
+      collapsePlaying:() => this.collapsePlaying(), expandPlaying:() => this.expandPlaying(), stopPlayback:() => this.stopPlayback(),
+      togglePause:() => this.togglePause(), playPauseGlyph: s.isPaused ? '▶' : '⏸',
+      seekBack:() => this.seekBy(-10), seekFwd:() => this.seekBy(10),
+      prevItem:() => this.seekBy(-300), nextItem:() => this.seekBy(300),
+      toggleDim:() => this.toggleDim(), dimBg: s.dimmed ? 'var(--gold)' : 'var(--surface2)', dimFg: s.dimmed ? 'var(--goldText)' : 'var(--text2)',
+      trinnovPreset: s.trinnovPreset, trinnovUpmixer: s.trinnovUpmixer,
+      onPresetChange: e => this.setPreset(e.target.value), onUpmixerChange: e => this.setUpmixer(e.target.value),
+      presetOptions: ['Kino Referenz','Musik','Nacht'].map(o => ({ label:o })),
+      upmixerOptions: ['Neural:X','Dolby Surround','Aus'].map(o => ({ label:o })),
+
+      audioTrack: s.audioTrack, subtitle: s.subtitle,
+      onAudioChange: e => this.setAudioTrack(e.target.value), onSubtitleChange: e => this.setSubtitle(e.target.value),
+      audioOptions: ['DE 5.1','EN 5.1','DE Stereo'].map(o => ({ label:o })),
+      subtitleOptions: ['Aus','Deutsch','Englisch'].map(o => ({ label:o })),
+
+      playElapsedLabel: fmtTime(s.playElapsed), playDurationLabel: fmtTime(playDurationSec),
+      playProgressPct: playDurationSec ? Math.min(100, (s.playElapsed/playDurationSec)*100) : 0,
+
+      showMediaFooter: s.isPlayingMedia && !anyOverlayOpen,
+      showVolumeFooter: !s.isPlayingMedia && s.activity !== 'aus' && !anyOverlayOpen,
+      miniActivityLabel: s.transitioning ? (s.transTarget === 'aus' ? 'Wird ausgeschaltet…' : `Wechsel zu ${targetAct.label}…`) : act.label,
+
+      volumeDb: dbFor(s.volume), muted: s.muted,
+      muteBg: s.muted ? 'var(--red)' : 'var(--surface2)', muteFg: s.muted ? 'oklch(0.98 0.01 25)' : 'var(--text2)',
+      toggleMute:() => this.toggleMute(), volDown:() => this.setVolume(-6), volUp:() => this.setVolume(6),
+      ...this.demoVals(),
+    };
+  }
+}
+</script>
+</body>
+</html>

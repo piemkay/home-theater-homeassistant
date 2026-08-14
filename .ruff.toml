@@ -27,6 +27,7 @@ ignore = [
     "TC003",
     "UP042",   # `str, Enum` keeps core/ importable on Python 3.10
     "UP017",   # `datetime.UTC` needs 3.11; the test matrix still runs 3.10
+    "UP041",   # ... and `asyncio.TimeoutError` is a *different* class there
     "COM812",  # Conflicts with the formatter
     "ISC001",  # Conflicts with the formatter
     "FBT001",  # Boolean flags are idiomatic in the driver/report APIs
@@ -53,6 +54,7 @@ ignore = [
 ]
 # WebSocket handlers have a fixed (hass, connection, msg) signature.
 "custom_components/kino/websocket_api.py" = ["ANN001", "ARG001", "D103"]
+"custom_components/kino/demo/websocket.py" = ["ANN001", "ARG001", "D103"]
 "custom_components/kino/http.py" = ["ARG002"]
 "tests/*" = [
     "ANN",

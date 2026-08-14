@@ -43,6 +43,9 @@
       "progress": {
         "name": "Progress"
       },
+      "demo": {
+        "name": "Demo"
+      },
       "device_status": {
         "name": "{device}"
       }

@@ -260,7 +260,9 @@ class JellyfinClient:
                 headers=headers,
                 timeout=timeout if timeout is not None else self._timeout,
             )
-        except (TimeoutError, asyncio.TimeoutError) as err:  # noqa: UP041 - two distinct classes on Python 3.10, which CI still runs
+        # Two distinct classes on Python 3.10, which CI still runs; they only
+        # became the same exception in 3.11.
+        except (TimeoutError, asyncio.TimeoutError) as err:
             raise MediaBackendError(
                 "Die Bibliothek antwortet nicht. Bitte erneut versuchen."
             ) from err

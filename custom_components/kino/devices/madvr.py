@@ -55,6 +55,15 @@ class MadvrDriver(EntityBackedDriver):
     def _profile_command(self) -> str:
         return str(self.spec.options.get("profile_command", DEFAULT_PROFILE_COMMAND))
 
+    @property
+    def active_profile(self) -> Any:
+        """The slot last selected, or None after a power cycle.
+
+        The Envy cannot report this, so it is a shadow value — good enough to
+        restore after a demo, never good enough to skip re-applying.
+        """
+        return self._profile
+
     async def observe(self) -> DeviceObservation:
         power_state = self.state_of("power_state")
         if power_state is not None and power_state.state == "unavailable":

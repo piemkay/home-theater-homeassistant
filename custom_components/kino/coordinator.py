@@ -26,6 +26,9 @@ from .const import (
 from .core.estimator import DurationEstimator
 from .core.machine import ActivityEngine, EngineSnapshot
 from .core.model import ActivityState, KinoConfig
+from .demo.engine import DemoEngine
+from .demo.runtime import HassDemoRuntime
+from .demo.store import DemoStore
 from .devices import HassBridge, build_drivers
 from .media.base import MediaBackend
 
@@ -78,6 +81,12 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
         #: a standing finding fires `kino_device_drift` once — not once per
         #: poll for as long as it stands.
         self._announced_drift: set[str] = set()
+        #: Demo mode: the stored clips and showcases, and the engine that
+        #: replays them through this coordinator's own activity layer.
+        self.demo_store = DemoStore(hass)
+        self.demo = DemoEngine(
+            HassDemoRuntime(hass, self), self.demo_store.settings
+        )
         self.engine.add_listener(self._on_engine_change)
 
     def _build_engine(self, config: KinoConfig) -> ActivityEngine:
@@ -97,6 +106,18 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
         if stored:
             self.estimator.restore(stored)
             _LOGGER.debug("%d gelernte Dauern wiederhergestellt", len(stored))
+        await self.demo_store.async_load()
+        self.demo.update_settings(self.demo_store.settings)
+
+    @property
+    def demo_active(self) -> bool:
+        """True while a showcase or an A/B comparison is running.
+
+        Playback during a demo carries `demo=true` and is deliberately kept
+        out of the catalogue's history — a showcase must never "watch" ten
+        films (spec §4.4).
+        """
+        return self.demo.active
 
     async def async_persist_durations(self) -> None:
         await self._store.async_save(self.estimator.as_dict())

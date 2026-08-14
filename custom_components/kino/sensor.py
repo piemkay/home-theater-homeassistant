@@ -21,6 +21,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         KinoStatusSensor(coordinator),
         KinoProgressSensor(coordinator),
+        KinoDemoSensor(coordinator),
     ]
     entities.extend(
         KinoDeviceSensor(coordinator, key) for key in coordinator.config.devices
@@ -97,6 +98,51 @@ class KinoProgressSensor(KinoEntity, SensorEntity):
             "to_activity": progress.to_activity,
             "from_activity": progress.from_activity,
         }
+
+
+class KinoDemoSensor(KinoEntity, SensorEntity):
+    """`sensor.kino_demo` — idle, or which clip of which showcase is running."""
+
+    _attr_translation_key = "demo"
+    _attr_icon = "mdi:play-box-multiple-outline"
+
+    def __init__(self, coordinator: KinoCoordinator) -> None:
+        super().__init__(coordinator, "demo")
+
+    @property
+    def native_value(self) -> str:
+        running = self.coordinator.demo.state()
+        if running is None:
+            return "idle"
+        return "ab" if running["mode"] == "ab" else "playing"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        store = self.coordinator.demo_store
+        running = self.coordinator.demo.state()
+        attributes: dict = {
+            "clips": len(store.clips),
+            "showcases": len(store.showcases),
+            "lead_in_seconds": store.settings.lead_in_seconds,
+        }
+        if running is None:
+            return attributes
+        clip = running.get("clip") or {}
+        attributes.update(
+            {
+                "showcase": running.get("name"),
+                "phase": running.get("phase"),
+                "paused": running.get("paused"),
+                "clip_name": clip.get("name"),
+                "clip_index": running.get("index", 0) + 1,
+                "clip_count": running.get("count"),
+                "remaining_seconds": round(
+                    (running.get("totalRemainingMs") or 0) / 1000
+                ),
+                "warning": running.get("warning"),
+            }
+        )
+        return attributes
 
 
 class KinoDeviceSensor(KinoEntity, SensorEntity):
