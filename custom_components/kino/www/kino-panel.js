@@ -16,7 +16,7 @@
  * app renders as a centered column; the navigation model never changes.
  */
 
-const PANEL_VERSION = "0.5.0";
+const PANEL_VERSION = "0.5.1";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -610,6 +610,9 @@ nav { flex-shrink: 0; border-top: 1px solid var(--kino-border); background: var(
 
 /* ------------------------------------------------------------------ */
 
+/** How many screens back the panel remembers. Far more than anyone walks. */
+const NAV_DEPTH = 50;
+
 const PanelBase = typeof HTMLElement !== "undefined" ? HTMLElement : class {};
 
 class KinoPanel extends PanelBase {
@@ -639,6 +642,14 @@ class KinoPanel extends PanelBase {
     this._demoRawText = "";
     //: The styled dialog replacing prompt()/confirm() (F14).
     this._dialog = null;
+    //: Where we have been, newest last — see `_navPush`.
+    this._nav = [];
+    //: One token per browser-history entry this panel pushed, so a back
+    //: gesture from the phone can be told apart from Home Assistant's own.
+    this._browserTokens = [];
+    this._navToken = 0;
+    //: Pops we caused ourselves and must not act on twice.
+    this._skipPop = 0;
   }
 
   set hass(hass) {
@@ -657,11 +668,115 @@ class KinoPanel extends PanelBase {
 
   connectedCallback() {
     this._render();
+    // The phone's back gesture and the browser's back button arrive here.
+    this._popListener = () => this._onPopState();
+    window.addEventListener("popstate", this._popListener);
   }
 
   disconnectedCallback() {
     clearTimeout(this._noticeTimer);
     clearTimeout(this._validateTimer);
+    if (this._popListener) window.removeEventListener("popstate", this._popListener);
+    // Off screen: the trail it left is nobody's back button any more.
+    this._nav = [];
+    this._browserTokens = [];
+    this._skipPop = 0;
+  }
+
+  /* -- navigation ------------------------------------------------------ */
+
+  /**
+   * Remember the screen being left, before opening another one.
+   *
+   * Every forward move calls this, so "Zurück", "Abbrechen" and the phone's
+   * back gesture are one operation: put back what was on screen a moment
+   * ago, rather than dropping onto the first tab.
+   */
+  _navPush() {
+    this._nav.push({ tab: this._tab, push: this._push, dialog: this._dialog });
+    if (this._nav.length > NAV_DEPTH) this._nav.shift();
+    this._pushBrowserEntry();
+  }
+
+  /** Forget a step back into a screen that has been left another way. */
+  _navDrop() {
+    if (!this._nav.length) return;
+    this._nav.pop();
+    this._consumeBrowserEntry();
+  }
+
+  /** Step back one screen. False when this is the first one. */
+  _navBack(fromPopState = false) {
+    const previous = this._nav.pop();
+    if (!previous) return false;
+    this._tab = previous.tab;
+    this._push = previous.push;
+    this._dialog = previous.dialog;
+    this._notice = null;
+    if (!fromPopState) this._consumeBrowserEntry();
+    if (this._tab === "board") this._loadBoard();
+    this._render();
+    return true;
+  }
+
+  /**
+   * Leave the current screen, or fall back to its tab when it is the first.
+   *
+   * This is what "Zurück" and "Abbrechen" call.
+   */
+  _navClose() {
+    if (this._navBack()) return;
+    this._push = null;
+    this._dialog = null;
+    this._render();
+  }
+
+  /**
+   * Claim one browser history entry per forward move.
+   *
+   * The URL is left alone — Home Assistant owns the address bar. The entry
+   * exists so the back gesture has something of ours to spend instead of
+   * leaving the panel.
+   */
+  _pushBrowserEntry() {
+    if (typeof window === "undefined" || !window.history) return;
+    this._navToken += 1;
+    try {
+      window.history.pushState(
+        { kinoPanel: this._navToken },
+        "",
+        window.location.href
+      );
+    } catch (err) {
+      return;
+    }
+    this._browserTokens.push(this._navToken);
+  }
+
+  /** Give back the entry belonging to a step the panel itself just undid. */
+  _consumeBrowserEntry() {
+    const token = this._browserTokens.pop();
+    if (token == null || typeof window === "undefined" || !window.history) return;
+    const state = window.history.state;
+    // Somebody navigated on top of ours; going back would undo their move.
+    if (!state || state.kinoPanel !== token) return;
+    this._skipPop += 1;
+    try {
+      window.history.back();
+    } catch (err) {
+      this._skipPop -= 1;
+    }
+  }
+
+  _onPopState() {
+    if (this._skipPop > 0) {
+      this._skipPop -= 1;
+      return;
+    }
+    // Not one of ours: Home Assistant's own routing, left well alone.
+    if (!this._browserTokens.length) return;
+    this._browserTokens.pop();
+    this._navBack(true);
   }
 
   get _dirty() {
@@ -1771,6 +1886,9 @@ class KinoPanel extends PanelBase {
     const dialog = this._dialog;
     const input = this._root.querySelector('[data-field="dialog-input"]');
     this._dialog = null;
+    // Answered, so the step back into the dialog goes with it — nobody wants
+    // "zurück" to re-open the confirmation they just gave.
+    this._navDrop();
     if (!dialog) return;
     if (dialog.kind === "add-activity") {
       const name = input && input.value.trim();
@@ -1784,6 +1902,7 @@ class KinoPanel extends PanelBase {
       );
       this._document.activities[newKey] = panelHelpers.blankActivity(name);
       // Straight into the editor — a new activity is created to be filled in.
+      this._navPush();
       this._tab = "activities";
       this._push = { screen: "activity", key: newKey };
       this._scheduleValidate();
@@ -1843,8 +1962,7 @@ class KinoPanel extends PanelBase {
 
   _onKeydown(event) {
     if (event.key === "Escape" && this._dialog) {
-      this._dialog = null;
-      this._render();
+      this._navClose();
     } else if (
       event.key === "Enter" &&
       event.target?.dataset?.field === "dialog-input"
@@ -1865,6 +1983,8 @@ class KinoPanel extends PanelBase {
         );
         break;
       case "tab":
+        if (this._tab === key && !this._push) break;
+        this._navPush();
         this._tab = key;
         this._push = null;
         this._notice = null;
@@ -1873,32 +1993,38 @@ class KinoPanel extends PanelBase {
         this._render();
         break;
       case "back":
-        this._push = null;
-        this._render();
+        // Whatever was on screen before this one — which is the tab it was
+        // opened from, unless it was opened from somewhere else.
+        this._navClose();
         break;
       case "open-activity":
+        this._navPush();
         this._push = { screen: "activity", key };
         this._notice = null;
         this._render();
         break;
       case "open-device":
+        this._navPush();
         this._push = { screen: "device", key };
         this._notice = null;
         this._render();
         break;
       case "open-log":
+        this._navPush();
         this._push = { screen: "log" };
         this._notice = null;
         this._loadLog();
         this._render();
         break;
       case "open-raw":
+        this._navPush();
         this._push = { screen: "raw" };
         this._notice = null;
         this._rawText = JSON.stringify(this._document, null, 2);
         this._render();
         break;
       case "open-demo":
+        this._navPush();
         this._push = { screen: "demo" };
         this._notice = null;
         this._demo = null;
@@ -1932,6 +2058,7 @@ class KinoPanel extends PanelBase {
           this._notify("error", `Kein gültiges JSON: ${err.message}`);
           break;
         }
+        this._navPush();
         this._dialog = { kind: "demo-import" };
         this._render();
         break;
@@ -1942,6 +2069,7 @@ class KinoPanel extends PanelBase {
         this._revert();
         break;
       case "add-activity":
+        this._navPush();
         this._dialog = { kind: "add-activity" };
         this._render();
         break;
@@ -1951,12 +2079,14 @@ class KinoPanel extends PanelBase {
         this._document.activities[newKey] = panelHelpers.clone(source);
         this._document.activities[newKey].name = `${source.name || key} (Kopie)`;
         // Straight into the copy — duplicated to be changed.
+        this._navPush();
         this._push = { screen: "activity", key: newKey };
         this._scheduleValidate();
         this._notify("ok", "Aktivität dupliziert — wirksam nach dem Speichern.");
         break;
       }
       case "delete-activity":
+        this._navPush();
         this._dialog = { kind: "delete-activity", key };
         this._render();
         break;
@@ -1977,8 +2107,7 @@ class KinoPanel extends PanelBase {
         break;
       }
       case "dialog-cancel":
-        this._dialog = null;
-        this._render();
+        this._navClose();
         break;
       case "dialog-noop":
         break;
@@ -1998,6 +2127,7 @@ class KinoPanel extends PanelBase {
         await this._deviceTest(key, mode);
         break;
       case "reset-durations":
+        this._navPush();
         this._dialog = { kind: "reset-durations", key: key || null };
         this._render();
         break;

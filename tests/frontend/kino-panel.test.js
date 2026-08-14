@@ -299,3 +299,84 @@ describe("entityOptions", () => {
     assert.deepEqual(panelHelpers.entityOptions(undefined, ["switch"]), []);
   });
 });
+
+describe("going back in the panel", () => {
+  const navPanel = () => {
+    const panel = Object.create(KinoPanel.prototype);
+    panel._tab = "activities";
+    panel._push = null;
+    panel._dialog = null;
+    panel._notice = null;
+    panel._nav = [];
+    panel._browserTokens = [];
+    panel._navToken = 0;
+    panel._skipPop = 0;
+    panel._render = () => {};
+    panel._loadBoard = () => {};
+    return panel;
+  };
+
+  test("a detail screen closes back onto the tab it was opened from", () => {
+    const p = navPanel();
+    p._tab = "devices";
+    p._navPush();
+    p._push = { screen: "device", key: "barco" };
+    p._navClose();
+    assert.equal(p._tab, "devices");
+    assert.equal(p._push, null);
+  });
+
+  test("a tab switch is a step back, not a dead end", () => {
+    const p = navPanel();
+    p._navPush();
+    p._tab = "board";
+    p._navPush();
+    p._tab = "more";
+    p._navClose();
+    assert.equal(p._tab, "board");
+    p._navClose();
+    assert.equal(p._tab, "activities");
+  });
+
+  test("a screen reached from another screen closes back onto that one", () => {
+    // The log is opened from "more"; the raw editor from the log's screen.
+    const p = navPanel();
+    p._tab = "more";
+    p._navPush();
+    p._push = { screen: "log" };
+    p._navPush();
+    p._push = { screen: "raw" };
+    p._navClose();
+    assert.deepEqual(p._push, { screen: "log" });
+    p._navClose();
+    assert.equal(p._push, null);
+    assert.equal(p._tab, "more");
+  });
+
+  test("a dialog is dismissed by the same step", () => {
+    const p = navPanel();
+    p._tab = "activities";
+    p._navPush();
+    p._dialog = { kind: "delete-activity", key: "film" };
+    p._navClose();
+    assert.equal(p._dialog, null);
+  });
+
+  test("an answered dialog is not re-opened by going back", () => {
+    const p = navPanel();
+    p._navPush();
+    p._dialog = { kind: "add-activity" };
+    // What _confirmDialog does: close it, then drop the step into it.
+    p._dialog = null;
+    p._navDrop();
+    assert.equal(p._navBack(), false);
+  });
+
+  test("the first screen falls back rather than going nowhere", () => {
+    const p = navPanel();
+    p._push = { screen: "log" };
+    p._navClose();
+    assert.equal(p._push, null);
+    assert.equal(p._tab, "activities");
+  });
+});

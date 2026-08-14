@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.7.1";
+const CARD_VERSION = "0.7.2";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -756,6 +756,7 @@ footer {
 .round { width: 36px; height: 36px; border-radius: 18px; border: none; background: var(--kino-surface2); color: var(--kino-text2); font-size: 15px; cursor: pointer; flex-shrink: 0; }
 .round.ghosted { background: transparent; }
 .seek { border: none; background: transparent; color: var(--kino-text2); font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 .backdrop .caption {
   position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px;
   font-weight: 800; font-size: 15px; box-sizing: border-box;
@@ -988,6 +989,9 @@ footer {
   background: transparent;
 }
 .demorow[aria-current="true"] { background: var(--kino-surface2); }
+/* Wanted, but the engine has not arrived yet — the tap is acknowledged
+   before the room can answer it. */
+.demorow[aria-busy="true"] { border-color: var(--kino-gold); opacity: 0.75; }
 .demorow .n { width: 18px; font-size: 11px; font-weight: 800; color: var(--kino-text3); }
 .demorow[aria-current="true"] .n { color: var(--kino-gold); }
 .demorow .nm {
@@ -1194,6 +1198,45 @@ function readStoredCollapse() {
 
 // Titles per request. Small enough that the first screen is quick, large
 // enough that scrolling does not fetch constantly (FR-58).
+/**
+ * Everything in `_view` that says *where you are standing*.
+ *
+ * A back step restores exactly these. What the card has merely loaded — the
+ * state poll, the demo dataset, the facet lists — is not a place and does not
+ * belong in a snapshot.
+ */
+const NAV_KEYS = [
+  "main",
+  "category",
+  "query",
+  "sort",
+  "sortDir",
+  "filters",
+  "facetsExpanded",
+  "personQuery",
+  "detailId",
+  "detail",
+  "seasons",
+  "seasonId",
+  "episodes",
+  "similar",
+  "overviewOpen",
+  "tracksExpanded",
+  "playingOpen",
+  "filterSheet",
+  "trim",
+  "scEdit",
+  "abSetup",
+  "demoTab",
+  "demoTagFilter",
+];
+
+/** Overlays that a back step dismisses rather than steps out of. */
+const TRANSIENT_KEYS = ["powerConfirm", "activityMenu"];
+
+/** How many steps back the card remembers. Far more than anyone walks. */
+const NAV_DEPTH = 50;
+
 const PAGE_SIZE = 60;
 
 // What the ⟲10 / 10⟳ buttons move by.
@@ -1272,6 +1315,12 @@ class KinoCard extends CardBase {
     // Capture confirmations, shown briefly under the capture button.
     this._demoToast = "";
     this._demoToastTimer = null;
+    // The clip bar's last width, so the player's own rounding cannot make it
+    // twitch backwards. See `_demoBarFraction`.
+    this._demoBar = null;
+    // The clip a tap asked for, held until the engine reports it running, so
+    // the list answers the tap immediately rather than at the next poll.
+    this._demoJumpTo = null;
     this._library = {
       items: [],
       total: 0,
@@ -1292,6 +1341,17 @@ class KinoCard extends CardBase {
       yearMin: null,
       yearMax: null,
     };
+    // Where we have been, newest last. See `_navPush`.
+    this._nav = [];
+    // The scroll position a back step is putting back, consumed by the next
+    // render.
+    this._restoreScrollTo = null;
+    // One entry per browser-history entry this card pushed, so a back gesture
+    // from the phone or the browser can be told apart from HA's own.
+    this._browserTokens = [];
+    this._navToken = 0;
+    // Pops we caused ourselves and must not act on twice.
+    this._skipPop = 0;
     this._searchTimer = null;
     // Cast-and-crew suggestions for the filter sheet, and the pending lookup.
     this._personHits = null;
@@ -1385,7 +1445,7 @@ class KinoCard extends CardBase {
    * Rebuilding the markup would recreate the poster image every two seconds.
    */
   _tick() {
-    if (!this._container) return;
+    if (!this._container || !this._hass) return;
     const state = this._hass.states[this._playerEntity];
     if (!state) return;
     const duration = state.attributes.media_duration || 0;
@@ -1420,6 +1480,11 @@ class KinoCard extends CardBase {
     // the phase's start and end as timestamps, so the numbers in between are
     // arithmetic — no extra traffic, no re-render.
     this._demoTimer = setInterval(() => this._tickDemo(), 250);
+    // The phone's back gesture and the browser's back button arrive here.
+    this._popListener = () => this._onPopState();
+    this._keyListener = (event) => this._onKeyDown(event);
+    window.addEventListener("popstate", this._popListener);
+    window.addEventListener("keydown", this._keyListener);
   }
 
   disconnectedCallback() {
@@ -1429,6 +1494,13 @@ class KinoCard extends CardBase {
     if (this._previewTimer) clearTimeout(this._previewTimer);
     if (this._personTimer) clearTimeout(this._personTimer);
     if (this._demoToastTimer) clearTimeout(this._demoToastTimer);
+    if (this._popListener) window.removeEventListener("popstate", this._popListener);
+    if (this._keyListener) window.removeEventListener("keydown", this._keyListener);
+    // The card is off screen; the trail it left is no longer anybody's back
+    // button, and the entries it pushed now belong to whatever replaced it.
+    this._nav = [];
+    this._browserTokens = [];
+    this._skipPop = 0;
   }
 
   /**
@@ -1443,30 +1515,134 @@ class KinoCard extends CardBase {
     if (!run) return;
     const now = Date.now();
     const ends = run.phaseEndsAt;
-    const started = run.phaseStartedAt;
     for (const el of this._container.querySelectorAll("[data-demo='countdown']")) {
       const left = ends ? Math.max(0, Math.ceil((ends - now) / 1000)) : 0;
       el.textContent = ends ? `Weiter in ${left} s` : "";
     }
-    if (!ends || !started || ends <= started) return;
-    const fraction = Math.min(1, Math.max(0, (now - started) / (ends - started)));
-    for (const bar of this._container.querySelectorAll("[data-demo='bar'] > div")) {
-      bar.style.width = `${fraction * 100}%`;
-    }
-    const clip = run.clip;
+    const clip = this._demoClipProgress();
     if (!clip) return;
-    const spanned = clip.startMs + fraction * (clip.endMs - clip.startMs);
+    for (const bar of this._container.querySelectorAll("[data-demo='bar'] > div")) {
+      bar.style.width = `${clip.fraction * 100}%`;
+    }
     for (const el of this._container.querySelectorAll("[data-demo='pos']")) {
-      el.textContent = helpers.formatTimecode(spanned);
+      el.textContent = helpers.formatTimecode(clip.positionMs);
     }
     for (const el of this._container.querySelectorAll("[data-demo='left']")) {
-      el.textContent = `noch ${helpers.formatTimecode(Math.max(0, ends - now))}`;
+      el.textContent = `noch ${helpers.formatTimecode(clip.remainingMs)}`;
     }
+    for (const el of this._container.querySelectorAll("[data-demo='total']")) {
+      el.textContent = `Showcase: noch ~${helpers.formatTimecode(
+        this._demoShowcaseRemaining(clip.remainingMs)
+      )}`;
+    }
+  }
+
+  /**
+   * Where the running clip stands, from the player's own position.
+   *
+   * Not from the phase's predicted end: that end is re-derived from every
+   * position sample, so a player repeating the same number for a second
+   * pushes it forward — and a fraction measured against a receding end walks
+   * backwards, which is exactly the bar that would not sit still. The
+   * position and the instant it was read do not move on their own; the clock
+   * in here carries them, the same way the film's own bar is carried.
+   */
+  _demoClipProgress() {
+    const run = this._runningDemo;
+    if (!run) return null;
+    const clip = run.clip || {};
+    // In A/B a long clip is cut short, so the stretch being played is the
+    // engine's, not the clip's own.
+    const start = run.spanStartMs != null ? run.spanStartMs : clip.startMs;
+    const end = run.spanEndMs != null ? run.spanEndMs : clip.endMs;
+    if (!(end > start)) return null;
+    const span = end - start;
+
+    let positionMs;
+    if (run.positionMs != null) {
+      // A paused demo is a still frame: nothing to carry forward.
+      const since =
+        run.paused || !run.positionAtMs ? 0 : Math.max(0, Date.now() - run.positionAtMs);
+      positionMs = run.positionMs + since;
+    } else if (run.phase === "playing" && run.phaseEndsAt > Date.now()) {
+      // Playing, but no sample has come back yet. The predicted end is the
+      // only thing to go on until one does.
+      positionMs = end - (run.phaseEndsAt - Date.now());
+    } else {
+      return null;
+    }
+
+    const elapsed = Math.min(span, Math.max(0, positionMs - start));
+    return {
+      positionMs: start + elapsed,
+      remainingMs: span - elapsed,
+      fraction: this._demoBarFraction(run, elapsed / span, span),
+    };
+  }
+
+  /**
+   * The bar's width, held against the player's own small corrections.
+   *
+   * A position that arrives a beat lower than the last one is the player
+   * rounding, not a jump; letting that through makes the bar twitch. A real
+   * seek — replaying the clip, nudging back ten seconds — moves further than
+   * that and is meant to be seen.
+   */
+  _demoBarFraction(run, fraction, span) {
+    const clip = run.clip || {};
+    const key = `${run.index}:${clip.id || ""}:${run.spanStartMs}`;
+    const last = this._demoBar;
+    if (!last || last.key !== key) {
+      this._demoBar = { key, fraction };
+      return fraction;
+    }
+    const backwardsMs = (last.fraction - fraction) * span;
+    const held = backwardsMs > 0 && backwardsMs < 1500 ? last.fraction : fraction;
+    this._demoBar = { key, fraction: held };
+    return held;
+  }
+
+  /** What is left of the whole showcase: this clip, then the ones after it. */
+  _demoShowcaseRemaining(clipRemainingMs) {
+    const run = this._runningDemo;
+    if (!run) return 0;
+    const gap = (run.gapSeconds || 0) * 1000;
+    const rest = (run.clips || [])
+      .slice(run.index + 1)
+      .reduce((sum, c) => sum + (c.durationMs || 0) + gap, 0);
+    return clipRemainingMs + rest;
   }
 
   /** The demo the engine reports as running, or null. */
   get _runningDemo() {
     return (this._kino && this._kino.demo && this._kino.demo.running) || null;
+  }
+
+  /** Ask for a clip, and mark it as wanted until the engine gets there. */
+  async _demoJump(index) {
+    const run = this._runningDemo;
+    if (!run || index < 0 || index >= run.count) return;
+    this._demoJumpTo = index;
+    this._demoJumpAt = Date.now();
+    this._render();
+    await this._demoControl("jump", index);
+  }
+
+  /**
+   * Drop the optimistic highlight once the engine has caught up.
+   *
+   * Returns whether anything changed, because the state payload around it may
+   * be identical and this still needs to reach the screen.
+   */
+  _settleDemoJump() {
+    if (this._demoJumpTo == null) return false;
+    const run = this._runningDemo;
+    const arrived = !run || run.index === this._demoJumpTo;
+    // A wanted clip that never arrives must not stay lit for ever.
+    const staleAfterMs = 20000;
+    if (!arrived && Date.now() - (this._demoJumpAt || 0) < staleAfterMs) return false;
+    this._demoJumpTo = null;
+    return true;
   }
 
   /**
@@ -1578,6 +1754,184 @@ class KinoCard extends CardBase {
     }
   }
 
+  /* -- navigation ------------------------------------------------------ */
+
+  /**
+   * Remember where we are standing, before going somewhere else.
+   *
+   * Every forward move calls this, which is what lets "Zurück", "Schließen",
+   * "Beenden", the phone's back gesture and Escape all be the same operation:
+   * put back what was on screen a moment ago. The card used to send each of
+   * them to a fixed starting point instead, so reaching a title from the
+   * Demos tab and closing it dropped you on the home screen.
+   */
+  _navPush(onBack = null) {
+    const snapshot = {};
+    for (const key of NAV_KEYS) {
+      const value = this._view[key];
+      // `filters` is plain data that the filter sheet edits in place, so
+      // keeping the reference would not be a snapshot of anything. The rest
+      // is either replaced wholesale or read-only from here.
+      snapshot[key] =
+        key === "filters" && value ? JSON.parse(JSON.stringify(value)) : value;
+    }
+    this._nav.push({
+      view: snapshot,
+      // The grid's results belong to the view that fetched them: returning to
+      // a filtered library must not show the next view's results under the
+      // previous view's filters.
+      library: { ...this._library },
+      scrollTop: this._scrollTop(),
+      // A view whose changes are meant to outlive it says how to leave. The
+      // filter sheet is a form: backing out of it applies the selection, so
+      // putting the snapshot back would undo the very thing it is for.
+      onBack,
+    });
+    if (this._nav.length > NAV_DEPTH) this._nav.shift();
+    this._pushBrowserEntry();
+  }
+
+  /**
+   * Forget the step back into the current view, because it was left another
+   * way — "speichern" and "löschen" close their editor themselves.
+   */
+  _navDrop() {
+    if (!this._nav.length) return;
+    this._nav.pop();
+    this._consumeBrowserEntry();
+  }
+
+  _scrollTop() {
+    const scroller = this._container && this._container.querySelector(".scroller");
+    return scroller ? scroller.scrollTop : 0;
+  }
+
+  /**
+   * Step back one view.
+   *
+   * Returns false when there is nowhere to go — the caller's own fallback
+   * then decides what "back" means from the very first screen.
+   */
+  _navBack(fromPopState = false) {
+    if (this._closeTransient()) {
+      // A menu or a confirmation is dismissed by the gesture, not stepped out
+      // of, so the history entry it borrowed goes straight back.
+      if (fromPopState) this._pushBrowserEntry();
+      this._render();
+      return true;
+    }
+    const previous = this._nav.pop();
+    if (!previous) return false;
+    if (previous.onBack) {
+      previous.onBack();
+    } else {
+      Object.assign(this._view, previous.view);
+      this._library = previous.library;
+      this._restoreScrollTo = previous.scrollTop;
+    }
+    if (!fromPopState) this._consumeBrowserEntry();
+    this._render();
+    return true;
+  }
+
+  /** Dismiss the topmost of the activity menu and the power confirmation. */
+  _closeTransient() {
+    for (const key of TRANSIENT_KEYS) {
+      if (this._view[key]) {
+        this._view[key] = false;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Leave the current view, or do `fallback` when it is the only one.
+   *
+   * This is what every close button calls. The fallback is where that button
+   * used to go unconditionally.
+   */
+  _navClose(fallback) {
+    if (this._navBack()) return;
+    if (fallback) fallback();
+    this._render();
+  }
+
+  /**
+   * Claim one browser history entry per forward move.
+   *
+   * The URL is deliberately unchanged — Home Assistant owns the address bar.
+   * The entry exists so the phone's back gesture has something of ours to
+   * pop instead of leaving the dashboard.
+   */
+  _pushBrowserEntry() {
+    if (typeof window === "undefined" || !window.history) return;
+    this._navToken += 1;
+    try {
+      window.history.pushState(
+        { kinoCard: this._navToken },
+        "",
+        window.location.href
+      );
+    } catch (err) {
+      // Some embeddings forbid it. The in-card back buttons still work.
+      return;
+    }
+    this._browserTokens.push(this._navToken);
+  }
+
+  /** Give back the entry belonging to a step the card itself just undid. */
+  _consumeBrowserEntry() {
+    const token = this._browserTokens.pop();
+    if (token == null || typeof window === "undefined" || !window.history) return;
+    const state = window.history.state;
+    // Somebody navigated on top of ours; going back would undo their move.
+    if (!state || state.kinoCard !== token) return;
+    this._skipPop += 1;
+    try {
+      window.history.back();
+    } catch (err) {
+      this._skipPop -= 1;
+    }
+  }
+
+  _onPopState() {
+    if (this._skipPop > 0) {
+      this._skipPop -= 1;
+      return;
+    }
+    // Not one of ours: Home Assistant's own routing, left well alone.
+    if (!this._browserTokens.length) return;
+    this._browserTokens.pop();
+    this._navBack(true);
+  }
+
+  /** Close the filter sheet and show what was chosen — see `_navPush`. */
+  async _closeFilters() {
+    this._view.filterSheet = false;
+    this._filterPreview = null;
+    this._render();
+    await this._loadLibrary();
+  }
+
+  /** Escape leaves the sheet on screen — but only when one is on screen. */
+  _onKeyDown(event) {
+    if (event.key !== "Escape") return;
+    const view = this._view;
+    const open =
+      view.detailId ||
+      view.playingOpen ||
+      view.filterSheet ||
+      view.trim ||
+      view.scEdit ||
+      view.abSetup ||
+      view.powerConfirm ||
+      view.activityMenu;
+    if (!open) return;
+    event.preventDefault();
+    this._navBack();
+  }
+
   /* -- data ---------------------------------------------------------- */
 
   async _ws(message) {
@@ -1592,7 +1946,10 @@ class KinoCard extends CardBase {
       const changed = JSON.stringify(next) !== JSON.stringify(this._kino);
       this._kino = next;
       this._error = null;
-      if (changed) this._render();
+      // Deliberately not short-circuited: the highlight has to be settled
+      // against the new state whether or not anything else moved.
+      const settled = this._settleDemoJump();
+      if (changed || settled) this._render();
     } catch (err) {
       this._error = err.message || "Kino ist nicht erreichbar";
       this._render();
@@ -2316,6 +2673,8 @@ class KinoCard extends CardBase {
       "Clip konnte nicht gespeichert werden"
     );
     if (!result) return;
+    // Saved, so the editor is gone for good: the step back into it goes too.
+    this._navDrop();
     this._view.trim = null;
     this._toast(
       trim.id ? "Clip aktualisiert." : "Clip gespeichert — zu finden unter Demos."
@@ -2331,6 +2690,7 @@ class KinoCard extends CardBase {
       "Clip konnte nicht gelöscht werden"
     );
     if (!result) return;
+    this._navDrop();
     this._view.trim = null;
     await this._loadDemo(true);
   }
@@ -2401,6 +2761,7 @@ class KinoCard extends CardBase {
       "Showcase konnte nicht gespeichert werden"
     );
     if (!result) return;
+    this._navDrop();
     this._view.scEdit = null;
     await this._loadDemo(true);
   }
@@ -2413,6 +2774,7 @@ class KinoCard extends CardBase {
       "Showcase konnte nicht gelöscht werden"
     );
     if (!result) return;
+    this._navDrop();
     this._view.scEdit = null;
     await this._loadDemo(true);
   }
@@ -2465,6 +2827,7 @@ class KinoCard extends CardBase {
       "Der Vergleich konnte nicht starten"
     );
     if (!result) return;
+    this._navDrop();
     this._view.abSetup = null;
     await this._refreshState();
   }
@@ -2496,7 +2859,11 @@ class KinoCard extends CardBase {
       return;
     }
 
-    const scrollTop = this._container.querySelector(".scroller")?.scrollTop || 0;
+    // A back step puts its own scroll position back; every other render keeps
+    // the one already on screen.
+    const scrollTop =
+      this._restoreScrollTo != null ? this._restoreScrollTo : this._scrollTop();
+    this._restoreScrollTo = null;
     // Sheets are rebuilt from scratch on every render. Without carrying the
     // scroll position over and suppressing the slide-in replay, every chip
     // tap makes an open sheet visibly "close and reopen".
@@ -2545,6 +2912,11 @@ class KinoCard extends CardBase {
       this._view.powerConfirm ? this._renderPowerConfirm() : "",
     ].join("");
     this._signature = this._renderSignature();
+    // Every render rebuilds the bars from the last state payload, which is up
+    // to two seconds old. Writing the live numbers back in the same frame is
+    // what keeps a re-render from being visible as a stutter.
+    this._tick();
+    this._tickDemo();
     const scroller = this._container.querySelector(".scroller");
     if (scroller) scroller.scrollTop = scrollTop;
     this._container.querySelectorAll(".sheet[data-sheet]").forEach((el) => {
@@ -4335,6 +4707,7 @@ class KinoCard extends CardBase {
     const clip = run.clip || {};
     const phase = run.phase;
     const controls = !["done", "wait", "error"].includes(phase);
+    const progress = this._demoClipProgress();
     const body = {
       preparing: () => `<div class="slate">
           <div class="label" style="margin-bottom:8px">Kino wird vorbereitet</div>
@@ -4375,13 +4748,15 @@ class KinoCard extends CardBase {
                  </div>`
               : ""
           }
-          <div class="bar" data-demo="bar"><div style="width:0%"></div></div>
+          <div class="bar" data-demo="bar"><div style="width:${
+            (progress ? progress.fraction : 0) * 100
+          }%"></div></div>
           <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-top:6px">
-            <span data-demo="pos">${this._esc(clip.start || "")}</span>
+            <span data-demo="pos">${this._esc(
+              progress ? helpers.formatTimecode(progress.positionMs) : clip.start || ""
+            )}</span>
             <span data-demo="left">${
-              run.phaseEndsAt
-                ? `noch ${helpers.formatTimecode(Math.max(0, run.phaseEndsAt - Date.now()))}`
-                : ""
+              progress ? `noch ${helpers.formatTimecode(progress.remainingMs)}` : ""
             }</span>
           </div>
         </div>`,
@@ -4406,41 +4781,77 @@ class KinoCard extends CardBase {
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--kino-text3);margin-bottom:16px">
         <span>Clip ${run.index + 1} von ${run.count}</span>
-        <span>${
+        <span data-demo="total">${
           ["done", "error"].includes(phase)
             ? ""
-            : `Showcase: noch ~${helpers.formatTimecode(run.totalRemainingMs)}`
+            : // The engine's own figure until the clip reports a position;
+              // after that the card counts it down itself, smoothly.
+              `Showcase: noch ~${helpers.formatTimecode(
+                progress
+                  ? this._demoShowcaseRemaining(progress.remainingMs)
+                  : run.totalRemainingMs
+              )}`
         }</span>
       </div>
       ${run.warning && phase !== "error" ? `<div class="warnbox">${this._esc(run.warning)}</div>` : ""}
       ${(body[phase] || body.slate)()}
-      ${
-        controls
-          ? `<div style="display:flex;align-items:center;justify-content:center;gap:22px;margin:6px 0 22px">
-              <button class="ghost" style="width:auto;border:none;background:transparent;font-size:12px"
-                data-act="demo-replay">⟲ Clip</button>
-              <button class="round" style="width:52px;height:52px;border-radius:26px;background:var(--kino-gold);color:var(--kino-goldText);font-size:18px"
-                data-act="demo-pause">${run.paused ? "▶" : "⏸"}</button>
-              <button class="ghost" style="width:auto;border:none;background:transparent;font-size:19px"
-                data-act="demo-skip">⏭</button>
-            </div>`
-          : ""
-      }
+      ${controls ? this._renderDemoTransport(run) : ""}
       <div class="label">Clips im Showcase</div>
       <div class="demorows">
         ${(run.clips || [])
-          .map(
-            (c, index) => `<button class="demorow" aria-current="${index === run.index}"
+          .map((c, index) => {
+            // A tap is answered here, not two seconds later when the engine
+            // has caught up — otherwise the list looks like it ignored it.
+            const wanted = this._demoJumpTo != null ? this._demoJumpTo : run.index;
+            return `<button class="demorow" aria-current="${index === wanted}"
+              aria-busy="${index === wanted && index !== run.index}"
               data-act="demo-jump" data-key="${index}">
               <span class="n">${index + 1}</span>
               <span class="nm">${this._esc(c.name)}</span>
               <span class="du">${this._esc(c.duration)}</span>
-            </button>`
-          )
+            </button>`;
+          })
           .join("")}
       </div>
       <p class="hint">Wiedergabe trägt demo=true — sie erscheint nicht im Verlauf.</p>
     </div>`;
+  }
+
+  /**
+   * The running demo's transport, built to the same shape as the film's.
+   *
+   * Play/pause goes through the engine rather than straight at the player:
+   * the engine is the one holding the clip's schedule, and a player paused
+   * behind its back would be resumed by the next phase as if nothing had
+   * happened. Everything else — the seek, the level, the tracks — is the
+   * room's, and is the same control the playback view offers.
+   */
+  _renderDemoTransport(run) {
+    const first = run.index <= 0;
+    const last = run.index >= (run.count || 1) - 1;
+    // The Zidoo refuses a seek while it is not playing, so a paused demo
+    // offers no seek rather than an error.
+    const seekable = !run.paused && ["playing", "leadin"].includes(run.phase);
+    const ghost =
+      "width:auto;border:none;background:transparent;padding:6px 8px;font-size:12px";
+    return `<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:6px 0 14px">
+        <button class="ghost" style="${ghost};font-size:17px" data-act="demo-prev"
+          title="Vorheriger Clip" ${first ? "disabled" : ""}>⏮</button>
+        <button class="seek" data-act="seek" data-key="-${SEEK_STEP_SECONDS}"
+          title="10 Sekunden zurück" ${seekable ? "" : "disabled"}>⟲${SEEK_STEP_SECONDS}</button>
+        <button class="round" style="width:52px;height:52px;border-radius:26px;background:var(--kino-gold);color:var(--kino-goldText);font-size:18px"
+          data-act="demo-pause">${run.paused ? "▶" : "⏸"}</button>
+        <button class="seek" data-act="seek" data-key="${SEEK_STEP_SECONDS}"
+          title="10 Sekunden vor" ${seekable ? "" : "disabled"}>${SEEK_STEP_SECONDS}⟳</button>
+        <button class="ghost" style="${ghost};font-size:17px" data-act="demo-skip"
+          title="Nächster Clip" ${last ? "disabled" : ""}>⏭</button>
+      </div>
+      <div style="display:flex;justify-content:center;margin-bottom:18px">
+        <a class="link" data-act="demo-replay">⟲ Clip von vorn</a>
+      </div>
+      ${this._renderVolumeRow(true)}
+      ${this._renderSoundSelects()}
+      ${this._renderTrackSelects()}`;
   }
 
   _renderAbRun() {
@@ -4469,7 +4880,9 @@ class KinoCard extends CardBase {
                    <span class="dot pulsing" style="background:var(--kino-gold)"></span>
                    <span style="font-size:11px;color:var(--kino-text3)">Vorlauf — Signalkette synchronisiert</span>
                  </div>`
-              : `<div class="bar" data-demo="bar" style="margin-top:18px"><div style="width:0%"></div></div>`
+              : `<div class="bar" data-demo="bar" style="margin-top:18px"><div style="width:${
+                  (this._demoClipProgress() || { fraction: 0 }).fraction * 100
+                }%"></div></div>`
           }
         </div>`
       : phase === "gap"
@@ -4622,8 +5035,7 @@ class KinoCard extends CardBase {
         this._render();
         break;
       case "cancel-power-off":
-        view.powerConfirm = false;
-        this._render();
+        this._navBack();
         break;
       case "confirm-power-off":
         await this._activate(this._kino.offActivity);
@@ -4639,6 +5051,7 @@ class KinoCard extends CardBase {
         this._render();
         break;
       case "open-library":
+        this._navPush();
         view.main = "library";
         view.category = key || "movies";
         this._render();
@@ -4648,6 +5061,7 @@ class KinoCard extends CardBase {
         // The row shows twelve; the library shows all of them, filterable.
         const filters = helpers.emptyFilters();
         filters.tags = ["Favoriten"];
+        this._navPush();
         view.main = "library";
         view.category = "movies";
         view.query = "";
@@ -4664,12 +5078,14 @@ class KinoCard extends CardBase {
         await this._loadLibrary();
         break;
       case "back-home":
-        view.main = "home";
-        this._render();
+        this._navClose(() => {
+          view.main = "home";
+        });
         break;
 
       /* -- demo mode --------------------------------------------------- */
       case "open-demos":
+        this._navPush();
         view.main = "demos";
         view.demoTab = "clips";
         this._render();
@@ -4688,25 +5104,29 @@ class KinoCard extends CardBase {
         this._render();
         break;
       case "demo-clip-edit":
+        this._navPush();
         this._openClipEdit(key);
         break;
       case "demo-open-title":
-        // The clip card's title link: straight into the title's own sheet.
-        view.main = "home";
+        // The clip card's title link: straight into the title's own sheet,
+        // which closes back onto the clip list it was opened from.
+        this._navPush();
         await this._openDetail(key);
         break;
       case "demo-capture":
         // The vocabulary has to be there before the chips are drawn.
         await this._loadDemo();
+        this._navPush();
         this._captureFromPlayer();
         break;
       case "demo-capture-title":
         await this._loadDemo();
+        this._navPush();
         this._captureWholeTitle(view.detail);
         break;
       case "demo-play-clip":
-        view.detailId = null;
-        view.playingOpen = false;
+        // Whatever is on screen stays on screen: the demo overlay sits above
+        // it and ending the demo puts the view back rather than the start.
         await this._playDemo({ type: "kino/demo/play", clip_id: key });
         break;
       case "demo-play-showcase":
@@ -4720,6 +5140,11 @@ class KinoCard extends CardBase {
       case "demo-skip":
         await this._demoControl("skip");
         break;
+      case "demo-prev": {
+        const run = this._runningDemo;
+        if (run) await this._demoJump(run.index - 1);
+        break;
+      }
       case "demo-replay":
         await this._demoControl("replay");
         break;
@@ -4727,7 +5152,7 @@ class KinoCard extends CardBase {
         await this._demoControl("next");
         break;
       case "demo-jump":
-        await this._demoControl("jump", Number(key));
+        await this._demoJump(Number(key));
         break;
       case "demo-stop":
         await this._demoControl("stop");
@@ -4735,8 +5160,9 @@ class KinoCard extends CardBase {
 
       /* -- the trim editor --------------------------------------------- */
       case "trim-close":
-        view.trim = null;
-        this._render();
+        this._navClose(() => {
+          view.trim = null;
+        });
         break;
       case "trim-scope": {
         // Scope chips reach back from the end the capture arrived with, so
@@ -4794,14 +5220,17 @@ class KinoCard extends CardBase {
 
       /* -- the showcase editor ------------------------------------------ */
       case "demo-showcase-new":
+        this._navPush();
         this._openShowcaseEditor(null);
         break;
       case "demo-showcase-edit":
+        this._navPush();
         this._openShowcaseEditor(key);
         break;
       case "sc-close":
-        view.scEdit = null;
-        this._render();
+        this._navClose(() => {
+          view.scEdit = null;
+        });
         break;
       case "sc-advance":
         view.scEdit.advance = key;
@@ -4844,11 +5273,13 @@ class KinoCard extends CardBase {
 
       /* -- A/B ----------------------------------------------------------- */
       case "demo-ab":
+        this._navPush();
         this._openAbSetup(key);
         break;
       case "ab-close":
-        view.abSetup = null;
-        this._render();
+        this._navClose(() => {
+          view.abSetup = null;
+        });
         break;
       case "ab-blind":
         view.abSetup.blind = !view.abSetup.blind;
@@ -4864,6 +5295,7 @@ class KinoCard extends CardBase {
         await this._demoControl("replay-side", Number(key));
         break;
       case "open-filters":
+        this._navPush(() => this._closeFilters());
         view.filterSheet = true;
         this._filterPreview = null;
         view.personQuery = "";
@@ -4873,10 +5305,7 @@ class KinoCard extends CardBase {
         this._previewFilterCount();
         break;
       case "close-filters":
-        view.filterSheet = false;
-        this._filterPreview = null;
-        this._render();
-        await this._loadLibrary();
+        this._navBack();
         break;
       case "reset-filters":
         view.filters = helpers.emptyFilters();
@@ -5026,11 +5455,11 @@ class KinoCard extends CardBase {
         await this._forceRefresh();
         break;
       case "open-detail":
+        this._navPush();
         await this._openDetail(key);
         break;
       case "close-detail":
-        this._closeDetail();
-        this._render();
+        this._navClose(() => this._closeDetail());
         break;
       case "genre-jump":
       case "person-jump": {
@@ -5041,6 +5470,7 @@ class KinoCard extends CardBase {
         const filters = helpers.emptyFilters();
         if (act === "genre-jump") filters.genres = [key];
         else filters.people = [{ id: key, name: target.dataset.name || "?" }];
+        this._navPush();
         this._closeDetail();
         view.main = "library";
         view.category = fromShow ? "shows" : "movies";
@@ -5068,12 +5498,14 @@ class KinoCard extends CardBase {
         await this._play(key, act === "play-from-start");
         break;
       case "expand-playing":
+        this._navPush();
         view.playingOpen = true;
         this._render();
         break;
       case "collapse-playing":
-        view.playingOpen = false;
-        this._render();
+        this._navClose(() => {
+          view.playingOpen = false;
+        });
         break;
       case "transport":
         await this._transport(key);
@@ -5081,8 +5513,9 @@ class KinoCard extends CardBase {
       case "stop-playing":
         // Ending the film is also leaving the playback view — staying on a
         // dead transport screen helps nobody.
-        view.playingOpen = false;
-        this._render();
+        this._navClose(() => {
+          view.playingOpen = false;
+        });
         await this._transport("media_stop");
         break;
       case "vol":
@@ -5120,6 +5553,10 @@ class KinoCard extends CardBase {
    */
   async _play(itemId, fromStart) {
     const player = this._playerEntity;
+    // The detail sheet is traded for the playback sheet rather than stacked
+    // under it, so the entry the detail was opened with is the one playback
+    // closes back through — onto the library, or wherever the title came
+    // from. Nothing to push, nothing to drop.
     this._view.detailId = null;
     this._view.detail = null;
     this._render();

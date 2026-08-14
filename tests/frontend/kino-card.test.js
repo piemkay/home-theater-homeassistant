@@ -1595,3 +1595,132 @@ describe("cast and crew filter (0.6.0)", () => {
     assert.equal(personCard()._renderPersonHits(), "");
   });
 });
+
+describe("going back", () => {
+  const navCard = (view = {}) => {
+    const card = Object.create(KinoCard.prototype);
+    card._nav = [];
+    card._browserTokens = [];
+    card._navToken = 0;
+    card._skipPop = 0;
+    card._container = null;
+    card._restoreScrollTo = null;
+    card._library = { items: [], total: 0, hasMore: false, loading: false, error: null };
+    card._view = {
+      main: "home",
+      category: "movies",
+      query: "",
+      filters: helpers.emptyFilters(),
+      detailId: null,
+      playingOpen: false,
+      filterSheet: false,
+      trim: null,
+      scEdit: null,
+      abSetup: null,
+      demoTab: "clips",
+      powerConfirm: false,
+      activityMenu: false,
+      ...view,
+    };
+    card._renders = 0;
+    card._render = () => {
+      card._renders += 1;
+    };
+    return card;
+  };
+
+  test("a title opened from the Demos tab closes back onto it", () => {
+    const c = navCard({ main: "demos", demoTab: "clips" });
+    c._navPush();
+    c._view.detailId = "m1";
+    c._navBack();
+    assert.equal(c._view.main, "demos");
+    assert.equal(c._view.detailId, null);
+  });
+
+  test("the library's results come back with the view that fetched them", () => {
+    const c = navCard({ main: "library" });
+    c._library = { items: [{ id: "a" }], total: 1, hasMore: false };
+    c._navPush();
+    c._view.main = "demos";
+    c._library = { items: [], total: 0, hasMore: false };
+    c._navBack();
+    assert.equal(c._view.main, "library");
+    assert.deepEqual(c._library.items, [{ id: "a" }]);
+  });
+
+  test("steps unwind one at a time, in the order they were taken", () => {
+    const c = navCard();
+    c._navPush();
+    c._view.main = "library";
+    c._navPush();
+    c._view.detailId = "m1";
+    c._navBack();
+    assert.equal(c._view.main, "library");
+    assert.equal(c._view.detailId, null);
+    c._navBack();
+    assert.equal(c._view.main, "home");
+  });
+
+  test("the filter sheet applies on the way out instead of reverting", () => {
+    // It is a form, not a place: backing out of it is the same as its own
+    // close button, which is what shows the selection.
+    const c = navCard({ main: "library" });
+    let closed = false;
+    c._navPush(() => {
+      closed = true;
+      c._view.filterSheet = false;
+    });
+    c._view.filterSheet = true;
+    c._view.filters.genres = ["Sci-Fi"];
+    c._navBack();
+    assert.equal(closed, true);
+    assert.equal(c._view.filterSheet, false);
+    assert.deepEqual(c._view.filters.genres, ["Sci-Fi"]);
+  });
+
+  test("a menu is dismissed before any step is spent on it", () => {
+    const c = navCard({ main: "library" });
+    c._navPush();
+    c._view.detailId = "m1";
+    c._view.activityMenu = true;
+    c._navBack();
+    assert.equal(c._view.activityMenu, false);
+    assert.equal(c._view.detailId, "m1", "the sheet stays; only the menu closed");
+    c._navBack();
+    assert.equal(c._view.detailId, null);
+  });
+
+  test("the power confirmation closes before the activity menu under it", () => {
+    const c = navCard({ activityMenu: true, powerConfirm: true });
+    c._navBack();
+    assert.equal(c._view.powerConfirm, false);
+    assert.equal(c._view.activityMenu, true);
+  });
+
+  test("saving an editor removes the step back into it", () => {
+    const c = navCard({ main: "demos" });
+    c._navPush();
+    c._view.trim = { id: "c1" };
+    c._navDrop();
+    c._view.trim = null;
+    assert.equal(c._navBack(), false, "nothing left to go back to");
+  });
+
+  test("the first view falls back instead of going nowhere", () => {
+    const c = navCard({ main: "library" });
+    let fell = false;
+    c._navClose(() => {
+      fell = true;
+      c._view.main = "home";
+    });
+    assert.equal(fell, true);
+    assert.equal(c._view.main, "home");
+  });
+
+  test("the trail is bounded, and drops its oldest end", () => {
+    const c = navCard();
+    for (let i = 0; i < 60; i += 1) c._navPush();
+    assert.equal(c._nav.length, 50);
+  });
+});

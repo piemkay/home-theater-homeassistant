@@ -413,6 +413,138 @@ describe("the demo runtime overlay", () => {
   test("an A/B run is not rendered as a showcase", () => {
     assert.equal(runCard({ ...base, mode: "ab" })._renderDemoRun(), "");
   });
+
+  test("the transport offers what the playback view offers", () => {
+    const html = runCard({ ...base, index: 1 })._renderDemoRun();
+    assert.match(html, /data-act="demo-prev"/);
+    assert.match(html, /data-act="seek" data-key="-10"/);
+    assert.match(html, /data-act="seek" data-key="10"/);
+    assert.match(html, /data-act="demo-pause"/);
+    assert.match(html, /data-act="demo-skip"/);
+    assert.match(html, /data-act="demo-replay"/);
+    assert.match(html, /data-act="mute"/);
+  });
+
+  test("the ends of the showcase disable the clip steps", () => {
+    const firstClip = runCard(base)._renderDemoRun();
+    assert.match(firstClip, /data-act="demo-prev"[\s\S]{0,80}disabled/);
+    const lastClip = runCard({ ...base, index: 1 })._renderDemoRun();
+    assert.match(lastClip, /data-act="demo-skip"[\s\S]{0,80}disabled/);
+  });
+
+  test("a paused demo offers no seek — the player refuses one", () => {
+    const html = runCard({ ...base, paused: true })._renderDemoRun();
+    assert.match(html, /data-act="seek" data-key="10"\n?\s*title="10 Sekunden vor" disabled/);
+  });
+});
+
+describe("the running clip's progress", () => {
+  const progressCard = (over = {}) => {
+    const card = Object.create(KinoCard.prototype);
+    card._demoBar = null;
+    card._kino = {
+      demo: {
+        running: {
+          mode: "showcase",
+          phase: "playing",
+          index: 0,
+          count: 1,
+          paused: false,
+          gapSeconds: 8,
+          clip: { id: "c1", name: "Deichbruch", startMs: 60000, endMs: 100000 },
+          clips: [{ id: "c1", name: "Deichbruch", durationMs: 40000 }],
+          positionMs: 80000,
+          positionAtMs: Date.now(),
+          ...over,
+        },
+      },
+    };
+    return card;
+  };
+
+  test("the bar comes from the player's position, not from the phase's end", () => {
+    // Halfway through a forty-second clip.
+    const progress = progressCard()._demoClipProgress();
+    assert.equal(progress.fraction, 0.5);
+    assert.equal(progress.positionMs, 80000);
+    assert.equal(progress.remainingMs, 20000);
+  });
+
+  test("the position is carried forward between the engine's samples", () => {
+    const progress = progressCard({ positionAtMs: Date.now() - 10000 })
+      ._demoClipProgress();
+    assert.equal(progress.positionMs, 90000);
+    assert.equal(progress.fraction, 0.75);
+  });
+
+  test("a paused demo is a still frame", () => {
+    const progress = progressCard({
+      paused: true,
+      positionAtMs: Date.now() - 10000,
+    })._demoClipProgress();
+    assert.equal(progress.positionMs, 80000);
+  });
+
+  test("a player repeating itself does not walk the bar backwards", () => {
+    // The engine samples, the clock runs on, then the same number arrives
+    // again: without the hold the second reading is behind the first.
+    const card = progressCard();
+    const run = card._kino.demo.running;
+    run.positionAtMs = Date.now() - 900;
+    const first = card._demoClipProgress().fraction;
+    run.positionAtMs = Date.now();
+    const second = card._demoClipProgress().fraction;
+    assert.equal(second, first);
+  });
+
+  test("a real seek backwards does move the bar back", () => {
+    const card = progressCard();
+    const run = card._kino.demo.running;
+    const before = card._demoClipProgress().fraction;
+    run.positionMs = 65000; // ten seconds back, by hand
+    const after = card._demoClipProgress().fraction;
+    assert.ok(after < before, `${after} should be behind ${before}`);
+  });
+
+  test("a new clip starts its own bar rather than inheriting the last one", () => {
+    const card = progressCard();
+    card._demoClipProgress();
+    const run = card._kino.demo.running;
+    run.index = 1;
+    run.clip = { id: "c2", name: "Treppenhaus", startMs: 0, endMs: 40000 };
+    run.positionMs = 4000;
+    assert.equal(card._demoClipProgress().fraction, 0.1);
+  });
+
+  test("A/B measures the stretch the engine cut, not the whole clip", () => {
+    // A/B truncates a long clip; the bar has to span what is actually played.
+    const progress = progressCard({
+      clip: { id: "c1", name: "x", startMs: 60000, endMs: 300000 },
+      spanStartMs: 60000,
+      spanEndMs: 100000,
+    })._demoClipProgress();
+    assert.equal(progress.fraction, 0.5);
+  });
+
+  test("what is left of the showcase counts the clips still to come", () => {
+    const card = progressCard({
+      index: 0,
+      count: 2,
+      clips: [
+        { id: "c1", name: "a", durationMs: 40000 },
+        { id: "c2", name: "b", durationMs: 50000 },
+      ],
+    });
+    // Twenty seconds of this clip, then an eight-second gap and fifty more.
+    assert.equal(card._demoShowcaseRemaining(20000), 78000);
+  });
+
+  test("nothing is claimed before the engine has reported a position", () => {
+    assert.equal(
+      progressCard({ positionMs: null, phaseEndsAt: 0 })._demoClipProgress(),
+      null
+    );
+  });
 });
 
 describe("the A/B comparison", () => {

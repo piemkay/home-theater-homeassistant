@@ -58,6 +58,22 @@ AB_MAX_SIDE_SECONDS = 45.0
 #: How long a phase that waits for a person is allowed to stand.
 IDLE_PARK_SECONDS = 3600.0
 
+#: The showcase loop's "this clip is finished, move on" outcome.
+#:
+#: It exists so `None` can keep meaning "nothing happened, carry on where you
+#: were". Spelling both as `None` is how a skip during the lead-in used to be
+#: read as "no command" and go on arming the clip it was told to leave.
+ADVANCE = "advance"
+
+#: How far the predicted end may wander before the card is told about it.
+#:
+#: The prediction is re-derived from every position sample, and a player that
+#: reports in whole seconds makes it wobble by up to one of them. Publishing
+#: each wobble re-rendered the overlay once a second and walked the clip bar
+#: backwards; the card carries the clock itself, so only a real correction is
+#: worth a push.
+PREDICTION_SLACK_MS = 2000.0
+
 
 class DemoRuntime(Protocol):
     """Everything the engine needs from the room."""
@@ -153,6 +169,18 @@ class _Run:
     phase_ends_ms: float | None = None
     paused: bool = False
     warning: str | None = None
+    #: The player's own position, in milliseconds, and the wall-clock instant
+    #: it was read at. The card extrapolates between the two rather than
+    #: inferring a position from the phase's end, which moves.
+    position_ms: float | None = None
+    position_at_ms: float = 0.0
+    #: The stretch actually being played, which is the clip's own span except
+    #: in A/B, where a long clip is cut short. The card's bar spans this.
+    span_start_ms: float | None = None
+    span_end_ms: float | None = None
+    #: Set when the next clip was chosen by hand rather than reached in turn,
+    #: so the slate can get out of the way.
+    jumped: bool = False
     #: A/B only, from here down.
     order: tuple[str, str] = ("A", "B")
     configs: Mapping[str, Any] = field(default_factory=dict)
@@ -307,6 +335,8 @@ class DemoEngine:
                 continue
             if outcome and outcome.startswith("jump:"):
                 index = self._clamp(int(outcome.split(":", 1)[1]), len(run.clips))
+                # Somebody picked this clip off the list. It starts now.
+                run.jumped = True
                 continue
             index += 1
 
@@ -323,6 +353,11 @@ class DemoEngine:
         # A complaint belongs to the clip that caused it: carrying "this track
         # is not on offer" from one clip onto the next one is a lie.
         run.warning = None
+        # The previous clip's position must not colour this one's bar in the
+        # frames between arming and the first sample.
+        run.position_ms = None
+        run.span_start_ms = None
+        run.span_end_ms = None
         outcome = await self._slate(run, first=first)
         if outcome is not None:
             return outcome
@@ -335,10 +370,20 @@ class DemoEngine:
         if command:
             return self._loop_outcome(command)
         await self._runtime.pause()
-        return None
+        return ADVANCE
 
     async def _slate(self, run: _Run, first: bool) -> str | None:
-        """Show what is coming next, and hold for the gap (spec 6)."""
+        """Show what is coming next, and hold for the gap (spec 6).
+
+        A clip somebody just picked off the list skips all of this. The slate
+        answers "what comes next"; when the answer was a deliberate tap the
+        question is already settled, and holding the gap — or, on tap-advance,
+        asking for a second tap — is precisely the "nothing happened" that
+        makes people tap again.
+        """
+        if run.jumped:
+            run.jumped = False
+            return None
         if run.advance == ADVANCE_TAP and not first:
             self._phase("wait", None)
             await self._runtime.pause()
@@ -352,12 +397,20 @@ class DemoEngine:
         if not first:
             await self._runtime.pause()
         command = await self._wait(gap)
-        return self._loop_outcome(command) if command else None
+        if command is None:
+            return None
+        # On the slate the clip has not started, so "weiter" means "do not
+        # make me wait out the gap" rather than "leave this one out".
+        if command in ("skip", "next"):
+            return None
+        return self._loop_outcome(command)
 
     async def _arm(self, run: _Run, clip: Clip) -> str | None:
         """Open the file, set tracks and burn off the lead-in (spec 4.1)."""
         self._phase("leadin", None)
-        await self._apply_overrides(run, clip)
+        command = await self._apply_overrides(run, clip)
+        if command:
+            return self._loop_outcome(command)
 
         if self._needs_open(clip):
             await self._runtime.play_clip(clip)
@@ -400,16 +453,15 @@ class DemoEngine:
             await self._runtime.set_mute(False)
         return self._loop_outcome(command) if command else None
 
-    def _loop_outcome(self, command: str) -> str | None:
+    def _loop_outcome(self, command: str) -> str:
         """Translate a control that arrived mid-clip into a loop outcome."""
-        if command in ("skip", "next"):
-            return None  # advance to the next clip
         if command in ("replay", "stop") or command.startswith("jump:"):
             return command
-        return None
+        return ADVANCE
 
     async def _await_clip_end(self, clip: Clip) -> str | None:
         """Wait out the clip, scheduling the cut rather than observing it."""
+        self._mark_span(clip)
         end_seconds = clip.end_ms / 1000
         deadline = self._runtime.now() + (
             clip.duration_ms / 1000 + OVERRUN_GRACE_SECONDS
@@ -425,6 +477,7 @@ class DemoEngine:
                     return None
                 continue
 
+            self._observe_position(position)
             remaining = end_seconds - position
             if remaining <= 0:
                 return None
@@ -599,8 +652,14 @@ class DemoEngine:
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Zurücksetzen nach der Demo fehlgeschlagen", exc_info=True)
 
-    async def _apply_overrides(self, run: _Run, clip: Clip) -> None:
-        """Apply the reference level plus the clip's own offset, then the look."""
+    async def _apply_overrides(self, run: _Run, clip: Clip) -> str | None:
+        """Apply the reference level plus the clip's own offset, then the look.
+
+        Returns a control command that arrived while the hardware was being
+        waited on. Swallowing one here is how a second tap on the clip list
+        went nowhere: the wait below is the only thing running for as long as
+        a preset takes to load.
+        """
         if run.reference_volume_db is not None or clip.volume_offset_db is not None:
             base = run.reference_volume_db
             if base is None:
@@ -622,7 +681,7 @@ class DemoEngine:
             if value
         }
         if not look:
-            return
+            return None
         await self._runtime.apply_look(look)
         # The same gate as the A/B gap: a preset still loading would eat the
         # clip's lead-in budget.
@@ -634,8 +693,10 @@ class DemoEngine:
                     "Konfiguration nicht bestätigt — es wird trotzdem fortgefahren."
                 )
                 break
-            if await self._wait(POLL_SECONDS):
-                break
+            command = await self._wait(POLL_SECONDS)
+            if command:
+                return command
+        return None
 
     def _preflight(self, clip: Clip) -> None:
         """Warn when what is arriving is not what the clip expects (spec 8)."""
@@ -724,6 +785,30 @@ class DemoEngine:
         run.phase_ends_ms = run.phase_started_ms + duration * 1000 if duration else None
         self._runtime.changed()
 
+    def _mark_span(self, clip: Clip) -> None:
+        """Record the stretch actually being played, which the card's bar spans.
+
+        Usually the clip's own start and end; in A/B a long clip is cut short,
+        and a bar drawn against the full span would crawl.
+        """
+        if self._run is None:
+            return
+        self._run.span_start_ms = clip.start_ms
+        self._run.span_end_ms = clip.end_ms
+
+    def _observe_position(self, seconds: float) -> None:
+        """Record where the player says it is, and when it said so.
+
+        This is what the card draws the clip bar from. It is deliberately not
+        a `changed()`: the card advances the number itself at 1x between
+        samples, so pushing every sample would only cost a re-render.
+        """
+        run = self._run
+        if run is None:
+            return
+        run.position_ms = seconds * 1000
+        run.position_at_ms = self._runtime.wall_ms()
+
     def _phase_playing(self, remaining: float) -> None:
         """Refresh the predicted end, damped so it does not churn the UI."""
         run = self._run
@@ -734,7 +819,10 @@ class DemoEngine:
         if changed:
             run.phase = "playing"
             run.phase_started_ms = self._runtime.wall_ms()
-        if run.phase_ends_ms is None or abs(run.phase_ends_ms - rounded) >= 1000:
+        if (
+            run.phase_ends_ms is None
+            or abs(run.phase_ends_ms - rounded) >= PREDICTION_SLACK_MS
+        ):
             run.phase_ends_ms = rounded
             changed = True
         if changed:
@@ -781,7 +869,17 @@ class DemoEngine:
             "warning": run.warning,
             "phaseStartedAt": run.phase_started_ms,
             "phaseEndsAt": run.phase_ends_ms,
+            # Where the player actually is, and when that was read. The card
+            # draws the clip bar from these two and its own clock, which is
+            # what keeps the bar monotone across a re-render.
+            "positionMs": run.position_ms,
+            "positionAtMs": run.position_at_ms,
+            "spanStartMs": run.span_start_ms,
+            "spanEndMs": run.span_end_ms,
             "advance": run.advance,
+            # The card counts the rest of the showcase down itself, from the
+            # clip durations below plus this.
+            "gapSeconds": run.gap_seconds,
             "clip": clip.as_dict() if clip else None,
             "clips": [
                 {

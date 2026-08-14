@@ -56,7 +56,9 @@ class FakeRuntime:
         return asyncio.get_running_loop().time()
 
     def wall_ms(self) -> float:
-        return 1_700_000_000_000.0
+        # Follows the loop clock, because the card's clip bar is drawn from
+        # the distance between two of these.
+        return 1_700_000_000_000.0 + self.now() * 1000
 
     # -- activity and playback ---------------------------------------------
 
@@ -426,6 +428,62 @@ class TestRuntimeControls:
         assert runtime.opened[-1] == "c3"
         await engine.stop()
 
+    async def test_a_jump_does_not_wait_out_the_slate(self, runtime, settings):
+        # Found live: tapping another clip while one ran looked like nothing
+        # happened, because the picked clip still sat out the whole gap first.
+        clips = [make_clip("c1", 0, 60_000), make_clip("c2", 0, 60_000)]
+        engine = DemoEngine(runtime, settings)
+        runtime.position_step = 0.0
+        await engine.start_showcase(Showcase(id="s", name="x", gap_seconds=30), clips)
+        await asyncio.sleep(0.02)
+        engine.control("jump", 1)
+        await asyncio.sleep(0.02)
+        assert runtime.opened[-1] == "c2"
+        assert engine.state()["phase"] != "slate"
+        await engine.stop()
+
+    async def test_a_jump_on_tap_advance_needs_no_second_tap(self, runtime, settings):
+        clips = [make_clip("c1", 0, 60_000), make_clip("c2", 0, 60_000)]
+        engine = DemoEngine(runtime, settings)
+        runtime.position_step = 0.0
+        await engine.start_showcase(
+            Showcase(id="s", name="x", advance="tap", gap_seconds=0), clips
+        )
+        await asyncio.sleep(0.02)
+        engine.control("jump", 1)
+        await asyncio.sleep(0.02)
+        assert runtime.opened[-1] == "c2"
+        await engine.stop()
+
+    async def test_a_jump_while_a_preset_is_pending_is_not_swallowed(self, runtime):
+        # The look-confirm wait used to eat whatever control arrived during it,
+        # which is what made a second tap on the clip list go nowhere.
+        clips = [
+            make_clip("c1", 0, 60_000, trinnov_preset="Kino Referenz"),
+            make_clip("c2", 0, 60_000),
+        ]
+        engine = DemoEngine(runtime, DemoSettings(lead_in_seconds=0.0))
+        runtime.position_step = 0.0
+        runtime.confirm_after = 10_000  # never confirms
+        await engine.start_showcase(Showcase(id="s", name="x", gap_seconds=0), clips)
+        await asyncio.sleep(0.02)
+        engine.control("jump", 1)
+        await asyncio.sleep(0.05)
+        assert runtime.opened[-1] == "c2"
+        await engine.stop()
+
+    async def test_skip_during_the_lead_in_leaves_the_clip(self, runtime):
+        clips = [make_clip("c1", 0, 60_000), make_clip("c2", 0, 60_000)]
+        engine = DemoEngine(runtime, DemoSettings(lead_in_seconds=5.0))
+        runtime.position_step = 0.0
+        await engine.start_showcase(Showcase(id="s", name="x", gap_seconds=0), clips)
+        await asyncio.sleep(0.02)
+        assert engine.state()["phase"] == "leadin"
+        engine.control("skip")
+        await asyncio.sleep(0.02)
+        assert runtime.opened[-1] == "c2"
+        await engine.stop()
+
     async def test_stop_ends_the_demo_and_clears_the_state(self, runtime, settings):
         engine = DemoEngine(runtime, settings)
         runtime.position_step = 0.0
@@ -478,6 +536,39 @@ class TestState:
 
     async def test_is_none_when_nothing_runs(self, runtime, settings):
         assert DemoEngine(runtime, settings).state() is None
+
+    async def test_reports_where_the_player_is_and_when_it_said_so(
+        self, runtime, settings
+    ):
+        # The card draws the clip bar from these two plus its own clock. The
+        # phase's predicted end cannot serve: it is re-derived from every
+        # sample, so a stale position walks it — and the bar — backwards.
+        engine = DemoEngine(runtime, settings)
+        runtime.position_step = 0.0
+        await engine.start_clip(make_clip("c1", 30_000, 90_000))
+        await asyncio.sleep(0.02)
+        state = engine.state()
+        assert state["positionMs"] == pytest.approx(30_000, abs=1)
+        assert state["positionAtMs"] > 1_700_000_000_000.0
+        await engine.stop()
+
+    async def test_a_new_clip_does_not_inherit_the_last_ones_position(
+        self, runtime, settings
+    ):
+        clips = [make_clip("c1", 0, 1000), make_clip("c2", 600_000, 660_000)]
+        engine = DemoEngine(runtime, settings)
+        await engine.start_showcase(Showcase(id="s", name="x", gap_seconds=30), clips)
+        for _ in range(200):
+            state = engine.state()
+            if state and state["index"] == 1:
+                # On the slate for the second clip the first one's position is
+                # gone rather than pinning the bar to the far end.
+                assert state["positionMs"] is None
+                break
+            await asyncio.sleep(0.005)
+        else:  # pragma: no cover - the loop above always gets there
+            raise AssertionError("the showcase never reached the second clip")
+        await engine.stop()
 
 
 class TestABComparison:
