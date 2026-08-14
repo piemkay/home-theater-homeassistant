@@ -38,6 +38,9 @@ ACTIVITY_TIMEOUT_MIN = 120.0
 #: stored track choice is written off as unavailable.
 TRACK_LIST_TIMEOUT = 6.0
 
+#: What the track helpers hold when they carry no list at all.
+PLACEHOLDER_OPTION = "—"
+
 
 class HassDemoRuntime:
     """The engine's view of the room, in Home Assistant terms."""
@@ -248,14 +251,17 @@ class HassDemoRuntime:
             return False
         deadline = self.now() + TRACK_LIST_TIMEOUT
         while True:
-            options = driver.options_of(role)
+            # "—" is the helper's placeholder, not a track: a list holding
+            # only that is a list that has not arrived yet.
+            options = [o for o in driver.options_of(role) if o != PLACEHOLDER_OPTION]
             if label in options:
                 return True
             # "Aus" is translated to the player's own off entry at call time,
             # so it is legitimate even when the literal string is not listed.
             if role == "subtitle_select" and label == SUBTITLE_OFF_LABEL:
                 return True
-            if not options or self.now() >= deadline:
+            if options or self.now() >= deadline:
+                # A real list that simply does not carry it: no point waiting.
                 return False
             await asyncio.sleep(0.5)
 
