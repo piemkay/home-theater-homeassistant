@@ -309,6 +309,10 @@ calibration. **Demos** sits next to Filme and Serien on the library home.
 Volume, preset and profile are restored when a demo ends — including when it
 ends because Home Assistant reloaded the integration.
 
+Clips and showcases live in the integration's own storage, so they are backed
+up with Home Assistant. The admin panel's **Demos** screen exports and imports
+the whole set as JSON, and holds the settings that apply to the whole install.
+
 ### Music and hand-off activities
 
 A `mixed` activity (Musik) gets source pills and explanatory text; a `handoff`
@@ -327,6 +331,7 @@ never sees it, and the admin can tell it from the dashboard). Six tabs:
 | **Gerätestatus** | Observed against expected, per device and per setting (Ist / Soll), plus start/stop for one device in isolation |
 | **Planer** | The computed delta for any activity — stop / keep / reconfigure / start, with the reason per device — **without executing it** |
 | **Verlauf** | Recent transitions with per-step timings, and the learned durations behind the ETA — resettable per device or wholesale |
+| **Demos** | The install-wide demo settings — lead-in, retro-capture window, confirmation timeout and the optional flags — plus **export and import of the whole demo dataset** as JSON. Clips and showcases are created on the card; this is where they are backed up and moved between installs |
 | **Datei** | The whole document as JSON — copy to clipboard, paste back, apply |
 
 Everywhere a human reads, activities and devices appear by display name; keys

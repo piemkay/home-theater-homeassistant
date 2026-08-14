@@ -16,7 +16,7 @@
  * app renders as a centered column; the navigation model never changes.
  */
 
-const PANEL_VERSION = "0.4.0";
+const PANEL_VERSION = "0.5.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -619,7 +619,8 @@ class KinoPanel extends PanelBase {
     this._hass = null;
     this._narrow = false;
     this._tab = "activities";
-    //: The pushed detail screen: {screen: "activity"|"device"|"log"|"raw", key?}.
+    //: The pushed detail screen:
+    //: {screen: "activity"|"device"|"log"|"raw"|"demo", key?}.
     this._push = null;
     this._document = null;
     this._original = null;
@@ -632,6 +633,10 @@ class KinoPanel extends PanelBase {
     this._plannerTarget = "";
     this._saving = false;
     this._rawText = "";
+    //: Demo mode: the dataset, its settings as edited here, and the export.
+    this._demo = null;
+    this._demoSettings = null;
+    this._demoRawText = "";
     //: The styled dialog replacing prompt()/confirm() (F14).
     this._dialog = null;
   }
@@ -826,8 +831,10 @@ class KinoPanel extends PanelBase {
       this._root.addEventListener("click", (e) => this._onClick(e));
       this._root.addEventListener("change", (e) => this._onChange(e));
       this._root.addEventListener("input", (e) => {
-        // The raw textarea keeps its state without a re-render per keystroke.
-        if (e.target?.dataset?.field === "raw") this._rawText = e.target.value;
+        // The raw textareas keep their state without a re-render per keystroke.
+        const field = e.target?.dataset?.field;
+        if (field === "raw") this._rawText = e.target.value;
+        else if (field === "demo-raw") this._demoRawText = e.target.value;
       });
       this._root.addEventListener("keydown", (e) => this._onKeydown(e));
     }
@@ -883,6 +890,8 @@ class KinoPanel extends PanelBase {
       title = "Verlauf";
     } else if (push?.screen === "raw") {
       title = "Datei";
+    } else if (push?.screen === "demo") {
+      title = "Demos";
     }
 
     const lead = push
@@ -981,6 +990,7 @@ class KinoPanel extends PanelBase {
     if (push?.screen === "device") return this._renderDeviceEdit(push.key);
     if (push?.screen === "log") return this._renderLog();
     if (push?.screen === "raw") return this._renderRaw();
+    if (push?.screen === "demo") return this._renderDemo();
     switch (this._tab) {
       case "devices":
         return this._renderDevices();
@@ -1477,6 +1487,13 @@ class KinoPanel extends PanelBase {
         </span>
         ${CHEVRON}
       </button>
+      <button class="rowbtn" data-act="open-demo">
+        <span class="rowbody">
+          <span class="rowname">Demos</span>
+          <span class="rowsub">Vorlauf und Aufnahmefenster — und die Datensicherung</span>
+        </span>
+        ${CHEVRON}
+      </button>
       <button class="rowbtn" data-act="open-raw">
         <span class="rowbody">
           <span class="rowname">Datei</span>
@@ -1580,6 +1597,118 @@ class KinoPanel extends PanelBase {
     </div>`;
   }
 
+  /* -- 10.4 demo mode: settings and backup ---------------------------- */
+
+  /**
+   * Demo settings and the export/import of the whole demo dataset.
+   *
+   * Clips and showcases do not live in `kino.yaml` — they are the
+   * integration's own storage, backed up with Home Assistant — so this screen
+   * saves on its own rather than riding the document's save bar.
+   */
+  _renderDemo() {
+    const demo = this._demo;
+    if (!demo) return '<p class="sub">Demo-Daten werden geladen…</p>';
+    const settings = this._demoSettings || {};
+    const number = (field, label, hint, step = "1") =>
+      `<div class="frow"><span>${label}</span>
+        <input type="number" step="${step}" data-field="demo-${field}"
+          value="${this._esc(settings[field] ?? "")}" aria-label="${label}">
+      </div>
+      ${hint ? `<p class="sub" style="margin:2px 0 12px">${hint}</p>` : ""}`;
+    const flag = (field, label, hint) =>
+      `<div class="frow"><span>${label}</span>
+        <input type="checkbox" data-field="demo-${field}"
+          ${settings[field] ? "checked" : ""} aria-label="${label}">
+      </div>
+      ${hint ? `<p class="sub" style="margin:2px 0 12px">${hint}</p>` : ""}`;
+
+    return `<div class="stack">
+      <div class="secrow" style="margin:0 2px 10px">
+        <span class="seclabel">BESTAND</span>
+      </div>
+      <p class="sub" style="margin:0">
+        ${panelHelpers.countLabel(demo.clips.length, "Clip", "Clips")} und
+        ${panelHelpers.countLabel(
+          demo.showcases.length,
+          "Showcase",
+          "Showcases"
+        )}. Angelegt und bearbeitet wird auf der Karte — hier stehen die
+        Einstellungen, die für die ganze Anlage gelten, und die Sicherung.
+      </p>
+
+      <div class="secrow" style="margin:20px 2px 10px">
+        <span class="seclabel">WIEDERGABE</span>
+      </div>
+      ${number(
+        "leadInSeconds",
+        "Vorlauf (s)",
+        "Die Signalkette braucht nach einem Sprung ein paar Sekunden, bis Bild und Ton verriegelt sind. Der Clip startet um diese Zeit früher — die gespeicherten Zeitmarken bleiben unangetastet.",
+        "0.5"
+      )}
+      ${number(
+        "retroCaptureSeconds",
+        "Rückgriff (s)",
+        "Wie weit „Demo erstellen“ von der aktuellen Position zurückreicht."
+      )}
+      ${number(
+        "confirmTimeoutSeconds",
+        "Bestätigung (s)",
+        "So lange wartet ein A/B-Wechsel auf die Bestätigung der Hardware, bevor er mit einem Hinweis trotzdem weitermacht.",
+        "0.5"
+      )}
+      ${flag(
+        "muteDuringLeadIn",
+        "Vorlauf stumm",
+        "Während des Vorlaufs stumm schalten und zum Clip-Anfang aufziehen."
+      )}
+      ${flag(
+        "rampOut",
+        "Ausblenden",
+        "Die letzten Momente leiser ziehen, damit der Schnitt aus lautem Material weicher wird."
+      )}
+      ${flag(
+        "preflightFormatCheck",
+        "Formatprüfung",
+        "Vor dem Clip melden, wenn das ankommende Tonformat nicht dem erwarteten entspricht."
+      )}
+      <div class="hactions" style="margin-top:4px">
+        <button class="primary" data-act="demo-save-settings">Einstellungen speichern</button>
+      </div>
+
+      <div class="secrow" style="margin:24px 2px 10px">
+        <span class="seclabel">SICHERUNG</span>
+      </div>
+      <p class="sub" style="margin:0">
+        Clips, Showcases und Einstellungen als JSON — zum Sichern oder um sie
+        auf eine andere Anlage zu übernehmen. Das Einspielen
+        <strong>ersetzt den gesamten Bestand</strong>.
+      </p>
+      <div class="hactions" style="margin-top:0">
+        <button class="ghost" data-act="demo-copy">In die Zwischenablage</button>
+        <button class="danger" data-act="demo-import">Einspielen</button>
+      </div>
+      <textarea data-field="demo-raw" spellcheck="false"
+        aria-label="Demo-Daten als JSON">${this._esc(this._demoRawText)}</textarea>
+    </div>`;
+  }
+
+  async _loadDemo() {
+    try {
+      const data = await this._ws({ type: "kino/demo/data" });
+      this._demo = data;
+      this._demoSettings = { ...data.settings };
+      const document = await this._ws({
+        type: "kino/demo/transfer",
+        action: "export",
+      });
+      this._demoRawText = JSON.stringify(document.document, null, 2);
+    } catch (err) {
+      this._notify("error", err.message || "Demo-Daten sind nicht erreichbar.");
+    }
+    this._render();
+  }
+
   /* -- dialogs --------------------------------------------------------- */
 
   /** The sheet-style dialog that replaced prompt()/confirm() (F14). */
@@ -1605,6 +1734,12 @@ class KinoPanel extends PanelBase {
       body =
         "Die Aktivität und ihre Geräteeinstellungen werden entfernt. Wirksam wird das erst mit „Speichern“.";
       confirmLabel = "Löschen";
+      danger = true;
+    } else if (d.kind === "demo-import") {
+      title = "Demo-Daten einspielen?";
+      body =
+        "Alle vorhandenen Clips, Showcases und Einstellungen werden durch den eingefügten Stand ersetzt. Das lässt sich nicht rückgängig machen.";
+      confirmLabel = "Einspielen";
       danger = true;
     } else if (d.kind === "reset-durations") {
       title = d.key
@@ -1663,7 +1798,45 @@ class KinoPanel extends PanelBase {
     } else if (dialog.kind === "reset-durations") {
       this._render();
       await this._resetDurations(dialog.key || null);
+    } else if (dialog.kind === "demo-import") {
+      this._render();
+      await this._importDemo();
     }
+  }
+
+  /** Replace the whole demo dataset with what is in the textarea. */
+  async _importDemo() {
+    let document;
+    try {
+      document = JSON.parse(this._demoRawText);
+    } catch (err) {
+      this._notify("error", `Kein gültiges JSON: ${err.message}`);
+      this._render();
+      return;
+    }
+    try {
+      await this._ws({
+        type: "kino/demo/transfer",
+        action: "import",
+        document,
+      });
+    } catch (err) {
+      this._notify("error", err.message);
+      this._render();
+      return;
+    }
+    // Re-read rather than trust the paste: what the store made of it is what
+    // the theater will actually play.
+    await this._loadDemo();
+    this._notify(
+      "ok",
+      `Eingespielt — ${panelHelpers.countLabel(
+        this._demo ? this._demo.clips.length : 0,
+        "Clip",
+        "Clips"
+      )}.`
+    );
+    this._render();
   }
 
   /* -- events -------------------------------------------------------- */
@@ -1723,6 +1896,43 @@ class KinoPanel extends PanelBase {
         this._push = { screen: "raw" };
         this._notice = null;
         this._rawText = JSON.stringify(this._document, null, 2);
+        this._render();
+        break;
+      case "open-demo":
+        this._push = { screen: "demo" };
+        this._notice = null;
+        this._demo = null;
+        this._render();
+        await this._loadDemo();
+        break;
+      case "demo-save-settings":
+        try {
+          const result = await this._ws({
+            type: "kino/demo/settings",
+            settings: this._demoSettings || {},
+          });
+          this._demoSettings = { ...result.settings };
+          this._notify("ok", "Demo-Einstellungen gespeichert.");
+        } catch (err) {
+          this._notify("error", err.message);
+        }
+        this._render();
+        break;
+      case "demo-copy":
+        await navigator.clipboard
+          .writeText(this._demoRawText)
+          .then(() => this._notify("ok", "In die Zwischenablage kopiert."))
+          .catch(() => this._notify("error", "Kopieren nicht möglich."));
+        break;
+      case "demo-import":
+        // Replacing every clip and showcase is worth one question (F14).
+        try {
+          JSON.parse(this._demoRawText);
+        } catch (err) {
+          this._notify("error", `Kein gültiges JSON: ${err.message}`);
+          break;
+        }
+        this._dialog = { kind: "demo-import" };
         this._render();
         break;
       case "save":
@@ -1834,6 +2044,18 @@ class KinoPanel extends PanelBase {
     const el = event.target;
     const { field, activity, device, setting, role, key } = el.dataset;
     if (!field || field === "raw" || field === "dialog-input") return;
+    if (field.startsWith("demo-")) {
+      // Demo settings are their own store, saved by their own button — they
+      // never make the configuration document dirty.
+      if (field === "demo-raw") return;
+      const name = field.slice(5);
+      this._demoSettings = {
+        ...(this._demoSettings || {}),
+        [name]:
+          el.type === "checkbox" ? el.checked : Number(el.value),
+      };
+      return;
+    }
     const doc = this._document;
 
     switch (field) {
