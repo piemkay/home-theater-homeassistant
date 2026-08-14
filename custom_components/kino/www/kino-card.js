@@ -57,6 +57,85 @@ export const helpers = {
     return m ? `${h} Std ${m} Min` : `${h} Std`;
   },
 
+  /** Stream codec ids -> what the box says. */
+  codecLabel(codec) {
+    const raw = String(codec || "").toUpperCase();
+    const map = {
+      TRUEHD: "TrueHD",
+      EAC3: "DD+",
+      AC3: "DD",
+      DTS: "DTS",
+      DTSHD: "DTS-HD",
+      FLAC: "FLAC",
+      AAC: "AAC",
+      OPUS: "Opus",
+      MP3: "MP3",
+    };
+    if (map[raw]) return map[raw];
+    // PCM_S24LE, PCM_S16BE, … — the width is not what anyone reads.
+    if (raw.startsWith("PCM")) return "PCM";
+    return codec || "";
+  },
+
+  /**
+   * `TrueHD Atmos 7.1` — the sound, the way a disc case states it.
+   *
+   * A careful rip names its own default track exactly right, so that name is
+   * used when it looks like a name. A dumped stream description ("English -
+   * PCM_S24LE - 6 ch - Default") is not one, and gets rebuilt from the codec
+   * and channel layout instead.
+   */
+  soundBadge(item) {
+    const tracks = item.audioTracks || [];
+    const track = tracks.find((t) => t.default) || tracks[0];
+    if (track) {
+      const title = String(track.title || "").trim();
+      if (title && title.length <= 22 && !title.includes(" - ")) return title;
+      const atmos = /atmos/i.test(title) ? " Atmos" : "";
+      return [helpers.codecLabel(track.codec) + atmos, track.channelLayout]
+        .filter(Boolean)
+        .join(" ");
+    }
+    // No track list at all: the one-line summary is everything there is.
+    const first = String(item.audioFormat || "").split(" · ")[0];
+    return first ? helpers.codecLabel(first) : "";
+  },
+
+  /**
+   * The chips beside the title in the player's hero.
+   *
+   * `videoFormat` and `audioFormat` are engineering strings — "3840×2160 ·
+   * @23.976Hz · HDR", "TRUEHD · 7.1 · eng". They earn their place in the
+   * detail sheet's track list; here they get one line beside a 104px poster,
+   * so each is reduced to what someone would read off the case.
+   */
+  heroBadges(item) {
+    if (!item) return [];
+    const badges = [];
+    const video = String(item.videoFormat || "");
+    const picture = [];
+    if (item.res4k) picture.push("4K");
+    else if (/1920|1280/.test(video)) picture.push("HD");
+    // Most specific first: a Dolby Vision disc also reports HDR.
+    const range = /dolby ?vision|(?:^|[^a-z])dv(?:[^a-z]|$)/i.test(video)
+      ? "DV"
+      : /hdr10\+|hdr10plus/i.test(video)
+        ? "HDR10+"
+        : /hdr/i.test(video)
+          ? "HDR"
+          : null;
+    if (range) picture.push(range);
+    if (item.is3d) picture.push("3D");
+    if (picture.length) badges.push(picture.join(" "));
+    const sound = helpers.soundBadge(item);
+    if (sound) badges.push(sound);
+    // "FSK-6" is how Jellyfin stores it; "FSK 6" is how it is read.
+    if (item.officialRating) {
+      badges.push(String(item.officialRating).replace(/^FSK-/, "FSK "));
+    }
+    return badges;
+  },
+
   /** Remaining seconds -> a German ETA the second user can act on. */
   formatEta(seconds) {
     if (seconds == null || seconds <= 0) return "";
@@ -4514,9 +4593,8 @@ class KinoCard extends CardBase {
    * and the only filled thing on this screen should be the play button.
    */
   _playerFormats(item) {
-    if (!item) return "";
-    const badges = [item.videoFormat, item.audioFormat, item.officialRating]
-      .filter(Boolean)
+    const badges = helpers
+      .heroBadges(item)
       .map((text) => `<span>${this._esc(text)}</span>`)
       .join("");
     return badges ? `<div class="formats">${badges}</div>` : "";

@@ -30,6 +30,72 @@ describe("formatTime", () => {
   });
 });
 
+describe("heroBadges", () => {
+  /**
+   * Real payloads, straight off the live library — the engineering strings
+   * are what the hero must not show.
+   */
+  const BOHEMIAN = {
+    res4k: true,
+    officialRating: "FSK-6",
+    videoFormat: "3840×2160 · @23.976Hz · HDR",
+    audioFormat: "TRUEHD · 7.1 · eng",
+    audioTracks: [
+      { codec: "TRUEHD", channelLayout: "7.1", title: "TrueHD Atmos 7.1", default: true },
+      { codec: "AC3", channelLayout: "5.1", title: "AC3 5.1-EX", default: false },
+    ],
+  };
+
+  test("the disc, not the stream dump", () => {
+    assert.deepEqual(helpers.heroBadges(BOHEMIAN), [
+      "4K HDR",
+      "TrueHD Atmos 7.1",
+      "FSK 6",
+    ]);
+  });
+
+  test("a dumped track description is rebuilt from its fields", () => {
+    // "The Order" on the live server names its track like this.
+    const badges = helpers.heroBadges({
+      res4k: true,
+      videoFormat: "3840×2160 · @24.000Hz · SDR",
+      audioTracks: [
+        {
+          codec: "PCM_S24LE",
+          channelLayout: null,
+          title: "English - PCM_S24LE - 6 ch - Default",
+          default: true,
+        },
+      ],
+    });
+    assert.deepEqual(badges, ["4K", "PCM"]);
+  });
+
+  test("Dolby Vision wins over the HDR the same disc also reports", () => {
+    assert.equal(
+      helpers.heroBadges({ videoFormat: "3840×2160 · DV · HDR10Plus" })[0],
+      "DV"
+    );
+    assert.equal(
+      helpers.heroBadges({ videoFormat: "3840×2160 · HDR10Plus" })[0],
+      "HDR10+"
+    );
+  });
+
+  test("a bare SDR file gets no picture chip at all", () => {
+    assert.deepEqual(helpers.heroBadges({ videoFormat: "720×576 · @25Hz · SDR" }), []);
+  });
+
+  test("no item, no chips", () => {
+    assert.deepEqual(helpers.heroBadges(null), []);
+    assert.deepEqual(helpers.heroBadges({}), []);
+  });
+
+  test("without a track list the one-line summary is all there is", () => {
+    assert.deepEqual(helpers.heroBadges({ audioFormat: "EAC3 · 5.1 · eng" }), ["DD+"]);
+  });
+});
+
 describe("runtimeLabel", () => {
   test("reads a film's length in hours, the way it gets said", () => {
     assert.equal(helpers.runtimeLabel(113), "1 Std 53 Min");
@@ -862,9 +928,15 @@ describe("playing sheet", () => {
     year: 2014,
     runtime: 113,
     genres: ["Sci-Fi", "Action"],
-    officialRating: "FSK 12",
-    videoFormat: "4K HDR",
-    audioFormat: "DTS-HD MA 7.1",
+    // Shaped like the live payload, not like the mockup: the formats arrive
+    // as engineering strings and a track list.
+    res4k: true,
+    officialRating: "FSK-12",
+    videoFormat: "3840×2160 · @23.976Hz · HDR",
+    audioFormat: "DTS · 7.1 · eng",
+    audioTracks: [
+      { codec: "DTS", channelLayout: "7.1", title: "DTS-HD MA 7.1", default: true },
+    ],
     overview: "Cage stirbt und erwacht wieder.",
     people: [{ id: "p1", name: "Tom Cruise", role: "Cage", type: "Actor" }],
   };
