@@ -23,7 +23,7 @@ from ..core.model import ActivityState
 from ..devices.madvr import MadvrDriver
 from ..devices.trinnov import TrinnovDriver
 from ..devices.zidoo import SUBTITLE_OFF_LABEL, ZidooDriver
-from .model import Clip
+from .model import Clip, format_timecode
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +40,9 @@ TRACK_LIST_TIMEOUT = 6.0
 
 #: What the track helpers hold when they carry no list at all.
 PLACEHOLDER_OPTION = "—"
+
+#: How long a refused seek waits for playback before trying once more.
+SEEK_RETRY_TIMEOUT = 10.0
 
 
 class HassDemoRuntime:
@@ -265,10 +268,35 @@ class HassDemoRuntime:
                 return False
             await asyncio.sleep(0.5)
 
-    async def seek(self, seconds: float) -> None:
+    async def seek(self, seconds: float) -> str | None:
+        """Jump the player, and report a jump that could not be made.
+
+        A seek issued at a player that is not yet really playing is refused —
+        the Zidoo integration raises outright on it — so this retries once
+        after making sure playback is running. If it still will not go, the
+        clip plays from wherever the player is: visible and explained, rather
+        than a dead showcase.
+        """
         driver = self._zidoo
-        if driver is not None:
-            await driver.seek(max(0.0, seconds))
+        if driver is None:
+            return None
+        target = max(0.0, seconds)
+        for attempt in (1, 2):
+            try:
+                await driver.seek(target)
+            except Exception as err:  # noqa: BLE001 - see the docstring
+                _LOGGER.warning("Sprung auf %.1f s fehlgeschlagen: %s", target, err)
+                if attempt == 1:
+                    await self.resume()
+                    await self.wait_for_playing(SEEK_RETRY_TIMEOUT)
+                    continue
+                return (
+                    f"Sprung auf {format_timecode(target * 1000)} nicht möglich — "
+                    "der Clip läuft ab der aktuellen Position"
+                )
+            else:
+                return None
+        return None
 
     def position(self) -> float | None:
         driver = self._zidoo

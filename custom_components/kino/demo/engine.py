@@ -94,8 +94,8 @@ class DemoRuntime(Protocol):
         clip still plays in whatever the file defaults to.
         """
 
-    async def seek(self, seconds: float) -> None:
-        """Jump the player to an absolute position."""
+    async def seek(self, seconds: float) -> str | None:
+        """Jump the player, returning a complaint if the jump did not happen."""
 
     def position(self) -> float | None:
         """Return the player's reported position in seconds, or None."""
@@ -361,13 +361,15 @@ class DemoEngine:
 
         if self._needs_open(clip):
             await self._runtime.play_clip(clip)
-            if not await self._runtime.wait_for_playing(PLAY_START_TIMEOUT):
-                raise RuntimeError(
-                    f"„{clip.name}“ konnte nicht gestartet werden — der Player "
-                    "meldet keine Wiedergabe."
-                )
         else:
+            # Resuming a file the previous clip left paused: the seek below
+            # must not go out before the player is really running again.
             await self._runtime.resume()
+        if not await self._runtime.wait_for_playing(PLAY_START_TIMEOUT):
+            raise RuntimeError(
+                f"„{clip.name}“ konnte nicht gestartet werden — der Player "
+                "meldet keine Wiedergabe."
+            )
 
         # A mid-stream switch to a different bitstream makes the processor
         # renegotiate and drop lock, so the lead-in is re-anchored to the
@@ -381,7 +383,9 @@ class DemoEngine:
             self._warn(complaint)
 
         lead_in = float(self._settings.lead_in_seconds)
-        await self._runtime.seek(max(0.0, clip.start_ms / 1000 - lead_in))
+        complaint = await self._runtime.seek(max(0.0, clip.start_ms / 1000 - lead_in))
+        if complaint:
+            self._warn(complaint)
         if self._settings.mute_during_lead_in and lead_in > 0:
             await self._runtime.set_mute(True)
 
@@ -497,13 +501,13 @@ class DemoEngine:
 
         if self._needs_open(clip):
             await self._runtime.play_clip(clip)
-            if not await self._runtime.wait_for_playing(PLAY_START_TIMEOUT):
-                raise RuntimeError(
-                    f"„{clip.name}“ konnte nicht gestartet werden — der Player "
-                    "meldet keine Wiedergabe."
-                )
         else:
             await self._runtime.resume()
+        if not await self._runtime.wait_for_playing(PLAY_START_TIMEOUT):
+            raise RuntimeError(
+                f"„{clip.name}“ konnte nicht gestartet werden — der Player "
+                "meldet keine Wiedergabe."
+            )
         _, complaint = await self._runtime.apply_tracks(
             clip.audio_track, clip.subtitle_track
         )
@@ -511,7 +515,9 @@ class DemoEngine:
             self._warn(complaint)
 
         lead_in = float(self._settings.lead_in_seconds)
-        await self._runtime.seek(max(0.0, clip.start_ms / 1000 - lead_in))
+        complaint = await self._runtime.seek(max(0.0, clip.start_ms / 1000 - lead_in))
+        if complaint:
+            self._warn(complaint)
         if lead_in > 0:
             self._phase("lead", lead_in)
             command = await self._wait(lead_in)

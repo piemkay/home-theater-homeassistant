@@ -47,6 +47,8 @@ class FakeRuntime:
         self.playing = False
         #: What `apply_tracks` complains about, if anything.
         self.track_complaint: str | None = None
+        #: ... and `seek`.
+        self.seek_complaint: str | None = None
 
     # -- clock --------------------------------------------------------------
 
@@ -85,10 +87,13 @@ class FakeRuntime:
             return False, self.track_complaint
         return bool(audio or subtitle), None
 
-    async def seek(self, seconds: float) -> None:
+    async def seek(self, seconds: float) -> str | None:
         self.calls.append("seek")
+        if self.seek_complaint:
+            return self.seek_complaint
         self.seeks.append(seconds)
         self._position = seconds
+        return None
 
     def position(self) -> float | None:
         if self._position is None:
@@ -290,6 +295,34 @@ class TestShowcasePlayback:
         await drain(engine)
         assert runtime.opened == []
         assert "resume" in runtime.calls
+
+    async def test_a_resumed_file_is_playing_before_it_is_seeked(
+        self, runtime, settings
+    ):
+        # The player refuses a seek issued before it is really running again,
+        # so the resume must be confirmed first (found live).
+        clip = make_clip("c1", 0, 2000)
+        runtime.open_clip_id = clip.id
+        runtime.playing = True
+        runtime._position = 0.0
+        engine = DemoEngine(runtime, settings)
+        await engine.start_clip(clip)
+        await drain(engine)
+        assert runtime.calls.index("resume") < runtime.calls.index("seek")
+
+    async def test_a_refused_seek_warns_but_carries_on(self, runtime, settings):
+        runtime.seek_complaint = "Sprung nicht möglich"
+        engine = DemoEngine(runtime, settings)
+        await engine.start_clip(make_clip("c1", 0, 2000))
+        seen = None
+        for _ in range(60):
+            state = engine.state()
+            if state and state["warning"]:
+                seen = state["warning"]
+                break
+            await asyncio.sleep(0.005)
+        await engine.stop()
+        assert seen == "Sprung nicht möglich"
 
     async def test_a_player_that_never_starts_is_reported_not_hung(
         self, runtime, settings
