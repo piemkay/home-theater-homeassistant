@@ -27,8 +27,12 @@ from .model import Clip
 
 _LOGGER = logging.getLogger(__name__)
 
-#: How long the room is given to settle before a demo gives up on it.
-ACTIVITY_TIMEOUT = 300.0
+#: Headroom on top of the slowest device's own startup timeout, so waiting for
+#: the room to settle never gives up before the engine driving it would.
+ACTIVITY_TIMEOUT_HEADROOM = 60.0
+
+#: Floor for the same, for an install whose devices are all quick.
+ACTIVITY_TIMEOUT_MIN = 120.0
 
 
 class HassDemoRuntime:
@@ -89,6 +93,17 @@ class HassDemoRuntime:
 
     # -- the activity layer -------------------------------------------------
 
+    def _activity_timeout(self) -> float:
+        """How long to wait for the room, from what the devices are allowed.
+
+        A cold projector here takes minutes, and its own driver is given a
+        ten-minute budget — a flat timeout shorter than that would abandon a
+        start the engine was still perfectly happy with.
+        """
+        devices = self._coordinator.config.devices.values()
+        slowest = max((spec.startup_timeout for spec in devices), default=0.0)
+        return max(ACTIVITY_TIMEOUT_MIN, slowest + ACTIVITY_TIMEOUT_HEADROOM)
+
     async def ensure_activity(self) -> None:
         """Request the media activity and wait for the room to actually settle."""
         engine = self._coordinator.engine
@@ -106,7 +121,9 @@ class HassDemoRuntime:
             await self._coordinator.async_apply_light_scene(key)
 
         try:
-            await asyncio.wait_for(engine.wait_for_transition(), ACTIVITY_TIMEOUT)
+            await asyncio.wait_for(
+                engine.wait_for_transition(), self._activity_timeout()
+            )
         except asyncio.TimeoutError as err:
             raise RuntimeError(
                 "Das Kino ist nicht rechtzeitig bereit geworden."
