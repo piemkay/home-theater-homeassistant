@@ -1328,6 +1328,10 @@ class KinoCard extends CardBase {
     if (previous === null) {
       this._refreshState();
       this._loadFacets();
+      // The tag vocabulary and the clip list are needed by the trim editor
+      // and the title detail, both of which are reached without ever
+      // visiting the Demos tab — so they cannot wait for it.
+      this._loadDemo();
       return;
     }
     // Volume, transport and track state live in entities, not in the state
@@ -4692,9 +4696,12 @@ class KinoCard extends CardBase {
         await this._openDetail(key);
         break;
       case "demo-capture":
+        // The vocabulary has to be there before the chips are drawn.
+        await this._loadDemo();
         this._captureFromPlayer();
         break;
       case "demo-capture-title":
+        await this._loadDemo();
         this._captureWholeTitle(view.detail);
         break;
       case "demo-play-clip":
