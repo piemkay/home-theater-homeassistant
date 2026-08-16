@@ -1891,6 +1891,213 @@ describe("cast and crew filter (0.6.0)", () => {
   });
 });
 
+describe("typing in the search field", () => {
+  const searchCard = (view = {}) => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = { artworkSignature: "sig" };
+    c._library = { items: [], total: 120, hasMore: false, loading: false, error: null };
+    c._appliedQuery = "";
+    c._searchTimer = null;
+    c._lastTypedAt = 0;
+    c._renderPending = false;
+    c._renders = 0;
+    c._render = () => {
+      c._renders += 1;
+    };
+    c._view = {
+      main: "library",
+      category: "movies",
+      query: "",
+      sort: "added",
+      sortDir: null,
+      viewMode: "poster",
+      gridSize: "m",
+      filters: helpers.emptyFilters(),
+      trim: null,
+      scEdit: null,
+      abSetup: null,
+      ...view,
+    };
+    c._nodes = { count: { innerHTML: "" }, grid: { innerHTML: "" } };
+    c._container = {
+      querySelector: (sel) => {
+        if (sel.includes("library-count")) return c._nodes.count;
+        if (sel.includes("library-grid")) return c._nodes.grid;
+        return null;
+      },
+    };
+    return c;
+  };
+  const typed = (value) => ({ target: { value, dataset: { field: "query" } } });
+
+  test("one or two letters are not a search yet", () => {
+    assert.equal(searchCard({ query: "a" })._searchQuery(), "");
+    assert.equal(searchCard({ query: "no" })._searchQuery(), "");
+    assert.equal(searchCard({ query: "  n " })._searchQuery(), "");
+  });
+
+  test("the third letter makes it one", () => {
+    assert.equal(searchCard({ query: "nor" })._searchQuery(), "nor");
+    assert.equal(searchCard({ query: " nord " })._searchQuery(), "nord");
+  });
+
+  test("a short query goes out as no search at all", async () => {
+    const c = searchCard({ query: "no" });
+    const sent = [];
+    c._ws = async (msg) => {
+      sent.push(msg);
+      return { items: [], total: 120, hasMore: false };
+    };
+    await c._loadLibrary();
+    assert.equal(sent[0].search, null);
+    assert.equal(c._appliedQuery, "");
+  });
+
+  test("a real query goes out as itself", async () => {
+    const c = searchCard({ query: "nord" });
+    const sent = [];
+    c._ws = async (msg) => {
+      sent.push(msg);
+      return { items: [], total: 1, hasMore: false };
+    };
+    await c._loadLibrary();
+    assert.equal(sent[0].search, "nord");
+    assert.equal(c._appliedQuery, "nord");
+  });
+
+  test("an overtaken answer never lands on top of a newer one", async () => {
+    const c = searchCard({ query: "nord" });
+    let release;
+    const slow = new Promise((r) => {
+      release = r;
+    });
+    c._ws = async (msg) => {
+      if (msg.search === "nord") {
+        await slow;
+        return { items: [{ id: "slow" }], total: 1, hasMore: false };
+      }
+      return { items: [{ id: "fast" }], total: 2, hasMore: false };
+    };
+    const first = c._loadLibrary();
+    c._view.query = "nordwand";
+    await c._loadLibrary();
+    release();
+    await first;
+    assert.deepEqual(
+      c._library.items.map((i) => i.id),
+      ["fast"]
+    );
+    assert.equal(c._library.total, 2);
+  });
+
+  test("typing never re-renders the card around the caret", () => {
+    const c = searchCard();
+    c._onInput(typed("n"));
+    c._onInput(typed("no"));
+    c._onInput(typed("nor"));
+    assert.equal(c._renders, 0);
+    assert.equal(c._view.query, "nor");
+    clearTimeout(c._searchTimer);
+  });
+
+  test("the first two letters send nothing", () => {
+    const c = searchCard();
+    c._onInput(typed("n"));
+    assert.equal(c._searchTimer, null);
+    c._onInput(typed("no"));
+    assert.equal(c._searchTimer, null);
+  });
+
+  test("the third letter schedules the search", () => {
+    const c = searchCard();
+    c._onInput(typed("nor"));
+    assert.notEqual(c._searchTimer, null);
+    clearTimeout(c._searchTimer);
+  });
+
+  test("deleting back below three letters brings the full list back", () => {
+    const c = searchCard({ query: "nord" });
+    c._appliedQuery = "nord";
+    c._onInput(typed("no"));
+    assert.notEqual(c._searchTimer, null);
+    clearTimeout(c._searchTimer);
+  });
+
+  test("a letter typed and taken back costs no request", () => {
+    const c = searchCard({ query: "nord" });
+    c._appliedQuery = "nord";
+    c._onInput(typed("nordi"));
+    assert.notEqual(c._searchTimer, null);
+    c._onInput(typed("nord"));
+    assert.equal(c._searchTimer, null);
+  });
+
+  test("the count line says why two letters changed nothing", () => {
+    const c = searchCard({ query: "no" });
+    assert.match(c._renderLibraryCount(), /ab 3 Zeichen/);
+    assert.match(c._renderLibraryCount(), /120 Titel/);
+  });
+
+  test("a search long enough to run gets the plain count", () => {
+    const c = searchCard({ query: "nord" });
+    assert.doesNotMatch(c._renderLibraryCount(), /Zeichen/);
+  });
+
+  test("results are painted into the grid, not rendered over the field", () => {
+    const c = searchCard({ query: "nord" });
+    c._library = {
+      items: [{ id: "m1", title: "Nordwand", year: 2008 }],
+      total: 1,
+      hasMore: false,
+      loading: false,
+      error: null,
+    };
+    c._paintLibrary();
+    assert.equal(c._renders, 0);
+    assert.match(c._nodes.grid.innerHTML, /data-key="m1"/);
+    assert.match(c._nodes.count.innerHTML, /1 Titel/);
+  });
+
+  test("with no grid on screen there is nothing to paint into", () => {
+    const c = searchCard();
+    c._container = { querySelector: () => null };
+    c._paintLibrary();
+    assert.equal(c._renders, 1);
+  });
+
+  test("a poll waits for the word to be finished", () => {
+    const c = searchCard();
+    c.shadowRoot = { activeElement: { tagName: "INPUT" } };
+    c._lastTypedAt = Date.now();
+    c._renderPassive();
+    assert.equal(c._renders, 0);
+    assert.equal(c._renderPending, true);
+    // Still mid-word: the flush from the poll leaves it alone.
+    c._flushPendingRender();
+    assert.equal(c._renders, 0);
+    // The caret left the field.
+    c.shadowRoot = { activeElement: null };
+    c._flushPendingRender();
+    assert.equal(c._renders, 1);
+  });
+
+  test("a field left focused does not freeze the card for ever", () => {
+    const c = searchCard();
+    c.shadowRoot = { activeElement: { tagName: "INPUT" } };
+    c._lastTypedAt = Date.now() - 60000;
+    c._renderPassive();
+    assert.equal(c._renders, 1);
+  });
+
+  test("with the caret elsewhere a poll draws straight away", () => {
+    const c = searchCard();
+    c.shadowRoot = { activeElement: { tagName: "BUTTON" } };
+    c._lastTypedAt = Date.now();
+    c._renderPassive();
+    assert.equal(c._renders, 1);
+  });
+});
+
 describe("going back", () => {
   const navCard = (view = {}) => {
     const card = Object.create(KinoCard.prototype);

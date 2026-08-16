@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.7.2";
+const CARD_VERSION = "0.7.3";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -1435,6 +1435,20 @@ const NAV_DEPTH = 50;
 
 const PAGE_SIZE = 60;
 
+// A search starts at three letters. "A" or "Al" match half the catalogue, so
+// the two requests before "Ali" cost a full round trip each and tell nobody
+// anything — and every answer that comes back repaints the grid under the
+// person still typing.
+const SEARCH_MIN_CHARS = 3;
+
+// How long the field stays quiet before the search goes out. Long enough that
+// a typed word is one request, short enough to still feel immediate.
+const SEARCH_DEBOUNCE_MS = 300;
+
+// How long after the last keystroke the card still treats a focused field as
+// being written in, and holds back the redraws that would replace it.
+const TYPING_QUIET_MS = 2500;
+
 // What the ⟲10 / 10⟳ buttons move by.
 const SEEK_STEP_SECONDS = 10;
 
@@ -1459,6 +1473,15 @@ class KinoCard extends CardBase {
     this._actionError = null;
     // What the last render was built from — see `_renderSignature`.
     this._signature = "";
+    // A poll wanted to redraw while someone was typing — see `_renderPassive`.
+    this._renderPending = false;
+    // When the last letter went into a field of this card.
+    this._lastTypedAt = 0;
+    // The search the grid on screen was fetched with, so a keystroke that
+    // does not change it (a third letter typed and taken back) sends nothing.
+    this._appliedQuery = "";
+    // Which library load is the current one — see `_loadLibrary`.
+    this._libraryToken = 0;
     this._unsub = null;
 
     this._view = {
@@ -1610,10 +1633,48 @@ class KinoCard extends CardBase {
     const signature = this._renderSignature();
     if (signature !== this._signature) {
       this._signature = signature;
-      this._render();
+      this._renderPassive();
     } else {
       this._tick();
     }
+  }
+
+  /**
+   * A redraw nobody asked for: the state poll, a hass update, a row arriving.
+   *
+   * Rebuilding the card replaces the field under the caret — and a keyboard
+   * that is halfway through a word does not survive having its input element
+   * swapped out from under it, which is what made every other letter of a
+   * search term disappear. Nothing the poll carries is worth a dropped letter,
+   * so while a field has the focus the redraw waits for the caret to leave.
+   */
+  _renderPassive() {
+    if (this._isTyping()) {
+      this._renderPending = true;
+      return;
+    }
+    this._render();
+  }
+
+  /**
+   * Is somebody writing in a field of this card right now?
+   *
+   * A focused field alone is not enough: one tapped and then left alone would
+   * freeze every poll behind it. It counts as typing only while the letters
+   * are still coming — a few seconds after the last one the card catches up on
+   * its own, and the render that lands then puts the caret back where it was.
+   */
+  _isTyping() {
+    const active = this.shadowRoot && this.shadowRoot.activeElement;
+    if (!active) return false;
+    if (active.tagName !== "INPUT" && active.tagName !== "TEXTAREA") return false;
+    return Date.now() - (this._lastTypedAt || 0) < TYPING_QUIET_MS;
+  }
+
+  /** The caret has left a field: let the redraw the poll owed us through. */
+  _flushPendingRender() {
+    if (!this._renderPending || this._isTyping()) return;
+    this._render();
   }
 
   /** Everything the card renders as structure, as one comparable string. */
@@ -1689,6 +1750,9 @@ class KinoCard extends CardBase {
       // The player reports a position only now and then; the clock carries it
       // between updates, written straight into the two nodes that show it.
       this._tick();
+      // A redraw held back during typing must not wait for the next change
+      // in the house to be allowed through.
+      this._flushPendingRender();
     }, 2000);
     // A demo's countdowns move faster than the state poll. The engine sends
     // the phase's start and end as timestamps, so the numbers in between are
@@ -1873,7 +1937,7 @@ class KinoCard extends CardBase {
       const message = helpers.queryFromFilters(
         this._view.filters,
         this._view.category,
-        this._view.query,
+        this._searchQuery(),
         this._view.sort,
         0,
         1,
@@ -2163,12 +2227,12 @@ class KinoCard extends CardBase {
       // Deliberately not short-circuited: the highlight has to be settled
       // against the new state whether or not anything else moved.
       const settled = this._settleDemoJump();
-      if (changed || settled) this._render();
+      if (changed || settled) this._renderPassive();
       // Fetches only when the title changed, so the poll stays one request.
       this._syncPlayingItem();
     } catch (err) {
       this._error = err.message || "Kino ist nicht erreichbar";
-      this._render();
+      this._renderPassive();
     }
   }
 
@@ -2232,19 +2296,26 @@ class KinoCard extends CardBase {
     if (append && (this._library.loading || !this._library.hasMore)) return;
     this._library.loading = true;
     if (!append) this._library.error = null;
-    this._render();
+    this._appliedQuery = this._searchQuery();
+    // Which load this is. A search typed on while the NAS wakes its disks can
+    // have two of them in flight, and the older answer must not land last and
+    // put the earlier word's titles under the later word.
+    const token = (this._libraryToken || 0) + 1;
+    this._libraryToken = token;
+    this._paintLibrary();
     const offset = append ? this._library.items.length : 0;
     try {
       const message = helpers.queryFromFilters(
         this._view.filters,
         this._view.category,
-        this._view.query,
+        this._appliedQuery,
         this._view.sort,
         offset,
         PAGE_SIZE,
         this._view.sortDir
       );
       const page = await this._ws(message);
+      if (this._libraryToken !== token) return;
       this._library = {
         items: append ? [...this._library.items, ...page.items] : page.items,
         total: page.total,
@@ -2253,6 +2324,7 @@ class KinoCard extends CardBase {
         error: null,
       };
     } catch (err) {
+      if (this._libraryToken !== token) return;
       // Never a blank grid — say what happened and offer the retry (FR-45).
       // An failed *append* keeps the titles already on screen.
       this._library = {
@@ -2263,7 +2335,43 @@ class KinoCard extends CardBase {
         error: err.message || "Die Bibliothek ist nicht erreichbar.",
       };
     }
-    this._render();
+    this._paintLibrary();
+  }
+
+  /**
+   * What the library is actually searched for.
+   *
+   * One or two letters are not a search — the grid keeps showing everything
+   * until the third one arrives (`SEARCH_MIN_CHARS`), and deleting back down
+   * to two brings the whole catalogue back.
+   */
+  _searchQuery() {
+    const typed = (this._view.query || "").trim();
+    return typed.length >= SEARCH_MIN_CHARS ? typed : "";
+  }
+
+  /**
+   * Show the results without rebuilding the card around them.
+   *
+   * The search field sits above the grid, and every page of results used to
+   * arrive as a full re-render — which replaced the input mid-word. Only the
+   * grid and its count line ever change here, so only those are rewritten;
+   * the field, its caret and the keyboard attached to it are never touched.
+   *
+   * Everything else that loads the library (a category, a filter, a sort)
+   * renders the whole view itself first, so the toolbar above is already
+   * current by the time the results land.
+   */
+  _paintLibrary() {
+    const grid =
+      this._container && this._container.querySelector('[data-role="library-grid"]');
+    if (!grid || this._view.main !== "library") {
+      this._render();
+      return;
+    }
+    grid.innerHTML = this._renderLibraryGrid();
+    const count = this._container.querySelector('[data-role="library-count"]');
+    if (count) count.innerHTML = this._renderLibraryCount();
   }
 
   /** Load the next page once the grid is scrolled close to its end. */
@@ -2337,7 +2445,7 @@ class KinoCard extends CardBase {
     this._view.playingSimilar = null;
     this._view.playingOverviewOpen = false;
     if (!id) {
-      this._render();
+      this._renderPassive();
       return;
     }
     this._loadPlayingSimilar(id);
@@ -2351,7 +2459,7 @@ class KinoCard extends CardBase {
       // nothing from the catalogue.
       this._view.playingItem = null;
     }
-    this._render();
+    this._renderPassive();
   }
 
   /** The playback view's "Mehr wie dieser Titel" row. */
@@ -2367,7 +2475,7 @@ class KinoCard extends CardBase {
     } catch (err) {
       this._view.playingSimilar = [];
     }
-    this._render();
+    this._renderPassive();
   }
 
   /** Fetch the detail sheet's "Mehr wie dieser Titel" row. */
@@ -2434,7 +2542,7 @@ class KinoCard extends CardBase {
     } catch (err) {
       this._resume = [];
     }
-    this._render();
+    this._renderPassive();
   }
 
   async _loadRecent() {
@@ -2449,7 +2557,7 @@ class KinoCard extends CardBase {
     } catch (err) {
       this._recent = [];
     }
-    this._render();
+    this._renderPassive();
   }
 
   /** The favourites row: films and series together, newest first. */
@@ -2465,7 +2573,7 @@ class KinoCard extends CardBase {
     } catch (err) {
       this._favorites = [];
     }
-    this._render();
+    this._renderPassive();
   }
 
   /**
@@ -3136,10 +3244,16 @@ class KinoCard extends CardBase {
       this._container.addEventListener("click", (e) => this._onClick(e));
       this._container.addEventListener("change", (e) => this._onChange(e));
       this._container.addEventListener("input", (e) => this._onInput(e));
+      // Focus moves after `focusout` fires, so ask on the next turn where it
+      // ended up: leaving one field for another is still typing.
+      this._container.addEventListener("focusout", () => {
+        setTimeout(() => this._flushPendingRender(), 0);
+      });
       // Scroll does not bubble, so listen in the capture phase — the
       // scroller element itself is replaced on every render.
       this._container.addEventListener("scroll", (e) => this._onScroll(e), true);
     }
+    this._renderPending = false;
 
     if (!this._kino) {
       this._container.innerHTML = `
@@ -3796,35 +3910,6 @@ class KinoCard extends CardBase {
       )
       .join("");
 
-    let grid;
-    if (lib.loading && !lib.items.length) {
-      grid = '<p class="empty">Wird geladen…</p>';
-    } else if (lib.error && !lib.items.length) {
-      grid = `<div class="empty">
-        <p class="error">${this._esc(lib.error)}</p>
-        <p class="sub">Die Festplatten der NAS schlafen vielleicht noch.</p>
-        <button class="primary" style="margin-top:14px;max-width:260px" data-act="force-refresh">
-          ${this._view.refreshing ? "Wird aktualisiert…" : "Erneut versuchen"}
-        </button>
-      </div>`;
-    } else if (!lib.items.length) {
-      grid = `<div class="empty"><p>${
-        this._view.category === "shows"
-          ? "Noch keine Serien in der Bibliothek."
-          : "Keine Treffer"
-      }</p></div>`;
-    } else {
-      const more = lib.hasMore
-        ? `<div class="more">
-             <button class="ghost" data-act="load-more" ${lib.loading ? "disabled" : ""}>
-               ${lib.loading ? "Wird geladen…" : "Weitere Titel laden"}
-             </button>
-           </div>`
-        : "";
-      grid = `${this._renderItems(lib.items)}${more}
-        ${lib.error ? `<p class="error" style="margin-top:12px">${this._esc(lib.error)}</p>` : ""}`;
-    }
-
     return `
       <div class="maxcol">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -3838,7 +3923,9 @@ class KinoCard extends CardBase {
           <button class="pill" style="flex:1;height:40px" data-act="category" data-key="movies" aria-pressed="${this._view.category === "movies"}">Filme</button>
           <button class="pill" style="flex:1;height:40px" data-act="category" data-key="shows" aria-pressed="${this._view.category === "shows"}">Serien</button>
         </div>
-        <input type="text" data-field="query" placeholder="Titel suchen…" value="${this._esc(this._view.query)}" style="margin-bottom:12px">
+        <input type="text" data-field="query" placeholder="Titel suchen…"
+          value="${this._esc(this._view.query)}" autocomplete="off" spellcheck="false"
+          inputmode="search" enterkeyhint="search" style="margin-bottom:12px">
         <div class="row" style="margin-bottom:10px">
           <button class="pill" style="flex:0 0 auto;height:40px" data-act="open-filters" aria-pressed="${count > 0}">
             ${count ? `Filter · ${count}` : "Filter"}
@@ -3859,13 +3946,58 @@ class KinoCard extends CardBase {
           </button>
         </div>
         ${chips ? `<div class="posterrow hscroll" style="margin-bottom:10px">${chips}</div>` : ""}
-        <div style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">${
-          lib.items.length && lib.items.length < lib.total
-            ? `${lib.items.length} von ${lib.total} Titeln`
-            : `${lib.total} Titel`
-        }</div>
+        <div data-role="library-count"
+          style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">${this._renderLibraryCount()}</div>
       </div>
-      ${grid}`;
+      <div data-role="library-grid">${this._renderLibraryGrid()}</div>`;
+  }
+
+  /**
+   * How many titles the grid is showing — and, while the field holds one or
+   * two letters, why it is still showing all of them.
+   */
+  _renderLibraryCount() {
+    const lib = this._library;
+    const typed = (this._view.query || "").trim();
+    if (typed.length && typed.length < SEARCH_MIN_CHARS) {
+      return `Suche ab ${SEARCH_MIN_CHARS} Zeichen · ${lib.total} Titel`;
+    }
+    return lib.items.length && lib.items.length < lib.total
+      ? `${lib.items.length} von ${lib.total} Titeln`
+      : `${lib.total} Titel`;
+  }
+
+  /** The titles themselves: the grid, its paging button, or why neither. */
+  _renderLibraryGrid() {
+    const lib = this._library;
+    if (lib.loading && !lib.items.length) {
+      return '<p class="empty">Wird geladen…</p>';
+    }
+    if (lib.error && !lib.items.length) {
+      return `<div class="empty">
+        <p class="error">${this._esc(lib.error)}</p>
+        <p class="sub">Die Festplatten der NAS schlafen vielleicht noch.</p>
+        <button class="primary" style="margin-top:14px;max-width:260px" data-act="force-refresh">
+          ${this._view.refreshing ? "Wird aktualisiert…" : "Erneut versuchen"}
+        </button>
+      </div>`;
+    }
+    if (!lib.items.length) {
+      return `<div class="empty"><p>${
+        this._view.category === "shows" && !this._searchQuery()
+          ? "Noch keine Serien in der Bibliothek."
+          : "Keine Treffer"
+      }</p></div>`;
+    }
+    const more = lib.hasMore
+      ? `<div class="more">
+           <button class="ghost" data-act="load-more" ${lib.loading ? "disabled" : ""}>
+             ${lib.loading ? "Wird geladen…" : "Weitere Titel laden"}
+           </button>
+         </div>`
+      : "";
+    return `${this._renderItems(lib.items)}${more}
+      ${lib.error ? `<p class="error" style="margin-top:12px">${this._esc(lib.error)}</p>` : ""}`;
   }
 
   /** One collapsible filter group: header with active badge, foldable body. */
@@ -6028,6 +6160,8 @@ class KinoCard extends CardBase {
 
   _onInput(event) {
     const field = event.target.dataset.field;
+    // Every field of the card: while these keep arriving, no poll redraws it.
+    this._lastTypedAt = Date.now();
     if (field === "person-search") {
       this._view.personQuery = event.target.value;
       this._searchPeople();
@@ -6069,10 +6203,25 @@ class KinoCard extends CardBase {
       return;
     }
     if (field !== "query") return;
+    // The field is never re-rendered from here: it owns what it shows, and
+    // the search runs behind it. Only the count line follows along, so the
+    // "ab 3 Zeichen" hint appears and disappears while typing.
     this._view.query = event.target.value;
-    // Incremental results as the user types, without a request per keystroke.
+    const count = this._container.querySelector('[data-role="library-count"]');
+    if (count) count.innerHTML = this._renderLibraryCount();
     if (this._searchTimer) clearTimeout(this._searchTimer);
-    this._searchTimer = setTimeout(() => this._loadLibrary(), 250);
+    // Nothing to fetch when the letters on screen mean the same search as the
+    // one the grid already shows — typing a third letter and taking it back
+    // must not cost two round trips.
+    if (this._searchQuery() === this._appliedQuery) {
+      this._searchTimer = null;
+      return;
+    }
+    // Incremental results as the user types, without a request per keystroke.
+    this._searchTimer = setTimeout(() => {
+      this._searchTimer = null;
+      this._loadLibrary();
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   /** Keep the length and the save button honest while a timecode is typed. */
