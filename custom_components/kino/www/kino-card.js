@@ -215,7 +215,8 @@ export const helpers = {
       (filters.subtitleLangs || []).length +
       (filters.minRating != null ? 1 : 0) +
       (filters.minCritic != null ? 1 : 0) +
-      (yearActive ? 1 : 0)
+      (yearActive ? 1 : 0) +
+      (filters.runtimeFrom != null || filters.runtimeTo != null ? 1 : 0)
     );
   },
 
@@ -235,6 +236,8 @@ export const helpers = {
       min_critic: filters.minCritic ?? null,
       year_from: filters.yearFrom,
       year_to: filters.yearTo,
+      runtime_from: filters.runtimeFrom ?? null,
+      runtime_to: filters.runtimeTo ?? null,
       only_4k: filters.tags.includes("4K"),
       only_hd: filters.tags.includes("HD"),
       only_sd: filters.tags.includes("SD"),
@@ -277,6 +280,8 @@ export const helpers = {
       minCritic: null,
       yearFrom: null,
       yearTo: null,
+      runtimeFrom: null,
+      runtimeTo: null,
     };
   },
 
@@ -292,6 +297,39 @@ export const helpers = {
       return yearFrom === yearTo ? String(yearFrom) : `${yearFrom}–${yearTo}`;
     }
     return yearFrom != null ? `ab ${yearFrom}` : `bis ${yearTo}`;
+  },
+
+  /** Chip label for the runtime window, or null when none is set. */
+  runtimeRangeLabel(runtimeFrom, runtimeTo) {
+    if (runtimeFrom == null && runtimeTo == null) return null;
+    if (runtimeFrom != null && runtimeTo != null) {
+      return runtimeFrom === runtimeTo
+        ? `${runtimeFrom} Min`
+        : `${runtimeFrom}–${runtimeTo} Min`;
+    }
+    return runtimeFrom != null ? `ab ${runtimeFrom} Min` : `bis ${runtimeTo} Min`;
+  },
+
+  /**
+   * The rungs the runtime pair offers, between the library's own bounds.
+   *
+   * Ten-minute rungs are how a person says it — "neunzig Minuten", "zwei
+   * Stunden" — and both land on one. A library with a five-hour concert film
+   * in it would turn that into a wall of numbers, so a wide span coarsens to
+   * half-hours. Whatever is already chosen stays on the ladder even if the
+   * bounds moved under it, or the select would show a dash while the filter
+   * is plainly active.
+   */
+  runtimeSteps(runtimeMin, runtimeMax, chosen = []) {
+    const low = runtimeMin > 0 ? runtimeMin : 30;
+    const high = runtimeMax > low ? runtimeMax : Math.max(240, low + 60);
+    const step = high - low > 400 ? 30 : 10;
+    const first = Math.max(step, Math.floor(low / step) * step);
+    const last = Math.ceil(high / step) * step;
+    const steps = new Set();
+    for (let m = first; m <= last; m += step) steps.add(m);
+    for (const value of chosen) if (value != null) steps.add(value);
+    return [...steps].sort((a, b) => a - b);
   },
 
   /**
@@ -1334,6 +1372,7 @@ const FILTER_GROUPS = [
   "score",
   "countries",
   "year",
+  "runtime",
   "sort",
   "view",
 ];
@@ -1567,6 +1606,8 @@ class KinoCard extends CardBase {
       subtitleLanguages: [],
       yearMin: null,
       yearMax: null,
+      runtimeMin: null,
+      runtimeMax: null,
     };
     // Where we have been, newest last. See `_navPush`.
     this._nav = [];
@@ -2027,6 +2068,8 @@ class KinoCard extends CardBase {
         return (f.minRating != null ? 1 : 0) + (f.minCritic != null ? 1 : 0);
       case "year":
         return f.yearFrom != null || f.yearTo != null ? 1 : 0;
+      case "runtime":
+        return f.runtimeFrom != null || f.runtimeTo != null ? 1 : 0;
       default:
         return 0;
     }
@@ -2248,6 +2291,8 @@ class KinoCard extends CardBase {
         subtitleLanguages: [],
         yearMin: null,
         yearMax: null,
+        runtimeMin: null,
+        runtimeMax: null,
       };
     }
   }
@@ -3883,6 +3928,10 @@ class KinoCard extends CardBase {
     const filters = this._view.filters;
     const count = helpers.activeFilterCount(filters);
     const yearLabel = helpers.yearRangeLabel(filters.yearFrom, filters.yearTo);
+    const runtimeLabel = helpers.runtimeRangeLabel(
+      filters.runtimeFrom,
+      filters.runtimeTo
+    );
     const chips = [
       ...filters.tags.map((t) => ["tag", t, t]),
       ...filters.genres.map((g) => ["genre", g, g]),
@@ -3902,6 +3951,7 @@ class KinoCard extends CardBase {
         : []),
       ...filters.countries.map((c) => ["country", c, c]),
       ...(yearLabel ? [["year", yearLabel, yearLabel]] : []),
+      ...(runtimeLabel ? [["runtime", runtimeLabel, runtimeLabel]] : []),
     ]
       .map(
         ([kind, value, label]) =>
@@ -4114,6 +4164,7 @@ class KinoCard extends CardBase {
       ${this._filterGroup("score", "Bewertung", scoreBody)}
       ${this._filterGroup("countries", "Land", multi(this._facets.countries || [], "country", f.countries))}
       ${this._filterGroup("year", "Erscheinungsjahr", this._renderYearRange())}
+      ${this._filterGroup("runtime", "Laufzeit", this._renderRuntimeRange())}
       ${this._filterGroup("sort", "Sortierung", sortBody)}
       ${this._filterGroup("view", "Ansicht", viewBody)}
       <div class="filtercta">
@@ -4249,6 +4300,29 @@ class KinoCard extends CardBase {
         <select data-field="year-from" style="flex:1">${options(f.yearFrom)}</select>
         <span style="color:var(--kino-text3);font-size:13px">bis</span>
         <select data-field="year-to" style="flex:1">${options(f.yearTo)}</select>
+      </div>`;
+  }
+
+  /** The "… bis …" runtime pair, in minutes, bounded by the facets. */
+  _renderRuntimeRange() {
+    const f = this._view.filters;
+    const steps = helpers.runtimeSteps(this._facets.runtimeMin, this._facets.runtimeMax, [
+      f.runtimeFrom,
+      f.runtimeTo,
+    ]);
+    const options = (selected) =>
+      `<option value="">–</option>` +
+      steps
+        .map(
+          (m) =>
+            `<option value="${m}"${selected === m ? " selected" : ""}>${m} Min</option>`
+        )
+        .join("");
+    return `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <select data-field="runtime-from" style="flex:1">${options(f.runtimeFrom)}</select>
+        <span style="color:var(--kino-text3);font-size:13px">bis</span>
+        <select data-field="runtime-to" style="flex:1">${options(f.runtimeTo)}</select>
       </div>`;
   }
 
@@ -5906,6 +5980,9 @@ class KinoCard extends CardBase {
         if (kind === "year") {
           f.yearFrom = null;
           f.yearTo = null;
+        } else if (kind === "runtime") {
+          f.runtimeFrom = null;
+          f.runtimeTo = null;
         } else if (kind === "person") {
           f.people = (f.people || []).filter((p) => p.id !== key);
         } else if (kind === "minRating") {
@@ -6142,6 +6219,11 @@ class KinoCard extends CardBase {
       const value = event.target.value ? Number(event.target.value) : null;
       this._view.filters[field === "year-from" ? "yearFrom" : "yearTo"] = value;
       // The select shows its own new value — only the badges and counts move.
+      this._syncFilterChips();
+      this._previewFilterCount();
+    } else if (field === "runtime-from" || field === "runtime-to") {
+      const value = event.target.value ? Number(event.target.value) : null;
+      this._view.filters[field === "runtime-from" ? "runtimeFrom" : "runtimeTo"] = value;
       this._syncFilterChips();
       this._previewFilterCount();
     } else if (field === "entity-select") {

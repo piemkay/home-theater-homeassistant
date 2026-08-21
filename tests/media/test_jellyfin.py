@@ -20,6 +20,7 @@ from custom_components.kino.media.base import (
     SortOrder,
 )
 from custom_components.kino.media.jellyfin import (
+    TICKS_PER_SECOND,
     JellyfinAuthError,
     JellyfinClient,
 )
@@ -741,6 +742,7 @@ def _scan_movie(
     official: str | None = "FSK-16",
     community: float | None = 7.0,
     critic: float | None = None,
+    runtime: int | None = None,
     watched: bool = False,
     favorite: bool = False,
     resume_ticks: int = 0,
@@ -751,6 +753,7 @@ def _scan_movie(
         "Name": movie_id,
         "Type": "Movie",
         "ProductionYear": year,
+        "RunTimeTicks": runtime * 60 * TICKS_PER_SECOND if runtime else None,
         "Genres": list(genres),
         "OfficialRating": official,
         "CommunityRating": community,
@@ -878,6 +881,110 @@ class TestNewServerFilters:
         assert page.total == 1
         assert "MinCriticRating" not in session.requests[0]["params"]
         assert session.requests[1]["params"]["Ids"] == "fresh"
+
+
+class TestRuntimeWindow:
+    """A from–to runtime window: `/Items` has no parameter for it, so it is
+    filtered on the scan — which is also what keeps the totals exact."""
+
+    ITEMS: ClassVar[list[dict[str, Any]]] = [
+        _scan_movie("short", runtime=88),
+        _scan_movie("feature", runtime=118),
+        _scan_movie("epic", runtime=201),
+        _scan_movie("unknown", runtime=None),
+    ]
+
+    def _session(self) -> FakeSession:
+        return FakeSession(
+            {"/Users/user-1/Items": {"Items": self.ITEMS, "TotalRecordCount": 4}}
+        )
+
+    async def test_a_window_keeps_only_what_falls_inside_it(self):
+        session = self._session()
+
+        page = await _client(session).search(
+            MediaQuery(runtime_from=90, runtime_to=180)
+        )
+
+        assert page.total == 1
+        assert session.requests[1]["params"]["Ids"] == "feature"
+
+    async def test_both_ends_are_inclusive(self):
+        session = self._session()
+
+        page = await _client(session).search(
+            MediaQuery(runtime_from=88, runtime_to=118)
+        )
+
+        assert page.total == 2
+        assert session.requests[1]["params"]["Ids"] == "short,feature"
+
+    async def test_an_open_end_only_cuts_on_the_side_it_names(self):
+        session = self._session()
+
+        page = await _client(session).search(MediaQuery(runtime_from=120))
+
+        assert page.total == 1
+        assert session.requests[1]["params"]["Ids"] == "epic"
+
+    async def test_a_title_without_a_runtime_is_not_short(self):
+        """An unknown runtime is unknown, not "under two hours"."""
+        session = self._session()
+
+        page = await _client(session).search(MediaQuery(runtime_to=120))
+
+        assert page.total == 2
+        assert "unknown" not in session.requests[1]["params"]["Ids"]
+
+    async def test_no_runtime_parameter_is_invented_for_the_server(self):
+        session = self._session()
+        await _client(session).search(MediaQuery(runtime_from=90))
+        params = session.requests[0]["params"]
+        assert "MinRunTimeTicks" not in params
+        assert "MaxRunTimeTicks" not in params
+
+    async def test_the_scan_reads_the_runtime_field(self):
+        session = self._session()
+        await _client(session).search(MediaQuery(runtime_from=90))
+        assert "RunTimeTicks" in session.requests[0]["params"]["Fields"]
+
+    async def test_an_inverted_window_returns_nothing_rather_than_everything(self):
+        session = self._session()
+
+        page = await _client(session).search(
+            MediaQuery(runtime_from=180, runtime_to=90)
+        )
+
+        assert page.total == 0
+        assert page.items == ()
+
+    async def test_a_window_combines_with_the_other_filters(self):
+        session = FakeSession(
+            {
+                "/Users/user-1/Items": {
+                    "Items": [
+                        _scan_movie("a", genres=("Action",), runtime=100),
+                        _scan_movie("b", genres=("Drama",), runtime=100),
+                        _scan_movie("c", genres=("Action",), runtime=200),
+                    ],
+                    "TotalRecordCount": 3,
+                }
+            }
+        )
+
+        page = await _client(session).search(
+            MediaQuery(genres=("Action",), runtime_to=120)
+        )
+
+        assert page.total == 1
+        assert session.requests[1]["params"]["Ids"] == "a"
+
+    async def test_the_cta_count_honours_the_window(self):
+        """The filter sheet's "N Titel anzeigen" is this number."""
+        counts = await _client(self._session()).facet_counts(
+            MediaQuery(runtime_from=90)
+        )
+        assert counts["total"] == 2
 
 
 class TestDetailExtras:
@@ -1066,6 +1173,42 @@ class TestFacetLanguages:
         facets = await _client(session).facets()
 
         assert facets.audio_languages == ("ger", "eng")
+
+    async def test_facets_carry_the_runtime_bounds(self):
+        session = FakeSession(
+            {
+                "/Items/Filters": {"Genres": ["Drama"]},
+                "/Users/user-1/Items": {
+                    "Items": [
+                        _scan_movie("x", runtime=88),
+                        _scan_movie("y", runtime=201),
+                        _scan_movie("z", runtime=None),
+                    ],
+                    "TotalRecordCount": 3,
+                },
+            }
+        )
+
+        facets = await _client(session).facets()
+
+        assert facets.runtime_min == 88
+        assert facets.runtime_max == 201
+
+    async def test_a_library_without_runtimes_has_no_bounds(self):
+        session = FakeSession(
+            {
+                "/Items/Filters": {"Genres": ["Drama"]},
+                "/Users/user-1/Items": {
+                    "Items": [_scan_movie("x")],
+                    "TotalRecordCount": 1,
+                },
+            }
+        )
+
+        facets = await _client(session).facets()
+
+        assert facets.runtime_min is None
+        assert facets.runtime_max is None
 
     async def test_a_failing_scan_does_not_break_the_facets(self):
         class FlakySession(FakeSession):

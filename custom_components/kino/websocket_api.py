@@ -98,6 +98,10 @@ _QUERY_SCHEMA = {
     vol.Optional("subtitle_langs", default=[]): [str],
     vol.Optional("year_from"): vol.Any(int, None),
     vol.Optional("year_to"): vol.Any(int, None),
+    #: Runtime window in whole minutes. Bounded well above any feature film
+    #: so a stray value cannot ask the scan for nonsense.
+    vol.Optional("runtime_from"): vol.Any(vol.All(int, vol.Range(0, 1000)), None),
+    vol.Optional("runtime_to"): vol.Any(vol.All(int, vol.Range(0, 1000)), None),
     vol.Optional("only_4k", default=False): bool,
     vol.Optional("only_hd", default=False): bool,
     vol.Optional("only_sd", default=False): bool,
@@ -128,6 +132,8 @@ def _query_from_msg(msg: Mapping[str, Any]) -> MediaQuery:
         subtitle_langs=tuple(msg["subtitle_langs"]),
         year_from=msg.get("year_from"),
         year_to=msg.get("year_to"),
+        runtime_from=msg.get("runtime_from"),
+        runtime_to=msg.get("runtime_to"),
         only_4k=msg["only_4k"],
         only_hd=msg["only_hd"],
         only_sd=msg["only_sd"],
@@ -326,6 +332,8 @@ async def ws_facets(hass, connection, msg) -> None:
             "subtitleLanguages": list(facets.subtitle_languages),
             "yearMin": facets.year_min,
             "yearMax": facets.year_max,
+            "runtimeMin": facets.runtime_min,
+            "runtimeMax": facets.runtime_max,
         },
     )
 

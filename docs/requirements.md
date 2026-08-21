@@ -444,8 +444,9 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
   rating, runtime, audio format) are **subject to the API spike** — included if the Zidoo API
   supports them, explicitly dropped if not. Shipped: watched/unwatched/resumable, favorites,
   resolution tiers (4K/HD/SD, mutually exclusive) plus 3D, genres, FSK parental ratings
-  (`OfficialRatings`), and a year from–to range. Countries stay dormant — Jellyfin has no
-  server-side parameter and a client-side cut breaks pagination.
+  (`OfficialRatings`), a year from–to range, and a runtime from–to window in minutes.
+  Countries stay dormant — Jellyfin has no server-side parameter and a client-side cut
+  breaks pagination.
 - **FR-52a** Cast and crew SHALL be filterable by name, offered from the catalogue's own
   `/Persons` rather than as free text, with several names combinable and individually
   removable. Several people narrow (AND), like stacked genre chips — and Jellyfin can
@@ -462,6 +463,12 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
 - **FR-52c** A facet group SHALL show its most common values first and keep the long tail
   behind one tap — this library has 63 subtitle languages. Every group SHALL start folded,
   remembering only which ones the user unfolds.
+- **FR-52d** The **runtime window** SHALL be a from–to pair in whole minutes, both ends
+  inclusive and each end independently optional, offered on rungs drawn from the library's
+  own shortest and longest title. A title the catalogue has no runtime for is *unknown*, not
+  short: it falls out of any window, the way a title without a year falls out of a year
+  range. `/Items` exposes no runtime parameter at all, so the window is applied on the
+  catalogue scan — which is what keeps its totals and offsets exact.
 - **FR-53** Sorting SHALL be available (title, year, date added, at minimum). Shipped: title,
   year, date added, community rating, runtime, last played, critics rating and random, each
   with an ascending/descending override (per-field default direction otherwise). Random

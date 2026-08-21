@@ -172,6 +172,50 @@ describe("yearRangeLabel", () => {
   });
 });
 
+describe("runtimeRangeLabel", () => {
+  test("labels every shape of window", () => {
+    assert.equal(helpers.runtimeRangeLabel(null, null), null);
+    assert.equal(helpers.runtimeRangeLabel(90, 120), "90–120 Min");
+    assert.equal(helpers.runtimeRangeLabel(90, 90), "90 Min");
+    assert.equal(helpers.runtimeRangeLabel(120, null), "ab 120 Min");
+    assert.equal(helpers.runtimeRangeLabel(null, 90), "bis 90 Min");
+  });
+});
+
+describe("runtimeSteps", () => {
+  test("ten-minute rungs across the library's own bounds", () => {
+    const steps = helpers.runtimeSteps(88, 201);
+    assert.equal(steps[0], 80);
+    assert.equal(steps.at(-1), 210);
+    assert.ok(steps.includes(90));
+    assert.ok(steps.includes(120));
+    assert.equal(steps[1] - steps[0], 10);
+  });
+
+  test("falls back to a sane ladder when the library reports no bounds", () => {
+    const steps = helpers.runtimeSteps(null, null);
+    assert.equal(steps[0], 30);
+    assert.equal(steps.at(-1), 240);
+  });
+
+  test("a five-hour outlier coarsens the rungs instead of flooding the list", () => {
+    const steps = helpers.runtimeSteps(3, 600);
+    assert.ok(steps.length < 30, `${steps.length} rungs is a wall of numbers`);
+    assert.equal(steps.at(-1), 600);
+    assert.equal(steps[1] - steps[0], 30);
+  });
+
+  test("never offers a zero-minute rung", () => {
+    assert.ok(!helpers.runtimeSteps(4, 200).includes(0));
+  });
+
+  test("keeps a chosen value on the ladder when the bounds moved under it", () => {
+    const steps = helpers.runtimeSteps(90, 180, [95, null]);
+    assert.ok(steps.includes(95));
+    assert.deepEqual([...steps].sort((a, b) => a - b), steps);
+  });
+});
+
 describe("metaLine", () => {
   test("joins what exists and skips what does not", () => {
     assert.equal(
@@ -306,6 +350,14 @@ describe("activeFilterCount", () => {
       1
     );
   });
+
+  test("counts a runtime window as one filter, open end included", () => {
+    assert.equal(
+      helpers.activeFilterCount({ ...empty, runtimeFrom: 90, runtimeTo: 120 }),
+      1
+    );
+    assert.equal(helpers.activeFilterCount({ ...empty, runtimeTo: 90 }), 1);
+  });
 });
 
 describe("queryFromFilters", () => {
@@ -348,6 +400,17 @@ describe("queryFromFilters", () => {
     assert.deepEqual(msg.ratings, ["FSK-16"]);
     assert.equal(msg.year_from, 2020);
     assert.equal(msg.year_to, 2024);
+  });
+
+  test("translates the runtime window", () => {
+    const msg = helpers.queryFromFilters(
+      { ...none, runtimeFrom: 90, runtimeTo: 120 },
+      "movies",
+      "",
+      "added"
+    );
+    assert.equal(msg.runtime_from, 90);
+    assert.equal(msg.runtime_to, 120);
   });
 
   test("translates the new status chips", () => {
@@ -1230,6 +1293,8 @@ describe("new filter buckets (0.5.0)", () => {
     assert.deepEqual(empty.audioLangs, []);
     assert.equal(empty.minRating, null);
     assert.equal(empty.minCritic, null);
+    assert.equal(empty.runtimeFrom, null);
+    assert.equal(empty.runtimeTo, null);
   });
 
   test("people, languages and minimum ratings count as active filters", () => {
@@ -1280,6 +1345,8 @@ describe("new filter buckets (0.5.0)", () => {
     assert.deepEqual(msg.subtitle_langs, []);
     assert.equal(msg.min_rating, null);
     assert.equal(msg.min_critic, null);
+    assert.equal(msg.runtime_from, null);
+    assert.equal(msg.runtime_to, null);
   });
 });
 

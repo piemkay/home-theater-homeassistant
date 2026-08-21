@@ -75,6 +75,7 @@ _SCAN_FIELDS = ",".join(  # noqa: FLY002 - a long, readable field list
         "Genres",
         "MediaStreams",
         "ProductionYear",
+        "RunTimeTicks",
         "OfficialRating",
         "CommunityRating",
         "CriticRating",
@@ -337,17 +338,21 @@ class JellyfinClient:
 
     async def search(self, query: MediaQuery) -> MediaPage:
         # Filters Jellyfin cannot express — several genres that must ALL
-        # match, track languages, and a critics minimum (10.11 accepts
-        # MinCriticRating and then ignores it, verified live) — go through
-        # the scan: filter the whole catalogue by ID first, then fetch just
-        # the visible page. That keeps totals and offsets exact (the trap
-        # `_apply_client_side_filters` documents).
+        # match, track languages, a critics minimum (10.11 accepts
+        # MinCriticRating and then ignores it, verified live) and a runtime
+        # window (`/Items` offers no runtime parameter to send, and guessing
+        # at one would be the MinCriticRating trap a second time) — go
+        # through the scan: filter the whole catalogue by ID first, then
+        # fetch just the visible page. That keeps totals and offsets exact
+        # (the trap `_apply_client_side_filters` documents).
         if (
             len(query.genres) > 1
             or len(query.person_ids) > 1
             or query.audio_langs
             or query.subtitle_langs
             or query.min_critic is not None
+            or query.runtime_from is not None
+            or query.runtime_to is not None
         ):
             return await self._search_scanned(query)
         user = self._require_user()
@@ -704,13 +709,18 @@ class JellyfinClient:
         # Track languages exist nowhere in /Items/Filters — they come from the
         # scans, most common first. Films and series both contribute: a series'
         # languages are lent to it from its episodes (`_with_episode_languages`).
+        # The runtime bounds ride along on the same pass — /Items/Filters
+        # knows nothing about runtimes, and this scan already holds them.
         langs: Counter[str] = Counter()
         sub_langs: Counter[str] = Counter()
+        runtimes: list[int] = []
         for category in (Category.MOVIES, Category.SHOWS):
             try:
                 for record in await self._scan(MediaQuery(category=category)):
                     langs.update(record.langs)
                     sub_langs.update(record.sub_langs)
+                    if record.runtime:
+                        runtimes.append(record.runtime)
             except MediaBackendError:
                 _LOGGER.debug("Sprach-Scan fehlgeschlagen", exc_info=True)
         return Facets(
@@ -720,6 +730,8 @@ class JellyfinClient:
             subtitle_languages=_ranked_languages(sub_langs),
             year_min=min(years) if years else None,
             year_max=max(years) if years else None,
+            runtime_min=min(runtimes) if runtimes else None,
+            runtime_max=max(runtimes) if runtimes else None,
         )
 
     async def refresh(self) -> None:
@@ -877,7 +889,8 @@ def _search_params(  # noqa: C901, PLR0912 - a flat translation table, one branc
         params["MinCommunityRating"] = query.min_rating
     # No MinCriticRating here: the server accepts it and ignores it, so a
     # critics minimum never reaches this translation — `search()` routes it
-    # through the scan.
+    # through the scan. A runtime window takes the same route, for the
+    # neighbouring reason: `/Items` offers no runtime parameter to send.
     # Countries have no server-side parameter; they are applied client-side
     # in `_apply_client_side_filters` rather than pretended away here.
     #
@@ -931,10 +944,16 @@ def _year_range(start: int | None, end: int | None) -> list[int]:
     return list(range(low, high + 1))
 
 
+def _runtime_minutes(raw: Mapping[str, Any]) -> int | None:
+    """`RunTimeTicks` as whole minutes — the unit every runtime filter uses."""
+    ticks = raw.get("RunTimeTicks")
+    return int(ticks / TICKS_PER_SECOND / 60) if ticks else None
+
+
 def _to_item(raw: Mapping[str, Any]) -> MediaItem:
     user_data = raw.get("UserData") or {}
     runtime_ticks = raw.get("RunTimeTicks")
-    runtime = int(runtime_ticks / TICKS_PER_SECOND / 60) if runtime_ticks else None
+    runtime = _runtime_minutes(raw)
 
     resume_ticks = user_data.get("PlaybackPositionTicks") or 0
     resume_seconds = resume_ticks / TICKS_PER_SECOND if resume_ticks else None
@@ -1126,6 +1145,8 @@ class _ScanRecord:
     langs: frozenset[str]
     sub_langs: frozenset[str]
     year: int | None
+    #: Whole minutes, or None when the catalogue has no runtime for the file.
+    runtime: int | None
     official: str | None
     rating: float | None
     critic: float | None
@@ -1153,6 +1174,7 @@ def _to_record(raw: Mapping[str, Any]) -> _ScanRecord:
         langs=langs,
         sub_langs=sub_langs,
         year=raw.get("ProductionYear"),
+        runtime=_runtime_minutes(raw),
         official=raw.get("OfficialRating"),
         rating=raw.get("CommunityRating"),
         critic=raw.get("CriticRating"),
@@ -1187,6 +1209,14 @@ def _matches(  # noqa: C901, PLR0912 - a flat predicate, one clause per filter
         return False
     if query.year_to is not None and (
         record.year is None or record.year > query.year_to
+    ):
+        return False
+    if query.runtime_from is not None and (
+        record.runtime is None or record.runtime < query.runtime_from
+    ):
+        return False
+    if query.runtime_to is not None and (
+        record.runtime is None or record.runtime > query.runtime_to
     ):
         return False
     if (query.only_4k or query.category is Category.UHD) and not (

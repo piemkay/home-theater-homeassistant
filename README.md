@@ -198,10 +198,10 @@ instead of offering a dead volume stepper.
   ascending/descending toggle.
 * **Filters**: 4K / HD / SD / 3D, watched / unwatched / continue-watching,
   favorites, genres, cast & crew, age ratings (FSK & Co.), audio-track and
-  subtitle languages, community and critics minimums, release-year range —
-  combined freely, applied server-side so pagination never lies, shown as
-  removable chips above the grid. Every group starts folded and remembers
-  which ones you unfold.
+  subtitle languages, community and critics minimums, release-year range and
+  a runtime window (from–to, in minutes) — combined freely, with exact totals
+  so pagination never lies, shown as removable chips above the grid. Every
+  group starts folded and remembers which ones you unfold.
 * **Cast & crew** is a name field, not free text: it searches Jellyfin's own
   people, so a chosen name always returns titles. Stack several, drop any —
   two names mean the titles crediting *both*, which Jellyfin itself cannot

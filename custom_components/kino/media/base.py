@@ -257,6 +257,11 @@ class MediaQuery:
     subtitle_langs: tuple[str, ...] = ()
     year_from: int | None = None
     year_to: int | None = None
+    #: Runtime window in whole minutes, both ends inclusive. A title without
+    #: a runtime is not "shorter than 90 minutes" — it falls out of any
+    #: window, the way a title without a year falls out of a year range.
+    runtime_from: int | None = None
+    runtime_to: int | None = None
     only_4k: bool = False
     only_hd: bool = False
     only_sd: bool = False
@@ -303,6 +308,10 @@ class Facets:
     subtitle_languages: tuple[str, ...] = ()
     year_min: int | None = None
     year_max: int | None = None
+    #: Shortest and longest runtime in the library, in whole minutes — the
+    #: bounds the card builds its from/to ladder between.
+    runtime_min: int | None = None
+    runtime_max: int | None = None
 
 
 class MediaBackendError(Exception):
