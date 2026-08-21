@@ -685,12 +685,46 @@ describe("view modes", () => {
     assert.doesNotMatch(c._renderItems([item]), /tilecard/);
   });
 
-  test("a banner without banner art falls back and gets a caption", () => {
+  test("a banner without banner art falls back and gets title and meta", () => {
     const c = card();
     c._view.viewMode = "banner";
     const html = c._renderItems([item]);
     assert.match(html, /\/api\/kino\/artwork\/abc\/Backdrop/);
-    assert.match(html, /class="caption">Film</);
+    assert.match(html, /class="captiontitle">Film</);
+    assert.match(html, /class="meta">2020</);
+  });
+
+  test("real banner art keeps its own lettering but still gets the meta", () => {
+    const c = card();
+    c._view.viewMode = "banner";
+    const html = c._renderItems([{ ...item, bannerTag: "t" }]);
+    assert.match(html, /\/api\/kino\/artwork\/abc\/Banner/);
+    assert.doesNotMatch(html, /captiontitle/);
+    assert.match(html, /class="meta">2020</);
+  });
+
+  test("the banner frame does not borrow the alert strip's class", () => {
+    // .banner is the red alert strip; its padding and border framed every
+    // banner tile in grey until the view mode got a name of its own.
+    const c = card();
+    c._view.viewMode = "banner";
+    const html = c._renderItems([item]);
+    assert.match(html, /class="art wide bannerart"/);
+    assert.doesNotMatch(html, /class="art wide banner"/);
+  });
+
+  test("every layout carries the chosen tile size", () => {
+    const c = card();
+    c._view.gridSize = "xs";
+    for (const [mode, cls] of [
+      ["poster", "postergrid"],
+      ["thumb", "thumbgrid"],
+      ["banner", "bannerlist"],
+      ["list", "listrows"],
+    ]) {
+      c._view.viewMode = mode;
+      assert.match(c._renderItems([item]), new RegExp(`class="${cls} size-xs"`), mode);
+    }
   });
 
   test("the list row shows the watched and favorite flags", () => {

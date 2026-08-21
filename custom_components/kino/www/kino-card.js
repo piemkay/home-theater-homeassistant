@@ -831,13 +831,19 @@ button { font-family: inherit; }
 
 /* View modes (FR-71a) — same tiles, different frames. */
 .art.wide { aspect-ratio: 16/9; }
-.art.banner { aspect-ratio: 4.5/1; border-radius: 12px; }
+/* Deliberately not .art.banner: .banner is the alert strip at the top of the
+   card, and its padding and border landed on every banner tile as a grey
+   frame around the artwork. A view mode must not borrow a component's name. */
+.art.bannerart { aspect-ratio: 4.5/1; border-radius: 12px; }
 .art .caption {
   position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px;
-  font-weight: 800; font-size: 14px; box-sizing: border-box; color: #fff;
-  background: linear-gradient(0deg, rgba(0,0,0,.65), transparent);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  box-sizing: border-box; color: #fff;
+  background: linear-gradient(0deg, rgba(0,0,0,.75), transparent);
 }
+.art .caption > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art .captiontitle { font-weight: 800; font-size: 14px; }
+/* The shared .meta is a dim grey that vanishes against a backdrop still. */
+.art .caption .meta { font-size: 11px; color: rgba(255,255,255,.85); }
 .thumbgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .thumbgrid .poster { width: auto; }
 .tilecard { background: var(--kino-surface); border: 1px solid var(--kino-border); border-radius: 12px; overflow: hidden; }
@@ -1106,19 +1112,47 @@ button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 /* Desktop scrim behind a centered sheet — phone keeps the full-bleed sheet. */
 .scrim { display: none; }
 
-/* Tile sizes: on a phone, "Klein" fits a third poster column. */
+/* Tile sizes: on a phone, "Klein" fits a third poster column and
+   "Sehr klein" a fourth. Every layout answers to the size, so the toolbar
+   control is never a dud — a banner gets a shallower strip, a list row a
+   smaller thumbnail. */
 .postergrid.size-s { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .postergrid.size-s .poster .title { font-size: 11px; }
 .postergrid.size-s .poster .meta { font-size: 10px; }
+.postergrid.size-xs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.postergrid.size-xs .poster .title { font-size: 10px; margin-top: 4px; }
+.postergrid.size-xs .poster .meta { font-size: 9px; }
 .thumbgrid.size-s { gap: 10px; }
+.thumbgrid.size-xs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.thumbgrid.size-xs .poster .title { font-size: 10px; margin-top: 4px; }
+.thumbgrid.size-xs .poster .meta { font-size: 9px; }
+
+/* A banner's size is the depth of the strip. */
+.bannerlist.size-xs .art.bannerart { aspect-ratio: 7/1; }
+.bannerlist.size-s .art.bannerart { aspect-ratio: 5.5/1; }
+.bannerlist.size-l .art.bannerart { aspect-ratio: 3.2/1; }
+.bannerlist.size-xs { gap: 8px; }
+.bannerlist.size-s { gap: 10px; }
+.bannerlist.size-xs .art .captiontitle { font-size: 12px; }
+.bannerlist.size-xs .art .caption { padding: 5px 9px; }
+.bannerlist.size-l .art .captiontitle { font-size: 16px; }
+
+/* A list row's size is the thumbnail beside the text. */
+.listrows.size-xs .listrow .art { width: 32px; }
+.listrows.size-xs .listrow .title { font-size: 12px; }
+.listrows.size-s .listrow .art { width: 38px; }
+.listrows.size-l .listrow .art { width: 60px; }
+.listrows.size-l .listrow .title { font-size: 14px; }
 
 /* Tablet: the same card, denser (FR-71). */
 @media (min-width: 640px) {
   .tilegrid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .postergrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .thumbgrid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .postergrid.size-xs { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
   .postergrid.size-s { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); }
   .postergrid.size-l { grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); }
+  .thumbgrid.size-xs { grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)); }
   .thumbgrid.size-s { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .thumbgrid.size-l { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
   .body { padding: 0 24px 24px; }
@@ -1142,8 +1176,10 @@ button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 @media (min-width: 900px) {
   .postergrid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .thumbgrid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .postergrid.size-xs { grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); }
   .postergrid.size-s { grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); }
   .postergrid.size-l { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .thumbgrid.size-xs { grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); }
   .thumbgrid.size-s { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
   .thumbgrid.size-l { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
   /* Detail sheet: poster left, text right (F10). */
@@ -1287,6 +1323,12 @@ const VIEW_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="current
   <rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect>
   <rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg>`;
 
+// Tile size: three columns of decreasing width, the density it sets.
+const SIZE_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+  <rect x="3" y="6" width="5" height="12" rx="1.2"></rect>
+  <rect x="10" y="8" width="4" height="10" rx="1.1"></rect>
+  <rect x="16" y="10" width="3" height="8" rx="1"></rect></svg>`;
+
 // Rotten Tomatoes: the red tomato from 60 % up, the green splat below.
 const TOMATO_FRESH_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
   <circle cx="12" cy="14" r="9" fill="#fa320a"></circle>
@@ -1384,6 +1426,7 @@ const FILTER_COLLAPSE_STORAGE_KEY = "kino-card-filter-collapsed";
 // Tile sizes for the poster/thumb walls: "Mittel" is the classic
 // look, "Klein" fits one more column on a phone, "Groß" spreads out.
 const GRID_SIZES = [
+  ["xs", "Sehr klein"],
   ["s", "Klein"],
   ["m", "Mittel"],
   ["l", "Groß"],
@@ -3890,13 +3933,17 @@ class KinoCard extends CardBase {
     }
 
     if (mode === "banner") {
-      // Real banner art carries its own title lettering; the fallback
-      // backdrop does not, so it gets the caption overlay.
-      const caption = item.bannerTag
-        ? ""
-        : `<div class="caption">${this._esc(item.title)}</div>`;
+      // Real banner art carries its own title lettering, so the caption
+      // drops the title there and keeps the meta line — the year, runtime
+      // and scores every other layout shows. A fallback backdrop carries no
+      // lettering at all and gets both.
+      const caption = `<div class="caption">${
+        item.bannerTag
+          ? ""
+          : `<div class="captiontitle">${this._esc(helpers.itemTitle(item))}</div>`
+      }${this._metaLine(item)}</div>`;
       return `<div class="bannertile" data-act="open-detail" data-key="${this._esc(item.id)}">
-        <div class="art wide banner">${img}${caption}${this._artOverlays(item, true)}</div>
+        <div class="art wide bannerart">${img}${caption}${this._artOverlays(item, true)}</div>
       </div>`;
     }
 
@@ -3916,8 +3963,8 @@ class KinoCard extends CardBase {
     const mode = this._view.viewMode;
     const size = ` size-${this._view.gridSize || "m"}`;
     const tiles = items.map((t) => this._tile(t, mode)).join("");
-    if (mode === "list") return `<div class="listrows">${tiles}</div>`;
-    if (mode === "banner") return `<div class="bannerlist">${tiles}</div>`;
+    if (mode === "list") return `<div class="listrows${size}">${tiles}</div>`;
+    if (mode === "banner") return `<div class="bannerlist${size}">${tiles}</div>`;
     if (mode === "thumb" || mode === "thumbCard")
       return `<div class="thumbgrid${size}">${tiles}</div>`;
     return `<div class="postergrid${size}">${tiles}</div>`;
@@ -3993,6 +4040,10 @@ class KinoCard extends CardBase {
           <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="view-mode"
             title="Ansicht: ${(VIEW_MODES.find(([k]) => k === this._view.viewMode) || VIEW_MODES[0])[1]}">
             ${VIEW_ICON}
+          </button>
+          <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="grid-size"
+            title="Kachelgröße: ${(GRID_SIZES.find(([k]) => k === this._view.gridSize) || GRID_SIZES[2])[1]}">
+            ${SIZE_ICON}
           </button>
         </div>
         ${chips ? `<div class="posterrow hscroll" style="margin-bottom:10px">${chips}</div>` : ""}
@@ -6036,6 +6087,13 @@ class KinoCard extends CardBase {
         const idx = VIEW_MODES.findIndex(([k]) => k === view.viewMode);
         view.viewMode = VIEW_MODES[(idx + 1) % VIEW_MODES.length][0];
         store(VIEW_MODE_STORAGE_KEY, view.viewMode);
+        this._render();
+        break;
+      }
+      case "grid-size": {
+        const idx = GRID_SIZES.findIndex(([k]) => k === view.gridSize);
+        view.gridSize = GRID_SIZES[(idx + 1) % GRID_SIZES.length][0];
+        store(GRID_SIZE_STORAGE_KEY, view.gridSize);
         this._render();
         break;
       }
