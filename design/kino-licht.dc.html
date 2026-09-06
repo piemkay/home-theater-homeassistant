@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #0b0d12; -webkit-font-smoothing: antialiased; }
+  a { color: #3ecfb2; }
+  a:hover { color: #7ae3cd; }
+  input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 99px; background: #232833; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 26px; width: 26px; margin-top: -10px; border-radius: 99px; background: #f2f4f8; border: none; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0b0d12; display: flex; justify-content: center; font-family: 'IBM Plex Sans', system-ui, sans-serif;">
+  <div style="width: 100%; max-width: 464px; background: #11141a; display: flex; flex-direction: column; min-height: 100vh; position: relative;">
+
+    <div style="display: flex; align-items: center; gap: 14px; padding: 18px 20px; background: #161a21; border-bottom: 1px solid #1e232c;">
+      <div style="display: flex; flex-direction: column; gap: 4px; width: 20px;">
+        <div style="height: 2px; background: #d8dce4; border-radius: 2px;"></div>
+        <div style="height: 2px; background: #d8dce4; border-radius: 2px; width: 14px;"></div>
+      </div>
+      <div style="font-size: 20px; font-weight: 500; color: #eef1f6; letter-spacing: -0.01em;">Kino</div>
+      <div style="flex: 1;"></div>
+      <div style="display: flex; flex-direction: column; gap: 3px; align-items: center; padding: 6px;">
+        <div style="width: 4px; height: 4px; border-radius: 99px; background: #9aa3b2;"></div>
+        <div style="width: 4px; height: 4px; border-radius: 99px; background: #9aa3b2;"></div>
+        <div style="width: 4px; height: 4px; border-radius: 99px; background: #9aa3b2;"></div>
+      </div>
+    </div>
+
+    <div style="padding: 22px 20px 12px; display: flex; align-items: center; gap: 12px;">
+      <div style="font-size: 15px; font-weight: 700; letter-spacing: 0.22em; color: #f2f4f8;">KINO</div>
+      <div style="flex: 1;"></div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 99px; background: #1a1f27;">
+        <div style="width: 7px; height: 7px; border-radius: 99px; background: #3ecfb2; box-shadow: 0 0 8px #3ecfb2;"></div>
+        <div style="font-size: 13px; font-weight: 500; color: #c7cdd8;">Bereit</div>
+      </div>
+      <div onClick="{{ togglePower }}" style="width: 40px; height: 40px; border-radius: 99px; background: #1a1f27; border: 1px solid #262c37; display: grid; place-items: center; cursor: pointer;" style-hover="background: #212733;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e6e9f0" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v9"></path><path d="M6.6 6.6a7.5 7.5 0 1 0 10.8 0"></path></svg>
+      </div>
+    </div>
+
+    <div style="padding: 0 20px 18px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 14px; background: #1a1f27; border: 1px solid #242a35; cursor: pointer;">
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: #6f7887;">QUELLE</div>
+          <div style="font-size: 16px; font-weight: 600; color: #f2f4f8;">Steam</div>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b94a3" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+      </div>
+    </div>
+
+    <div style="padding: 0 20px;">
+      <div style="border-radius: 18px; background: #171b23; border: 1px solid #232936; overflow: hidden;">
+
+        <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 16px 18px 12px;">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.16em; color: #7b8494;">LICHT</div>
+          <div style="font-size: 13px; font-weight: 500; color: #eef1f6;">{{ sceneLabel }}</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 12px 14px;">
+          <sc-for list="{{ scenes }}" as="s" hint-placeholder-count="3">
+            <div onClick="{{ s.select }}" style="display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 16px 6px 14px; border-radius: 13px; cursor: pointer; background: {{ s.bg }}; border: 1px solid {{ s.border }}; transition: background .16s, border-color .16s;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{ s.ink }}" stroke-width="1.8" stroke-linecap="round">
+                <circle cx="12" cy="12" r="{{ s.r }}"></circle>
+                <sc-for list="{{ s.rays }}" as="ray" hint-placeholder-count="0">
+                  <line x1="{{ ray.x1 }}" y1="{{ ray.y1 }}" x2="{{ ray.x2 }}" y2="{{ ray.y2 }}"></line>
+                </sc-for>
+              </svg>
+              <div style="font-size: 13px; font-weight: 600; color: {{ s.ink }};">{{ s.name }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="padding: 0 12px 14px;">
+          <div onClick="{{ allOff }}" style="display: flex; align-items: center; justify-content: center; gap: 9px; padding: 14px; border-radius: 13px; background: #14181f; border: 1px solid #2b3240; cursor: pointer;" style-hover="background: #191e26;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e6e9f0" stroke-width="2" stroke-linecap="round"><path d="M12 3v9"></path><path d="M6.6 6.6a7.5 7.5 0 1 0 10.8 0"></path></svg>
+            <div style="font-size: 14px; font-weight: 600; color: #eef1f6;">Alles aus</div>
+          </div>
+        </div>
+
+        <div style="height: 1px; background: #212734;"></div>
+
+        <div onClick="{{ toggleList }}" style="padding: 15px 18px; display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <div style="flex: 1; font-size: 14px; font-weight: 600; color: #eef1f6;">Einzelne Lichter</div>
+          <div style="font-size: 12px; color: #7b8494;">{{ activeCountText }}</div>
+          <div style="transform: rotate({{ chevron }}); transition: transform .18s; display: grid; place-items: center;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b94a3" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+          </div>
+        </div>
+
+        <sc-if value="{{ listOpen }}" hint-placeholder-val="{{ true }}">
+          <div style="padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px;">
+            <sc-for list="{{ lights }}" as="l" hint-placeholder-count="4">
+              <div style="border-radius: 13px; background: #14181f; border: 1px solid #242a35; overflow: hidden;">
+                <div style="padding: 13px 14px; display: flex; align-items: center; gap: 12px;">
+                  <div style="width: 10px; height: 10px; border-radius: 99px; background: {{ l.dot }};"></div>
+                  <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                    <div style="font-size: 14px; font-weight: 500; color: #eef1f6;">{{ l.name }}</div>
+                    <div style="font-size: 12px; color: #7b8494;">{{ l.status }}</div>
+                  </div>
+                  <div onClick="{{ l.toggle }}" style="width: 46px; height: 27px; border-radius: 99px; padding: 3px; cursor: pointer; background: {{ l.track }}; transition: background .18s;">
+                    <div style="width: 21px; height: 21px; border-radius: 99px; background: #f7f9fc; transform: translateX({{ l.knobX }}); transition: transform .18s;"></div>
+                  </div>
+                </div>
+                <sc-if value="{{ l.showControls }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding: 2px 14px 14px; display: flex; flex-direction: column; gap: 12px;">
+                    <sc-if value="{{ l.dimmable }}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; align-items: center; gap: 14px;">
+                        <input type="range" min="1" max="100" value="{{ l.brightness }}" onChange="{{ l.setBrightness }}" style="flex: 1; height: 26px; cursor: pointer;" />
+                        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #c7cdd8; min-width: 40px; white-space: nowrap; text-align: right;">{{ l.brightnessText }}</div>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ l.colorCapable }}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <sc-for list="{{ l.swatches }}" as="c" hint-placeholder-count="6">
+                          <div onClick="{{ c.pick }}" style="width: 30px; height: 30px; border-radius: 99px; cursor: pointer; background: {{ c.value }}; box-shadow: inset 0 0 0 {{ c.ring }} #f7f9fc, inset 0 0 0 {{ c.gap }} #14181f;"></div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <div style="padding: 18px 20px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 9px; padding: 13px 14px; border-radius: 13px; background: #171b23; border: 1px solid #232936;">
+        <div style="width: 7px; height: 7px; border-radius: 99px; background: #3ecfb2;"></div>
+        <div style="font-size: 14px; font-weight: 500; color: #dfe4ec;">Beamer</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 9px; padding: 13px 14px; border-radius: 13px; background: #171b23; border: 1px solid #232936;">
+        <div style="width: 7px; height: 7px; border-radius: 99px; background: #3ecfb2;"></div>
+        <div style="font-size: 14px; font-weight: 500; color: #dfe4ec;">Trinnov</div>
+      </div>
+    </div>
+
+    <div style="padding: 14px 20px 0; display: flex; gap: 12px; align-items: flex-start;">
+      <div style="font-size: 15px; line-height: 1.5; color: #8b94a3; max-width: 40ch;">Nur Raumsteuerung. Bild und Ton werden vorbereitet, Steam läuft über den PC.</div>
+    </div>
+
+    <div style="flex: 1; min-height: 40px;"></div>
+
+    <div style="position: sticky; bottom: 0; background: #161a21; border-top: 1px solid #1e232c; padding: 14px 20px 18px; display: flex; align-items: center; gap: 12px;">
+      <div style="display: flex; flex-direction: column; gap: 2px; flex: 1;">
+        <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: #6f7887;">TON</div>
+        <div style="font-size: 15px; font-weight: 600; color: #eef1f6;">Steam</div>
+      </div>
+      <div onClick="{{ toggleMute }}" style="padding: 9px 15px; border-radius: 99px; background: {{ muteBg }}; border: 1px solid #262c37; font-size: 13px; font-weight: 600; color: {{ muteInk }}; cursor: pointer;">Stumm</div>
+      <div onClick="{{ volDown }}" style="width: 38px; height: 38px; border-radius: 99px; background: #1a1f27; border: 1px solid #262c37; display: grid; place-items: center; font-size: 18px; color: #e6e9f0; cursor: pointer;">−</div>
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #eef1f6; min-width: 72px; white-space: nowrap; text-align: center;">{{ volText }}</div>
+      <div onClick="{{ volUp }}" style="width: 38px; height: 38px; border-radius: 99px; background: #1a1f27; border: 1px solid #262c37; display: grid; place-items: center; font-size: 18px; color: #e6e9f0; cursor: pointer;">+</div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:464,&quot;height&quot;:900},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#3ecfb2&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#3ecfb2&quot;,&quot;#f2a33c&quot;,&quot;#7aa2f7&quot;,&quot;#e0e4ec&quot;]}}">
+const RAYS = {
+  dunkel: [],
+  gedimmt: [{x1:12,y1:2.5,x2:12,y2:4.5},{x1:12,y1:19.5,x2:12,y2:21.5},{x1:2.5,y1:12,x2:4.5,y2:12},{x1:19.5,y1:12,x2:21.5,y2:12}],
+  hell: [{x1:12,y1:1.8,x2:12,y2:4.2},{x1:12,y1:19.8,x2:12,y2:22.2},{x1:1.8,y1:12,x2:4.2,y2:12},{x1:19.8,y1:12,x2:22.2,y2:12},{x1:5.2,y1:5.2,x2:6.9,y2:6.9},{x1:17.1,y1:17.1,x2:18.8,y2:18.8},{x1:5.2,y1:18.8,x2:6.9,y2:17.1},{x1:17.1,y1:6.9,x2:18.8,y2:5.2}]
+};
+
+const PALETTE = ['#ffd9a0', '#ffffff', '#ff5f5f', '#f2a33c', '#4b8bff', '#a45cff'];
+
+const SCENE_STATES = {
+  dunkel:  { deckenlicht: 0, spots: 0, ambilight: 0, stufen: 12 },
+  gedimmt: { deckenlicht: 15, spots: 0, ambilight: 35, stufen: 20 },
+  hell:    { deckenlicht: 100, spots: 80, ambilight: 0, stufen: 60 }
+};
+
+class Component extends DCLogic {
+  state = {
+    scene: 'gedimmt', vol: -36.0, mute: false, listOpen: false,
+    lights: [
+      { id: 'deckenlicht', name: 'Deckenlicht', dimmable: true, colorCapable: false, on: true, brightness: 15 },
+      { id: 'spots', name: 'Spots', dimmable: true, colorCapable: false, on: false, brightness: 60 },
+      { id: 'ambilight', name: 'LED Ambilight', dimmable: true, colorCapable: true, on: true, brightness: 35, color: '#a45cff' },
+      { id: 'stufen', name: 'Stufenlicht', dimmable: true, colorCapable: true, on: true, brightness: 20, color: '#ffd9a0' },
+      { id: 'vitrine', name: 'Vitrine', dimmable: false, colorCapable: false, on: false, brightness: 100 }
+    ]
+  };
+
+  patch(id, changes) {
+    this.setState(s => ({ lights: s.lights.map(l => l.id === id ? { ...l, ...changes } : l) }));
+  }
+
+  renderVals() {
+    const accent = this.props.accent ?? '#3ecfb2';
+    const defs = [
+      { key: 'dunkel', name: 'Dunkel', r: 8 },
+      { key: 'gedimmt', name: 'Gedimmt', r: 5.5 },
+      { key: 'hell', name: 'Hell', r: 4.5 }
+    ];
+    const scenes = defs.map(d => {
+      const on = this.state.scene === d.key;
+      return {
+        name: d.name, r: d.r, rays: RAYS[d.key],
+        bg: on ? accent : '#1c212a',
+        border: on ? accent : '#262c37',
+        ink: on ? '#0b0d12' : '#c7cdd8',
+        select: () => this.setState(s => ({
+          scene: d.key,
+          lights: s.lights.map(l => {
+            const b = SCENE_STATES[d.key][l.id];
+            return b === undefined ? l : { ...l, on: b > 0, brightness: b > 0 ? b : l.brightness };
+          })
+        }))
+      };
+    });
+
+    const lights = this.state.lights.map(l => ({
+      name: l.name,
+      dimmable: l.dimmable,
+      colorCapable: l.colorCapable,
+      showControls: l.on && (l.dimmable || l.colorCapable),
+      brightness: l.brightness,
+      brightnessText: l.brightness + '%',
+      status: !l.on ? 'Aus' : (l.dimmable ? l.brightness + '%' : 'An'),
+      dot: l.on ? (l.colorCapable ? l.color : '#ffd9a0') : '#2a313d',
+      track: l.on ? accent : '#2a313d',
+      knobX: l.on ? '19px' : '0px',
+      toggle: () => this.patch(l.id, { on: !l.on }),
+      setBrightness: e => this.patch(l.id, { brightness: +e.target.value, on: true }),
+      swatches: PALETTE.map(v => ({
+        value: v,
+        pick: () => this.patch(l.id, { color: v, on: true }),
+        ring: l.color === v ? '2px' : '0px',
+        gap: l.color === v ? '4px' : '0px'
+      }))
+    }));
+
+    const activeCount = this.state.lights.filter(l => l.on).length;
+
+    return {
+      scenes,
+      lights,
+      sceneLabel: (defs.find(d => d.key === this.state.scene) || { name: 'Aus' }).name,
+      listOpen: this.state.listOpen,
+      chevron: this.state.listOpen ? '180deg' : '0deg',
+      toggleList: () => this.setState(s => ({ listOpen: !s.listOpen })),
+      activeCountText: activeCount + ' an',
+      allOff: () => this.setState(s => ({ scene: 'aus', lights: s.lights.map(l => ({ ...l, on: false })) })),
+      volText: this.state.vol.toFixed(1) + ' dB',
+      volUp: () => this.setState(s => ({ vol: Math.min(0, s.vol + 0.5) })),
+      volDown: () => this.setState(s => ({ vol: Math.max(-80, s.vol - 0.5) })),
+      muteBg: this.state.mute ? accent : '#1a1f27',
+      muteInk: this.state.mute ? '#0b0d12' : '#dfe4ec',
+      toggleMute: () => this.setState(s => ({ mute: !s.mute })),
+      togglePower: () => {}
+    };
+  }
+}
+</script>
+</body>
+</html>

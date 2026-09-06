@@ -224,10 +224,18 @@ Explicitly **not** a sequence of fixed waits.
   unreachable device SHALL NOT block the others, and an unverified shutdown SHALL raise a
   visible error.
 - **FR-35** Shutdown SHALL restore the room to a defined light state.
-- **FR-36a** The card SHALL offer **manual light control** — a configurable row of scenes,
-  lights and switches — independently of the activity, available while the theater is off,
-  on and mid-transition. Which entities appear, in which order, and whether the row sits
-  above or below the activity tiles SHALL be configuration, not code.
+- **FR-36a** The card SHALL offer **manual light control** independently of the activity,
+  available while the theater is off, on and mid-transition. Which entities appear, in which
+  order, and whether the block sits above or below the activity tiles SHALL be configuration,
+  not code.
+- **FR-36b** Scenes SHALL be presented as one-tap tiles with the **currently applied scene
+  marked**. Since a scene has no observable "on" state, the mark SHALL be derived from the
+  most recently applied scene and SHALL be withdrawn once any configured lamp is changed
+  afterwards — the card SHALL NOT claim a scene the room has since left.
+- **FR-36c** Individual lamps SHALL be reachable from the same block, each offering exactly
+  the controls the entity reports it supports: on/off always, **brightness** where dimmable,
+  **colour** where colour-capable. A continuous control SHALL issue one command per gesture,
+  not one per intermediate value.
 
 ### 5.5 Activity matrix — TO BE COMPLETED
 

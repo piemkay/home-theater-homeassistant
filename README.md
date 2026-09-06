@@ -190,18 +190,32 @@ instead of offering a dead volume stepper.
 
 ### Light
 
-A row of light buttons the card drives directly — configured in
-`settings.lights`, and visible whether the theater is on, off or mid-switch,
-because turning the ceiling light down is not a reason to start the projector.
-A `scene` or a `script` is applied; a `light`, `switch` or `input_boolean`
-toggles and its button shows what the entity currently is, dimmed lights with
-their level. Nothing configured means no row at all.
+A light card the room is actually run from — configured in `settings.lights`,
+and there whether the theater is on, off or mid-switch, because dimming the
+room is not a reason to start the projector.
+
+* **Scenes are the top row**: one tap sets the whole room. The tile of the
+  scene the room is currently in is marked, and the header names it. Home
+  Assistant gives a scene no "on" state, only the moment it was last applied
+  — so the most recent one is shown as the active one, and it stops being
+  shown the moment a lamp in the card is moved by hand afterwards. It reads
+  **Manuell** then, rather than claiming a scene the room has since left.
+* **"Alles aus"** switches off every lamp in the card. It never touches the
+  activity — that is the power button in the header.
+* **Einzelne Lichter** folds open (and stays how you left it) to a row per
+  lamp: a dot in the lamp's own colour, its level, and a switch. A lamp that
+  is on grows exactly the controls it reports it has — a brightness slider
+  for anything dimmable, six colour swatches for anything colour-capable,
+  and neither for a plain switch. The slider sends one command on release,
+  not one per pixel of the drag.
+* An entity that has been renamed or removed stays visible and greyed rather
+  than leaving a hole nobody can explain.
 
 ```yaml
 settings:
   lights:
     position: below        # below (default) or above the activity tiles
-    title: Licht           # the row's label; title: "" for none
+    title: Licht           # the card's label; title: "" for none
     controls:
       - scene.dark                     # a bare entity is enough
       - entity: scene.low_ambience
@@ -210,11 +224,15 @@ settings:
       - light.kino_deckenspots
 ```
 
-The whole block is optional, and so is the object form: `lights: [scene.dark,
+Scenes and scripts become the tile row; lights, switches and input_booleans
+become the list — one list in the file, split by what each entity is. The
+whole block is optional, and so is the object form: `lights: [scene.dark,
 scene.bright_ambience]` is a valid configuration. The **Licht** screen in the
 admin panel edits all of it. This is separate from the per-activity
 `light_scene`, which is what the room does *on its own* when an activity
 starts.
+
+The layout follows [`design/kino-licht.dc.html`](design/kino-licht.dc.html).
 
 ### The library
 

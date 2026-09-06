@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.8.0";
+const CARD_VERSION = "0.8.1";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -644,7 +644,7 @@ export const helpers = {
   },
 
   /**
-   * What a tap on a light chip does.
+   * What a tap on a light control does.
    *
    * A scene or a script is applied and then forgotten; everything else is a
    * toggle. Derived from the entity's own domain, so the card asks the same
@@ -654,6 +654,61 @@ export const helpers = {
     const domain = String(entityId || "").split(".")[0];
     const momentary = domain === "scene" || domain === "script";
     return { domain, service: momentary ? "turn_on" : "toggle", momentary };
+  },
+
+  /** The colour modes a light reports it can be driven in. */
+  colorModes(state) {
+    const modes =
+      state && state.attributes ? state.attributes.supported_color_modes : null;
+    return Array.isArray(modes) ? modes : [];
+  },
+
+  /**
+   * Can this light be dimmed?
+   *
+   * `onoff` and `unknown` are the two modes that mean "no"; everything else
+   * carries a brightness. Asked of the entity rather than configured, so a
+   * lamp that cannot dim never grows a slider that does nothing.
+   */
+  isDimmable(state) {
+    // A switch or an input_boolean reports no colour modes at all, which is
+    // the same answer as a lamp that only knows on and off.
+    const modes = helpers.colorModes(state);
+    return modes.some((m) => m !== "onoff" && m !== "unknown");
+  },
+
+  /** Can it be given a colour? */
+  isColorCapable(state) {
+    const colour = ["hs", "rgb", "rgbw", "rgbww", "xy"];
+    return helpers.colorModes(state).some((m) => colour.includes(m));
+  },
+
+  /** `[r, g, b]` as `#rrggbb`, or null when the light reports no colour. */
+  rgbHex(rgb) {
+    if (!Array.isArray(rgb) || rgb.length < 3) return null;
+    const hex = rgb
+      .slice(0, 3)
+      .map((v) => Math.max(0, Math.min(255, Math.round(Number(v) || 0))))
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("");
+    return `#${hex}`;
+  },
+
+  /** `#rrggbb` as `[r, g, b]`, for the service call. */
+  hexToRgb(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  },
+
+  /** The line under a light's name: what it is doing, in two words. */
+  lightStatus(state) {
+    if (!state) return "Nicht verfügbar";
+    if (state.state === "unavailable") return "Nicht verfügbar";
+    if (state.state !== "on") return "Aus";
+    const percent = helpers.brightnessPercent(state);
+    return percent == null ? "An" : `${percent}%`;
   },
 
   /** Which body the card should render for an activity. */
@@ -812,29 +867,116 @@ button { font-family: inherit; }
 }
 .devicechip span:last-child { font-size: 11px; color: var(--kino-text2); font-weight: 600; }
 
-/* -- the light row (FR-36a) -------------------------------------------
-   Scenes and scripts are applied and have nothing to mirror, so their chip
-   answers the tap itself; a light or a switch shows what it is. */
-.lightblock { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.lightlabel {
-  font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+/* -- the light card (FR-36a) ------------------------------------------
+   Scenes are the whole room in one tap; the individual lights fold away
+   underneath, because most evenings nobody opens them. Structure follows
+   design/kino-licht.dc.html; every colour is a Kino token. */
+.lightcard {
+  border-radius: 18px; background: var(--kino-surface);
+  border: 1px solid var(--kino-border); overflow: hidden;
+}
+.lighthead {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; padding: 16px 18px 12px;
+}
+.lighthead .cap {
+  font-size: 11px; font-weight: 700; letter-spacing: .16em;
   color: var(--kino-text3);
 }
-.lightchip {
-  display: flex; align-items: center; gap: 7px; min-height: 34px;
-  padding: 7px 13px; border-radius: 17px; border: none; cursor: pointer;
-  background: var(--kino-surface2); color: var(--kino-text2);
-  font-family: inherit; font-size: 12px; font-weight: 700;
+.lighthead .now {
+  font-size: 13px; font-weight: 600; color: var(--kino-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.lightchip[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
-.lightchip[aria-pressed="true"] .lightlevel { opacity: .65; }
-.lightchip[aria-disabled="true"] { opacity: .45; }
-.lightchip .lighticon { --mdc-icon-size: 16px; flex-shrink: 0; }
-.lightchip .lightlevel { font-size: 10px; opacity: .7; font-variant-numeric: tabular-nums; }
-.lightchip.flashing { animation: kino-flash .7s ease-out; }
-@keyframes kino-flash {
-  from { background: var(--kino-gold); color: var(--kino-goldText); }
-  to { background: var(--kino-surface2); color: var(--kino-text2); }
+.scenegrid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px; padding: 0 12px 14px;
+}
+.scenetile {
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  padding: 16px 6px 14px; border-radius: 13px; cursor: pointer;
+  background: var(--kino-surface2); border: 1px solid var(--kino-border);
+  color: var(--kino-text2); font-family: inherit; font-size: 13px;
+  font-weight: 700; transition: background .16s, border-color .16s, color .16s;
+}
+.scenetile[aria-pressed="true"] {
+  background: var(--kino-gold); border-color: var(--kino-gold);
+  color: var(--kino-goldText);
+}
+.scenetile[aria-disabled="true"] { opacity: .45; }
+/* The slot is there with or without an icon, so a row of tiles that mixes
+   the two still puts every label on one baseline. */
+.scenetile .ic { height: 22px; display: grid; place-items: center; }
+.scenetile ha-icon { --mdc-icon-size: 22px; }
+.scenetile .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.alloffwrap { padding: 0 12px 14px; }
+.alloff {
+  width: 100%; display: flex; align-items: center; justify-content: center;
+  gap: 9px; padding: 14px; border-radius: 13px; background: var(--kino-bg);
+  border: 1px solid var(--kino-border); color: var(--kino-text);
+  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.lightdiv { height: 1px; background: var(--kino-border); }
+.lightexp {
+  width: 100%; box-sizing: border-box; padding: 15px 18px; display: flex;
+  align-items: center; gap: 10px; background: transparent; border: none;
+  cursor: pointer; font-family: inherit;
+}
+.lightexp .nm { flex: 1; text-align: left; font-size: 14px; font-weight: 700; color: var(--kino-text); }
+.lightexp .ct { font-size: 12px; color: var(--kino-text3); font-weight: 600; }
+.lightexp .chev { display: grid; place-items: center; color: var(--kino-text3); transition: transform .18s; }
+.lightexp[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.lightlist { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.lightrow {
+  border-radius: 13px; background: var(--kino-bg);
+  border: 1px solid var(--kino-border); overflow: hidden;
+}
+.lightrow .top { padding: 13px 14px; display: flex; align-items: center; gap: 12px; }
+.lightrow .dot { width: 10px; height: 10px; border-radius: 5px; flex-shrink: 0; }
+.lightrow .names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lightrow .nm { font-size: 14px; font-weight: 600; color: var(--kino-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lightrow .st { font-size: 12px; color: var(--kino-text3); font-weight: 600; }
+.lswitch {
+  width: 46px; height: 27px; border-radius: 14px; padding: 3px; border: none;
+  cursor: pointer; background: var(--kino-surface2); flex-shrink: 0;
+  display: flex; justify-content: flex-start; transition: background .18s;
+}
+.lswitch[aria-checked="true"] { background: var(--kino-gold); justify-content: flex-end; }
+.lswitch .knob {
+  width: 21px; height: 21px; border-radius: 11px; background: #f7f9fc;
+  display: block; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.lightctl { padding: 2px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.dimrow { display: flex; align-items: center; gap: 14px; }
+/* A styled range needs every vendor's pseudo-element spelled out; without
+   the track rule the thumb floats on a browser-default blue bar. */
+.dim {
+  flex: 1; min-width: 0; height: 26px; cursor: pointer; margin: 0;
+  -webkit-appearance: none; appearance: none; background: transparent;
+}
+.dim::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--kino-surface2); }
+.dim::-webkit-slider-thumb {
+  -webkit-appearance: none; height: 26px; width: 26px; margin-top: -10px;
+  border-radius: 13px; background: var(--kino-text); border: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.5);
+}
+.dim::-moz-range-track { height: 6px; border-radius: 3px; background: var(--kino-surface2); }
+.dim::-moz-range-thumb {
+  height: 26px; width: 26px; border-radius: 13px; background: var(--kino-text);
+  border: none; box-shadow: 0 2px 8px rgba(0,0,0,.5);
+}
+.dimval {
+  font-family: ui-monospace, monospace; font-size: 12px; color: var(--kino-text2);
+  min-width: 40px; text-align: right; font-variant-numeric: tabular-nums;
+}
+.swatches { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.swatch {
+  width: 30px; height: 30px; border-radius: 15px; cursor: pointer;
+  padding: 0; flex-shrink: 0; box-sizing: border-box;
+  /* The white swatch is invisible on a light theme's white row without it. */
+  border: 1px solid var(--kino-border);
+}
+.swatch[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px var(--kino-text), inset 0 0 0 4px var(--kino-bg);
 }
 
 .banner {
@@ -1360,6 +1502,9 @@ const POWER_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
   <circle cx="12" cy="13" r="8"></circle><line x1="12" y1="2" x2="12" y2="12"></line></svg>`;
 
+const CHEVRON_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>`;
+
 const HEART_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
   <path d="M12 21s-7.5-4.7-10-9.3C.6 8.6 2.6 5 6.1 5c2 0 3.5 1 4.4 2.5.4.7 1.4.7 1.8 0C13.2 6 14.7 5 16.7 5c3.5 0 5.5 3.6 4.1 6.7C18.3 16.3 12 21 12 21z"></path></svg>`;
 
@@ -1467,6 +1612,30 @@ const FILTER_GROUPS = [
   "view",
 ];
 
+/** The colours a colour-capable light can be given in one tap (FR-36a). */
+const LIGHT_PALETTE = [
+  "#ffd9a0",
+  "#ffffff",
+  "#ff5f5f",
+  "#f2a33c",
+  "#4b8bff",
+  "#a45cff",
+];
+
+/**
+ * How long after a scene lands its own lights may still be settling.
+ *
+ * Applying a scene moves the lights a moment later, and those moves must not
+ * read as "somebody changed it by hand" — which is what un-marks the scene.
+ * Kept short: anything inside the window is credited to the scene for as long
+ * as that scene stands, so a wide one would swallow a real change made
+ * seconds after a tap. A tap made *on this card* is caught exactly rather
+ * than by the clock — see `_manualAfter`.
+ */
+const SCENE_SETTLE_MS = 3000;
+
+const LIGHTS_OPEN_STORAGE_KEY = "kino-card-lights-open";
+
 const VIEW_MODE_STORAGE_KEY = "kino-card-view-mode";
 const GRID_SIZE_STORAGE_KEY = "kino-card-grid-size";
 const FILTER_COLLAPSE_STORAGE_KEY = "kino-card-filter-collapsed";
@@ -1509,6 +1678,11 @@ function readStoredGridSize() {
   return readStored(GRID_SIZE_STORAGE_KEY, "m", (v) =>
     GRID_SIZES.some(([key]) => key === v)
   );
+}
+
+/** Whether the per-light list was left open, remembered across sessions. */
+function readStoredLightsOpen() {
+  return readStored(LIGHTS_OPEN_STORAGE_KEY, "0") === "1";
 }
 
 /** Which filter groups the user keeps folded, remembered across sessions. */
@@ -1627,6 +1801,9 @@ class KinoCard extends CardBase {
       filters: helpers.emptyFilters(),
       filterSheet: false,
       filterCollapsed: readStoredCollapse(),
+      // Most evenings the scenes are the whole interaction, so the per-light
+      // list stays folded — and remembers being opened.
+      lightsOpen: readStoredLightsOpen(),
       personQuery: "",
       detailId: null,
       detail: null,
@@ -1797,6 +1974,7 @@ class KinoCard extends CardBase {
    * its own, and the render that lands then puts the caret back where it was.
    */
   _isTyping() {
+    if (this._dragging) return true;
     const active = this.shadowRoot && this.shadowRoot.activeElement;
     if (!active) return false;
     if (active.tagName !== "INPUT" && active.tagName !== "TEXTAREA") return false;
@@ -1833,13 +2011,18 @@ class KinoCard extends CardBase {
       const state = id ? states[id] : null;
       parts.push(state && `${state.state}/${(state.attributes.options || []).length}`);
     }
-    // Only the light row's toggles: a scene's state is the timestamp it was
-    // last applied at, and redrawing the whole card for that would recreate
-    // every poster — and wipe the chip's own acknowledgement of the tap.
+    // The light card, in full: a lamp's brightness and colour are drawn, and
+    // a scene's own timestamp is what decides which tile is the active one.
     for (const control of (this._kino.lights || {}).controls || []) {
-      if (control.momentary) continue;
       const state = states[control.entity];
-      parts.push(state && `${state.state}/${(state.attributes || {}).brightness}`);
+      if (!state) {
+        parts.push(null);
+        continue;
+      }
+      const attrs = state.attributes || {};
+      parts.push(
+        `${state.state}/${attrs.brightness}/${(attrs.rgb_color || []).join(",")}`
+      );
     }
     return parts.join("|");
   }
@@ -3005,33 +3188,68 @@ class KinoCard extends CardBase {
   }
 
   /**
-   * A tap on the light row (FR-36a).
+   * A tap on a scene tile or a lamp's switch (FR-36a).
    *
-   * A scene or a script leaves nothing on screen to change, so the chip
-   * acknowledges the tap itself; a light or a switch is answered by its own
-   * state arriving on the next update.
+   * A scene is applied — the tile it lands on goes gold on the state update
+   * that follows, which is the acknowledgement. A lamp toggles, and its own
+   * state is the answer.
    */
-  async _light(entityId, element) {
+  async _light(entityId) {
     const { domain, service, momentary } = helpers.lightService(entityId);
-    if (!domain || !entityId) return;
-    if (momentary) this._flashLight(element);
+    if (!entityId || !domain) return;
+    if (!momentary) this._noteManualLight();
+    await this._lightCall(domain, service, { entity_id: entityId });
+  }
+
+  /** Set one lamp's brightness, in percent. */
+  async _lightBrightness(entityId, percent) {
+    const value = Math.max(1, Math.min(100, Math.round(Number(percent))));
+    if (!entityId || !Number.isFinite(value)) return;
+    this._noteManualLight();
+    await this._lightCall("light", "turn_on", {
+      entity_id: entityId,
+      brightness_pct: value,
+    });
+  }
+
+  /** Give one lamp a colour from the palette. */
+  async _lightColor(entityId, hex) {
+    const rgb = helpers.hexToRgb(hex);
+    if (!entityId || !rgb) return;
+    this._noteManualLight();
+    await this._lightCall("light", "turn_on", {
+      entity_id: entityId,
+      rgb_color: rgb,
+    });
+  }
+
+  /**
+   * Everything in the row off, in one tap.
+   *
+   * Only the lamps — a scene has nothing to switch off, and the activity is
+   * emphatically not what this button is for.
+   */
+  async _lightsAllOff() {
+    const { lamps } = this._lightGroups();
+    this._noteManualLight();
+    const byDomain = {};
+    for (const lamp of lamps) {
+      const { domain } = helpers.lightService(lamp.entity);
+      (byDomain[domain] = byDomain[domain] || []).push(lamp.entity);
+    }
+    for (const [domain, ids] of Object.entries(byDomain)) {
+      await this._lightCall(domain, "turn_off", { entity_id: ids });
+    }
+  }
+
+  /** One place where a refused light command becomes a visible banner. */
+  async _lightCall(domain, service, data) {
     try {
-      await this._callService(domain, service, { entity_id: entityId });
+      await this._callService(domain, service, data);
     } catch (err) {
       this._actionError = err.message || String(err);
       this._render();
     }
-  }
-
-  /** Light the chip up once, without redrawing the card around it. */
-  _flashLight(element) {
-    if (!element || !element.classList) return;
-    element.classList.remove("flashing");
-    // Reading the layout restarts the animation when the same chip is
-    // tapped twice; without it the second tap looks like nothing happened.
-    void element.offsetWidth;
-    element.classList.add("flashing");
-    setTimeout(() => element.classList.remove("flashing"), 700);
   }
 
   /* -- rendering ----------------------------------------------------- */
@@ -3418,6 +3636,19 @@ class KinoCard extends CardBase {
       this._container.addEventListener("click", (e) => this._onClick(e));
       this._container.addEventListener("change", (e) => this._onChange(e));
       this._container.addEventListener("input", (e) => this._onInput(e));
+      // A finger resting on a slider is still a gesture: without this, a
+      // poll landing mid-drag replaces the input and drops the drag.
+      this._container.addEventListener("pointerdown", (e) => {
+        if (e.target && e.target.classList && e.target.classList.contains("dim")) {
+          this._dragging = true;
+        }
+      });
+      const endDrag = () => {
+        this._dragging = false;
+        this._flushPendingRender();
+      };
+      this._container.addEventListener("pointerup", endDrag);
+      this._container.addEventListener("pointercancel", endDrag);
       // Focus moves after `focusout` fires, so ask on the next turn where it
       // ended up: leaving one field for another is still typing.
       this._container.addEventListener("focusout", () => {
@@ -3514,9 +3745,13 @@ class KinoCard extends CardBase {
       }
     });
     if (focusField) {
-      const next = this._container.querySelector(`[data-field="${focusField}"]`);
+      const next = this._container.querySelector(
+        `[data-field="${CSS.escape ? CSS.escape(focusField) : focusField}"]`
+      );
       if (next) {
-        next.focus();
+        // The scroll position was just restored by hand; letting focus scroll
+        // as well yanks the grid back up to whatever had the caret.
+        next.focus({ preventScroll: true });
         if (caret != null && next.setSelectionRange) {
           next.setSelectionRange(caret, caret);
         }
@@ -3596,50 +3831,227 @@ class KinoCard extends CardBase {
   }
 
   /**
+   * Which of the configured controls are scenes, and which are lamps.
+   *
+   * One list in the config, two things on screen: a scene sets the whole
+   * room in one tap, a lamp is something you go and adjust. Split by domain
+   * rather than by a second config key, so the file stays one list.
+   */
+  _lightGroups() {
+    const controls = ((this._kino && this._kino.lights) || {}).controls || [];
+    const scenes = [];
+    const lamps = [];
+    for (const control of controls) {
+      const momentary =
+        control.momentary != null
+          ? control.momentary
+          : helpers.lightService(control.entity).momentary;
+      (momentary ? scenes : lamps).push(control);
+    }
+    return { scenes, lamps };
+  }
+
+  /**
+   * The scene the room was last set to — and still is.
+   *
+   * Home Assistant gives a scene no "active" state; what it gives is the
+   * moment it was last applied. So the newest of the configured scenes is
+   * the one on screen, and it stops being the one the instant a lamp in the
+   * row is moved by hand afterwards. That is honest in both directions: it
+   * never claims a scene the room has since left, and it does not go blank
+   * because the scene's own lights settled a moment after it landed.
+   */
+  _sceneApplied() {
+    const states = (this._hass && this._hass.states) || {};
+    let control = null;
+    let appliedAt = 0;
+    for (const scene of this._lightGroups().scenes) {
+      // Only a scene carries a timestamp; a script's state says nothing
+      // about the room.
+      if (helpers.lightService(scene.entity).domain !== "scene") continue;
+      const state = states[scene.entity];
+      const at = state ? Date.parse(state.state) : NaN;
+      if (Number.isFinite(at) && at > appliedAt) {
+        appliedAt = at;
+        control = scene;
+      }
+    }
+    return { control, appliedAt };
+  }
+
+  _activeScene() {
+    const { control, appliedAt } = this._sceneApplied();
+    if (!control) return null;
+    // A lamp driven from this card is not a guess: remembering which scene
+    // was standing at the time settles it without comparing this browser's
+    // clock to Home Assistant's.
+    if (this._manualAfter === appliedAt) return null;
+    const states = (this._hass && this._hass.states) || {};
+    for (const lamp of this._lightGroups().lamps) {
+      const state = states[lamp.entity];
+      // A lamp that is currently unreachable says nothing about the room —
+      // and a reload that takes one bulb away and gives it back must not
+      // read as somebody having touched it.
+      if (!state || state.state === "unavailable" || state.state === "unknown") {
+        continue;
+      }
+      // `last_changed` only moves when the state *string* changes, so a dim
+      // or a recolour — which is most of what this card does — would be
+      // invisible to it. `last_updated` is the one that moves for both.
+      const touched = Date.parse(state.last_updated || state.last_changed);
+      if (Number.isFinite(touched) && touched > appliedAt + SCENE_SETTLE_MS) {
+        return null;
+      }
+    }
+    return control;
+  }
+
+  /** Remember that a lamp was driven by hand while this scene was standing. */
+  _noteManualLight() {
+    this._manualAfter = this._sceneApplied().appliedAt;
+  }
+
+  /** What to call a control: the configured label, else Home Assistant's. */
+  _lightName(control, state) {
+    return (
+      control.name ||
+      (state && state.attributes && state.attributes.friendly_name) ||
+      control.entity
+    );
+  }
+
+  /**
    * Manual light control, independent of the activity (FR-36a).
    *
    * Turning the ceiling light down is not a reason to start the projector,
-   * so the row is there with the theater off as well as on — and during a
+   * so the card is there with the theater off as well as on — and during a
    * transition, when the room is exactly where somebody stands and waits.
    *
    * Which entities it offers comes from `settings.lights`: nothing
-   * configured means no row at all. Names and states are read from Home
+   * configured means no card at all. Names and states are read from Home
    * Assistant, so a light renamed there is renamed here.
    */
   _renderLights() {
     const panel = (this._kino && this._kino.lights) || {};
-    const controls = panel.controls || [];
-    if (!controls.length) return "";
+    const { scenes, lamps } = this._lightGroups();
+    if (!scenes.length && !lamps.length) return "";
     const states = (this._hass && this._hass.states) || {};
-    const chips = controls
+    const active = this._activeScene();
+    const on = lamps.filter(
+      (l) => states[l.entity] && states[l.entity].state === "on"
+    ).length;
+
+    const tiles = scenes
       .map((control) => {
         const state = states[control.entity];
-        // A renamed or removed entity stays visible rather than silently
-        // disappearing — a gap in the row is a question nobody can answer.
         const missing = !state || state.state === "unavailable";
-        const on = !control.momentary && !!state && state.state === "on";
-        const level = on ? helpers.brightnessPercent(state) : null;
-        const name =
-          control.name ||
-          (state && state.attributes && state.attributes.friendly_name) ||
-          control.entity;
-        return `<button class="lightchip" data-act="light"
-          data-key="${this._esc(control.entity)}" aria-pressed="${on}"${
+        const pressed = !!active && active.entity === control.entity;
+        return `<button class="scenetile" data-act="light"
+          data-key="${this._esc(control.entity)}" aria-pressed="${pressed}"${
             missing ? ' aria-disabled="true" title="Entity nicht verfügbar"' : ""
           }>
-          ${
+          <span class="ic">${
             control.icon
-              ? `<ha-icon class="lighticon" icon="${this._esc(control.icon)}"></ha-icon>`
+              ? `<ha-icon icon="${this._esc(control.icon)}"></ha-icon>`
               : ""
-          }
-          <span>${this._esc(name)}</span>
-          ${level != null ? `<span class="lightlevel">${level}%</span>` : ""}
+          }</span>
+          <span class="nm">${this._esc(this._lightName(control, state))}</span>
         </button>`;
       })
       .join("");
-    return `<div class="maxcol lightblock" style="padding:0 20px 12px">
-      ${panel.title ? `<span class="lightlabel">${this._esc(panel.title)}</span>` : ""}
-      ${chips}
+
+    return `<div class="maxcol" style="padding:0 20px 12px"><div class="lightcard">
+      <div class="lighthead">
+        <span class="cap">${this._esc(
+          panel.title == null ? "Licht" : panel.title
+        )}</span>
+        <span class="now">${this._esc(
+          active ? this._lightName(active, states[active.entity]) : "Manuell"
+        )}</span>
+      </div>
+      ${tiles ? `<div class="scenegrid">${tiles}</div>` : ""}
+      ${
+        lamps.length
+          ? `<div class="alloffwrap">
+               <button class="alloff" data-act="lights-all-off">
+                 ${POWER_ICON}<span>Alles aus</span>
+               </button>
+             </div>
+             <div class="lightdiv"></div>
+             <button class="lightexp" data-act="lights-toggle-list"
+               aria-expanded="${!!this._view.lightsOpen}">
+               <span class="nm">Einzelne Lichter</span>
+               <span class="ct">${on ? `${on} an` : "alle aus"}</span>
+               <span class="chev">${CHEVRON_ICON}</span>
+             </button>
+             ${
+               this._view.lightsOpen
+                 ? `<div class="lightlist">${lamps
+                     .map((lamp) => this._renderLightRow(lamp))
+                     .join("")}</div>`
+                 : ""
+             }`
+          : ""
+      }
+    </div></div>`;
+  }
+
+  /** One lamp: what it is doing, a switch, and — when it is on — how much. */
+  _renderLightRow(control) {
+    const states = (this._hass && this._hass.states) || {};
+    const state = states[control.entity];
+    const missing = !state || state.state === "unavailable";
+    const on = !!state && state.state === "on";
+    const dimmable = helpers.isDimmable(state);
+    const colour = helpers.isColorCapable(state);
+    const percent = helpers.brightnessPercent(state);
+    const currentHex = helpers.rgbHex(
+      state && state.attributes ? state.attributes.rgb_color : null
+    );
+    // The dot carries the lamp's own colour when it has one, so the folded
+    // row still says what the room looks like.
+    const dot = on ? currentHex || "var(--kino-gold)" : "var(--kino-surface2)";
+    const id = this._esc(control.entity);
+    const name = this._esc(this._lightName(control, state));
+
+    const swatches = LIGHT_PALETTE.map(
+      (value) => `<button class="swatch" data-act="light-color" data-key="${id}"
+        data-value="${value}" aria-pressed="${currentHex === value}"
+        style="background:${value}" aria-label="Farbe ${value}"></button>`
+    ).join("");
+
+    return `<div class="lightrow">
+      <div class="top">
+        <span class="dot" style="background:${dot}"></span>
+        <span class="names">
+          <span class="nm">${name}</span>
+          <span class="st">${this._esc(helpers.lightStatus(state))}</span>
+        </span>
+        <button class="lswitch" role="switch" aria-checked="${on}"
+          data-act="light" data-key="${id}"${
+            missing ? ' aria-disabled="true" title="Entity nicht verfügbar"' : ""
+          } aria-label="${name}"><span class="knob"></span></button>
+      </div>
+      ${
+        on && (dimmable || colour)
+          ? `<div class="lightctl">
+              ${
+                dimmable
+                  ? `<div class="dimrow">
+                      <input class="dim" type="range" min="1" max="100"
+                        value="${percent == null ? 100 : percent}"
+                        data-field="light-brightness:${id}" data-key="${id}"
+                        aria-label="Helligkeit ${name}">
+                      <span class="dimval" data-role="dimval">${
+                        percent == null ? 100 : percent
+                      }%</span>
+                    </div>`
+                  : ""
+              }
+              ${colour ? `<div class="swatches">${swatches}</div>` : ""}
+            </div>`
+          : ""
+      }
     </div>`;
   }
 
@@ -5840,7 +6252,18 @@ class KinoCard extends CardBase {
         await this._activate(this._kino.offActivity);
         break;
       case "light":
-        await this._light(key, target);
+        await this._light(key);
+        break;
+      case "light-color":
+        await this._lightColor(key, target.dataset.value);
+        break;
+      case "lights-all-off":
+        await this._lightsAllOff();
+        break;
+      case "lights-toggle-list":
+        view.lightsOpen = !view.lightsOpen;
+        store(LIGHTS_OPEN_STORAGE_KEY, view.lightsOpen ? "1" : "0");
+        this._render();
         break;
       case "restore":
         await this._restoreDevice(key);
@@ -6405,6 +6828,12 @@ class KinoCard extends CardBase {
 
   _onChange(event) {
     const field = event.target.dataset.field;
+    if (field && field.startsWith("light-brightness")) {
+      // Sent on release, not per pixel of the drag: every intermediate value
+      // would be a service call the lamp has to answer.
+      this._lightBrightness(event.target.dataset.key, event.target.value);
+      return;
+    }
     if (field === "sort") {
       // A direction chosen for one field must not silently invert another.
       this._view.sortDir = null;
@@ -6445,7 +6874,16 @@ class KinoCard extends CardBase {
   _onInput(event) {
     const field = event.target.dataset.field;
     // Every field of the card: while these keep arriving, no poll redraws it.
+    // A dragged slider counts — a redraw mid-drag would drop the thumb.
     this._lastTypedAt = Date.now();
+    if (field && field.startsWith("light-brightness")) {
+      // The number keeps up with the thumb; the lamp waits for the release.
+      const label =
+        event.target.parentElement &&
+        event.target.parentElement.querySelector(".dimval");
+      if (label) label.textContent = `${event.target.value}%`;
+      return;
+    }
     if (field === "person-search") {
       this._view.personQuery = event.target.value;
       this._searchPeople();

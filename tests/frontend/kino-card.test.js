@@ -2328,82 +2328,352 @@ describe("going back", () => {
   });
 });
 
-describe("the light row", () => {
-  const LIGHTS = {
-    title: "Licht",
-    position: "below",
-    controls: [
-      { entity: "scene.dark", name: "Dunkel", icon: "mdi:weather-night", momentary: true },
-      { entity: "light.kino_deckenspots", name: null, icon: null, momentary: false },
-    ],
+describe("the light card", () => {
+  const SCENES = [
+    { entity: "scene.dark", name: "Dunkel", icon: "mdi:weather-night", momentary: true },
+    { entity: "scene.low_ambience", name: "Gedimmt", icon: null, momentary: true },
+  ];
+  const LAMPS = [
+    { entity: "light.kino_deckenspots", name: "Spots", icon: null, momentary: false },
+    { entity: "light.kino_vorhang", name: null, icon: null, momentary: false },
+  ];
+  const LIGHTS = { title: "Licht", position: "below", controls: [...SCENES, ...LAMPS] };
+
+  // A dimmable, colour-capable strip and a dimmable-only downlight — which is
+  // exactly what the room has.
+  const STATES = {
+    "scene.dark": { state: "2026-09-06T20:00:00+00:00", attributes: {} },
+    "scene.low_ambience": { state: "2026-09-06T19:00:00+00:00", attributes: {} },
+    "light.kino_deckenspots": {
+      state: "off",
+      last_changed: "2026-09-06T19:59:00+00:00",
+      attributes: { supported_color_modes: ["brightness"] },
+    },
+    "light.kino_vorhang": {
+      state: "on",
+      last_changed: "2026-09-06T20:00:03+00:00",
+      attributes: {
+        friendly_name: "Kino Vorhang LED",
+        supported_color_modes: ["rgbw"],
+        brightness: 128,
+        rgb_color: [255, 217, 160],
+      },
+    },
   };
 
-  const makeCard = (lights = LIGHTS, states = {}) => {
+  const makeCard = (lights = LIGHTS, states = STATES, view = {}) => {
     const card = Object.create(KinoCard.prototype);
     card._kino = { lights };
-    card._view = {};
+    card._view = view;
     card._hass = { states };
     return card;
   };
 
-  test("nothing configured is no row at all", () => {
+  test("nothing configured is no card at all", () => {
     assert.equal(makeCard(null)._renderLights(), "");
     assert.equal(makeCard({ controls: [] })._renderLights(), "");
   });
 
-  test("the configured label wins over the entity's own name", () => {
-    const html = makeCard(LIGHTS, {
-      "scene.dark": { state: "2026-09-06T10:00:00+00:00", attributes: {} },
-      "light.kino_deckenspots": {
-        state: "off",
-        attributes: { friendly_name: "Kino Deckenspots" },
-      },
-    })._renderLights();
-    assert.match(html, /<span>Dunkel<\/span>/);
-    // No label configured: whatever Home Assistant calls it today.
-    assert.match(html, /<span>Kino Deckenspots<\/span>/);
+  test("scenes are tiles, lamps are not", () => {
+    const html = makeCard()._renderLights();
+    assert.equal((html.match(/class="scenetile"/g) || []).length, 2);
+    assert.match(html, /data-key="scene\.dark"/);
+    assert.doesNotMatch(html, /class="scenetile"[^>]*data-key="light\./);
     assert.match(html, /icon="mdi:weather-night"/);
   });
 
-  test("a toggle mirrors its entity, a scene never claims to be on", () => {
-    const card = makeCard(LIGHTS, {
-      "scene.dark": { state: "2026-09-06T10:00:00+00:00", attributes: {} },
-      "light.kino_deckenspots": { state: "on", attributes: { brightness: 128 } },
-    });
-    const html = card._renderLights();
-    assert.match(html, /data-key="light\.kino_deckenspots" aria-pressed="true"/);
-    assert.match(html, /data-key="scene\.dark" aria-pressed="false"/);
-    // A dimmed light says how far down it is.
-    assert.match(html, /<span class="lightlevel">50%<\/span>/);
+  /**
+   * A scene has no "on" state in Home Assistant — only the moment it was last
+   * applied. The newest one is the room's, until a lamp is moved by hand.
+   */
+  test("the most recently applied scene is the active one", () => {
+    const html = makeCard()._renderLights();
+    assert.match(html, /data-key="scene\.dark" aria-pressed="true"/);
+    assert.match(html, /data-key="scene\.low_ambience" aria-pressed="false"/);
+    assert.match(html, /<span class="now">Dunkel<\/span>/);
+  });
 
-    card._hass.states["light.kino_deckenspots"].state = "off";
-    assert.match(
-      card._renderLights(),
-      /data-key="light\.kino_deckenspots" aria-pressed="false"/
+  test("a lamp settling right after the scene does not un-mark it", () => {
+    // The strip changed 3 s after the scene landed — that was the scene.
+    assert.equal(makeCard()._activeScene().entity, "scene.dark");
+  });
+
+  test("a lamp moved by hand afterwards does un-mark it", () => {
+    const states = {
+      ...STATES,
+      "light.kino_vorhang": {
+        ...STATES["light.kino_vorhang"],
+        last_changed: "2026-09-06T20:05:00+00:00",
+      },
+    };
+    const card = makeCard(LIGHTS, states);
+    assert.equal(card._activeScene(), null);
+    assert.match(card._renderLights(), /<span class="now">Manuell<\/span>/);
+    assert.doesNotMatch(card._renderLights(), /aria-pressed="true"/);
+  });
+
+  test("a scene never applied is never the active one", () => {
+    // After a restart a scene reads "unknown" until something applies it, so
+    // the one that *has* landed is the room's — here with the lamps quiet
+    // since before it, so nothing has overtaken it.
+    const states = {
+      ...STATES,
+      "scene.dark": { state: "unknown", attributes: {} },
+      "light.kino_deckenspots": {
+        ...STATES["light.kino_deckenspots"],
+        last_changed: "2026-09-06T18:30:00+00:00",
+      },
+      "light.kino_vorhang": {
+        ...STATES["light.kino_vorhang"],
+        last_changed: "2026-09-06T18:30:00+00:00",
+      },
+    };
+    assert.equal(makeCard(LIGHTS, states)._activeScene().entity, "scene.low_ambience");
+  });
+
+  test("the lamp list folds away, and says how many are on", () => {
+    const folded = makeCard()._renderLights();
+    assert.match(folded, /aria-expanded="false"/);
+    assert.match(folded, /<span class="ct">1 an<\/span>/);
+    assert.doesNotMatch(folded, /class="lightrow"/);
+
+    const open = makeCard(LIGHTS, STATES, { lightsOpen: true })._renderLights();
+    assert.match(open, /aria-expanded="true"/);
+    assert.equal((open.match(/class="lightrow"/g) || []).length, 2);
+  });
+
+  test("with every lamp off the count says so rather than '0 an'", () => {
+    const states = {
+      ...STATES,
+      "light.kino_vorhang": { ...STATES["light.kino_vorhang"], state: "off" },
+    };
+    assert.match(makeCard(LIGHTS, states)._renderLights(), /<span class="ct">alle aus<\/span>/);
+  });
+
+  test("a lamp shows its switch, its level and Home Assistant's name", () => {
+    const row = makeCard()._renderLightRow(LAMPS[1]);
+    assert.match(row, /role="switch" aria-checked="true"/);
+    assert.match(row, /<span class="nm">Kino Vorhang LED<\/span>/);
+    assert.match(row, /<span class="st">50%<\/span>/);
+    assert.match(row, /value="50"/);
+  });
+
+  test("controls appear only for what the lamp can actually do", () => {
+    // On, dimmable and colour-capable: slider and swatches.
+    const strip = makeCard()._renderLightRow(LAMPS[1]);
+    assert.match(strip, /class="dim"/);
+    assert.equal((strip.match(/class="swatch"/g) || []).length, 6);
+    // The colour it is already showing is the marked one.
+    assert.match(strip, /data-value="#ffd9a0" aria-pressed="true"/);
+
+    // Off: nothing to adjust until it is on.
+    const spots = makeCard()._renderLightRow(LAMPS[0]);
+    assert.match(spots, /aria-checked="false"/);
+    assert.match(spots, /<span class="st">Aus<\/span>/);
+    assert.doesNotMatch(spots, /class="dim"/);
+
+    // On but brightness-only: a slider, never swatches.
+    const on = makeCard(LIGHTS, {
+      ...STATES,
+      "light.kino_deckenspots": {
+        state: "on",
+        last_changed: "2026-09-06T20:00:01+00:00",
+        attributes: { supported_color_modes: ["brightness"], brightness: 255 },
+      },
+    })._renderLightRow(LAMPS[0]);
+    assert.match(on, /class="dim"/);
+    assert.doesNotMatch(on, /class="swatch"/);
+  });
+
+  test("a switch is not a dimmer", () => {
+    const card = makeCard(
+      { controls: [{ entity: "switch.kino_led", name: "LED", momentary: false }] },
+      { "switch.kino_led": { state: "on", last_changed: "x", attributes: {} } }
     );
+    const row = card._renderLightRow({ entity: "switch.kino_led", name: "LED" });
+    assert.match(row, /<span class="st">An<\/span>/);
+    assert.doesNotMatch(row, /class="dim"/);
+    assert.doesNotMatch(row, /class="swatch"/);
   });
 
   test("an entity that is gone stays visible, greyed out", () => {
-    const html = makeCard(LIGHTS, {
-      "light.kino_deckenspots": { state: "unavailable", attributes: {} },
-    })._renderLights();
-    assert.equal((html.match(/class="lightchip"/g) || []).length, 2);
+    const html = makeCard(LIGHTS, {})._renderLights();
     assert.equal((html.match(/aria-disabled="true"/g) || []).length, 2);
+    const row = makeCard(LIGHTS, {})._renderLightRow(LAMPS[1]);
+    assert.match(row, /aria-disabled="true"/);
+    assert.match(row, /<span class="st">Nicht verfügbar<\/span>/);
     // Nothing else to call it by.
-    assert.match(html, /<span>light\.kino_deckenspots<\/span>/);
+    assert.match(row, /<span class="nm">light\.kino_vorhang<\/span>/);
   });
 
-  test("a scene is applied, a light is toggled", async () => {
+  /**
+   * The bug this suite was written blind to: Home Assistant only moves
+   * `last_changed` when the state *string* changes. A dim or a recolour is an
+   * attribute-only change, so the lamp stays "on" and `last_changed` stands
+   * still — and those are exactly the two controls this card added.
+   */
+  test("dimming a lamp withdraws the scene mark, though its state string never moved", () => {
+    const states = {
+      ...STATES,
+      "light.kino_vorhang": {
+        ...STATES["light.kino_vorhang"],
+        state: "on",
+        last_changed: "2026-09-06T20:00:03+00:00", // the scene's own settle
+        last_updated: "2026-09-06T20:04:00+00:00", // the user dragged the slider
+        attributes: { ...STATES["light.kino_vorhang"].attributes, brightness: 255 },
+      },
+    };
+    const card = makeCard(LIGHTS, states);
+    assert.equal(card._activeScene(), null);
+    assert.match(card._renderLights(), /<span class="now">Manuell<\/span>/);
+  });
+
+  test("a lamp that has not moved keeps the mark, on either timestamp", () => {
+    const states = {
+      ...STATES,
+      "light.kino_vorhang": {
+        ...STATES["light.kino_vorhang"],
+        last_changed: "2026-09-06T20:00:02+00:00",
+        last_updated: "2026-09-06T20:00:02+00:00",
+      },
+      "light.kino_deckenspots": {
+        ...STATES["light.kino_deckenspots"],
+        last_updated: "2026-09-06T19:59:00+00:00",
+      },
+    };
+    assert.equal(makeCard(LIGHTS, states)._activeScene().entity, "scene.dark");
+  });
+
+  /**
+   * Tapping a scene and then changing your mind a second later is the normal
+   * flow, not a race — and a clock-based grace window would have credited
+   * that change to the scene for the rest of the evening.
+   */
+  test("a lamp driven from the card un-marks the scene immediately, inside the grace window", () => {
+    const card = makeCard();
+    assert.equal(card._activeScene().entity, "scene.dark");
+    card._noteManualLight();
+    assert.equal(card._activeScene(), null);
+    assert.match(card._renderLights(), /<span class="now">Manuell<\/span>/);
+  });
+
+  test("...and applying a scene again takes the mark back", () => {
+    const card = makeCard();
+    card._noteManualLight();
+    assert.equal(card._activeScene(), null);
+    card._hass.states = {
+      ...card._hass.states,
+      "scene.low_ambience": { state: "2026-09-06T20:30:00+00:00", attributes: {} },
+    };
+    assert.equal(card._activeScene().entity, "scene.low_ambience");
+  });
+
+  /** A bulb blinking out and back is not somebody reaching for a switch. */
+  test("an unreachable lamp does not withdraw the mark", () => {
+    const states = {
+      ...STATES,
+      "light.kino_vorhang": {
+        state: "unavailable",
+        last_changed: "2026-09-06T21:30:00+00:00",
+        last_updated: "2026-09-06T21:30:00+00:00",
+        attributes: {},
+      },
+    };
+    assert.equal(makeCard(LIGHTS, states)._activeScene().entity, "scene.dark");
+  });
+
+  test("an empty title means no label, as the config documents", () => {
+    const html = makeCard({ ...LIGHTS, title: "" })._renderLights();
+    assert.match(html, /<span class="cap"><\/span>/);
+    assert.doesNotMatch(html, /<span class="cap">Licht<\/span>/);
+    // Absent still falls back, so an untouched config is unchanged.
+    const fallback = makeCard({ controls: LIGHTS.controls })._renderLights();
+    assert.match(fallback, /<span class="cap">Licht<\/span>/);
+  });
+
+  /**
+   * The card restores focus after a re-render by looking a field up by name.
+   * One name shared by every slider put the caret on the wrong lamp — and the
+   * next arrow key on the wrong lamp's brightness.
+   */
+  test("each lamp's slider carries its own field name", () => {
+    const open = makeCard(LIGHTS, {
+      ...STATES,
+      "light.kino_deckenspots": {
+        state: "on",
+        last_changed: "2026-09-06T20:00:01+00:00",
+        attributes: { supported_color_modes: ["brightness"], brightness: 200 },
+      },
+    }, { lightsOpen: true })._renderLights();
+    const fields = [...open.matchAll(/data-field="(light-brightness[^"]*)"/g)].map((m) => m[1]);
+    assert.equal(fields.length, 2);
+    assert.equal(new Set(fields).size, 2, "two sliders must not share one name");
+    assert.ok(fields.every((f) => f.includes(".")), "the name carries the entity");
+  });
+
+  test("a tile without an icon still lines its label up with the others", () => {
+    const html = makeCard({
+      controls: [
+        { entity: "scene.dark", name: "Dunkel", momentary: true },
+        { entity: "scene.low_ambience", name: "Gedimmt", icon: "mdi:lamp", momentary: true },
+      ],
+    })._renderLights();
+    // The slot is what keeps the baselines together, so both tiles have one.
+    assert.equal((html.match(/class="ic"/g) || []).length, 2);
+  });
+
+  test("a scene is applied, a lamp is toggled", async () => {
     const card = makeCard();
     const calls = [];
     card._callService = async (...args) => calls.push(args);
-    await card._light("scene.dark", null);
-    await card._light("light.kino_deckenspots", null);
-    await card._light("script.kino_licht_hoch", null);
+    await card._light("scene.dark");
+    await card._light("light.kino_vorhang");
     assert.deepEqual(calls, [
       ["scene", "turn_on", { entity_id: "scene.dark" }],
-      ["light", "toggle", { entity_id: "light.kino_deckenspots" }],
-      ["script", "turn_on", { entity_id: "script.kino_licht_hoch" }],
+      ["light", "toggle", { entity_id: "light.kino_vorhang" }],
+    ]);
+  });
+
+  test("brightness goes as a percentage, colour as rgb", async () => {
+    const card = makeCard();
+    const calls = [];
+    card._callService = async (...args) => calls.push(args);
+    await card._lightBrightness("light.kino_vorhang", "42");
+    await card._lightColor("light.kino_vorhang", "#4b8bff");
+    assert.deepEqual(calls, [
+      ["light", "turn_on", { entity_id: "light.kino_vorhang", brightness_pct: 42 }],
+      ["light", "turn_on", { entity_id: "light.kino_vorhang", rgb_color: [75, 139, 255] }],
+    ]);
+  });
+
+  test("the slider never asks for a level that would switch the lamp off", async () => {
+    const card = makeCard();
+    const calls = [];
+    card._callService = async (...args) => calls.push(args);
+    await card._lightBrightness("light.kino_vorhang", "0");
+    await card._lightBrightness("light.kino_vorhang", "500");
+    assert.deepEqual(
+      calls.map((c) => c[2].brightness_pct),
+      [1, 100]
+    );
+  });
+
+  /** "Alles aus" is about the lamps — it must never touch the activity. */
+  test("all-off switches off every lamp, grouped by domain, and no scene", async () => {
+    const card = makeCard({
+      controls: [
+        ...SCENES,
+        { entity: "light.a", momentary: false },
+        { entity: "light.b", momentary: false },
+        { entity: "switch.c", momentary: false },
+      ],
+    });
+    const calls = [];
+    card._callService = async (...args) => calls.push(args);
+    await card._lightsAllOff();
+    assert.deepEqual(calls, [
+      ["light", "turn_off", { entity_id: ["light.a", "light.b"] }],
+      ["switch", "turn_off", { entity_id: ["switch.c"] }],
     ]);
   });
 
@@ -2413,29 +2683,75 @@ describe("the light row", () => {
       throw new Error("Szene nicht gefunden");
     };
     card._render = () => {};
-    await card._light("scene.dark", null);
+    await card._light("scene.dark");
     assert.equal(card._actionError, "Szene nicht gefunden");
   });
 
   /**
-   * A scene's state is the timestamp it was last applied at. Redrawing the
-   * card for that recreates every poster — and wipes the chip's own
-   * acknowledgement of the tap that caused it.
+   * The active tile is derived from a scene's timestamp, so unlike the old
+   * chip row that timestamp now has to force a redraw.
    */
-  test("only the toggles count towards a re-render", () => {
+  test("a scene landing redraws the card", () => {
     const card = Object.create(KinoCard.prototype);
     card._kino = { entities: {}, controls: {}, lights: LIGHTS };
-    card._hass = {
-      states: {
-        "scene.dark": { state: "2026-09-06T10:00:00+00:00", attributes: {} },
-        "light.kino_deckenspots": { state: "off", attributes: {} },
-      },
-    };
+    card._hass = { states: JSON.parse(JSON.stringify(STATES)) };
     const before = card._renderSignature();
-    card._hass.states["scene.dark"].state = "2026-09-06T10:00:05+00:00";
-    assert.equal(card._renderSignature(), before);
-    card._hass.states["light.kino_deckenspots"].state = "on";
+    card._hass.states["scene.dark"].state = "2026-09-06T20:10:00+00:00";
     assert.notEqual(card._renderSignature(), before);
+  });
+
+  test("a dimmed lamp redraws the card", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = { entities: {}, controls: {}, lights: LIGHTS };
+    card._hass = { states: JSON.parse(JSON.stringify(STATES)) };
+    const before = card._renderSignature();
+    card._hass.states["light.kino_vorhang"].attributes.brightness = 200;
+    assert.notEqual(card._renderSignature(), before);
+    const dimmed = card._renderSignature();
+    card._hass.states["light.kino_vorhang"].attributes.rgb_color = [0, 0, 255];
+    assert.notEqual(card._renderSignature(), dimmed);
+  });
+});
+
+describe("light capabilities", () => {
+  const light = (modes, extra = {}) => ({
+    state: "on",
+    attributes: { supported_color_modes: modes, ...extra },
+  });
+
+  test("what can be dimmed", () => {
+    assert.equal(helpers.isDimmable(light(["brightness"])), true);
+    assert.equal(helpers.isDimmable(light(["rgbw"])), true);
+    assert.equal(helpers.isDimmable(light(["onoff"])), false);
+    // A switch reports no colour modes at all.
+    assert.equal(helpers.isDimmable({ state: "on", attributes: {} }), false);
+    assert.equal(helpers.isDimmable(null), false);
+  });
+
+  test("what can be coloured", () => {
+    assert.equal(helpers.isColorCapable(light(["rgbw"])), true);
+    assert.equal(helpers.isColorCapable(light(["hs"])), true);
+    assert.equal(helpers.isColorCapable(light(["brightness"])), false);
+    assert.equal(helpers.isColorCapable(light(["color_temp"])), false);
+    assert.equal(helpers.isColorCapable(null), false);
+  });
+
+  test("colours round-trip between the swatch and the service call", () => {
+    assert.equal(helpers.rgbHex([255, 217, 160]), "#ffd9a0");
+    assert.equal(helpers.rgbHex([0, 0, 0]), "#000000");
+    assert.equal(helpers.rgbHex(null), null);
+    assert.equal(helpers.rgbHex([1, 2]), null);
+    assert.deepEqual(helpers.hexToRgb("#ffd9a0"), [255, 217, 160]);
+    assert.deepEqual(helpers.hexToRgb("4b8bff"), [75, 139, 255]);
+    assert.equal(helpers.hexToRgb("nonsense"), null);
+  });
+
+  test("the status line says what the lamp is doing", () => {
+    assert.equal(helpers.lightStatus(light(["brightness"], { brightness: 128 })), "50%");
+    assert.equal(helpers.lightStatus({ state: "on", attributes: {} }), "An");
+    assert.equal(helpers.lightStatus({ state: "off", attributes: {} }), "Aus");
+    assert.equal(helpers.lightStatus({ state: "unavailable", attributes: {} }), "Nicht verfügbar");
+    assert.equal(helpers.lightStatus(null), "Nicht verfügbar");
   });
 });
 
