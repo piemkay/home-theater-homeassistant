@@ -136,6 +136,23 @@ settings:
   off_activity: aus
   shutdown_light_scene: scene.low_ambience
   drift_debounce_seconds: 20
+  # Die Lichtzeile der Karte: sichtbar, auch wenn das Kino aus ist. Szenen
+  # werden angewendet, Lampen und Schalter schalten um. `position: above`
+  # setzt die Zeile über die Aktivitäten.
+  lights:
+    controls:
+      - entity: scene.dark
+        name: Dunkel
+        icon: mdi:weather-night
+      - entity: scene.low_ambience
+        name: Gedimmt
+        icon: mdi:lightbulb-on-30
+      - entity: scene.bright_ambience
+        name: Hell
+        icon: mdi:lightbulb-on
+      - entity: light.kino_deckenspots
+        name: Spots
+        icon: mdi:track-light
   volume:
     device: trinnov
     min_db: -60.0

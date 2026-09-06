@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.kino.core.model import ControlClass, PowerTarget
+from custom_components.kino.core.model import (
+    ControlClass,
+    LightPosition,
+    PowerTarget,
+)
 from custom_components.kino.core.schema import ConfigErrors, validate
 
 
@@ -145,6 +149,113 @@ def test_all_errors_are_reported_in_one_pass(config_doc):
     assert len(excinfo.value.errors) >= 3
 
 
+def test_no_lights_configured_means_no_light_row(config_doc):
+    config = validate(config_doc)
+
+    assert config.lights.controls == ()
+    assert config.lights.position is LightPosition.BELOW
+
+
+def test_lights_accept_the_short_hand_list(config_doc):
+    config_doc["settings"]["lights"] = ["scene.dark", "light.kino_deckenspots"]
+
+    config = validate(config_doc)
+
+    assert [c.entity for c in config.lights.controls] == [
+        "scene.dark",
+        "light.kino_deckenspots",
+    ]
+    assert config.lights.controls[0].momentary is True
+    assert config.lights.controls[1].momentary is False
+    assert config.lights.title == "Licht"
+
+
+def test_lights_keep_their_configured_order_and_labels(config_doc):
+    config_doc["settings"]["lights"] = {
+        "title": "Beleuchtung",
+        "position": "above",
+        "controls": [
+            {"entity": "scene.low_ambience", "name": "Gedimmt", "icon": "mdi:lamp"},
+            "switch.kino_led",
+        ],
+    }
+
+    config = validate(config_doc)
+
+    assert config.lights.position is LightPosition.ABOVE
+    assert config.lights.title == "Beleuchtung"
+    first, second = config.lights.controls
+    assert (first.entity, first.name, first.icon) == (
+        "scene.low_ambience",
+        "Gedimmt",
+        "mdi:lamp",
+    )
+    assert (second.entity, second.name) == ("switch.kino_led", None)
+
+
+def test_a_light_entity_nothing_can_switch_is_rejected(config_doc):
+    config_doc["settings"]["lights"] = ["sensor.kino_temperatur"]
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        validate(config_doc)
+
+    assert any(
+        e.path == "settings.lights.controls[0].entity" for e in excinfo.value.errors
+    )
+
+
+def test_a_light_listed_twice_is_a_typo_not_two_buttons(config_doc):
+    config_doc["settings"]["lights"] = ["scene.dark", "scene.dark"]
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        validate(config_doc)
+
+    assert any(e.path == "settings.lights.controls[1]" for e in excinfo.value.errors)
+
+
+def test_an_empty_light_title_is_written_as_a_string(config_doc):
+    """The row without a heading — the spelling the README documents.
+
+    A bare ``title:`` is YAML null, which this schema rejects the way it
+    rejects null in eleven other fields. So the way to ask for no heading is
+    an explicit empty string, and that has to keep working.
+    """
+    config_doc["settings"]["lights"] = {"title": "  ", "controls": ["scene.dark"]}
+
+    assert validate(config_doc).lights.title == ""
+
+
+def test_a_null_light_title_is_rejected_by_name(config_doc):
+    config_doc["settings"]["lights"] = {"title": None, "controls": ["scene.dark"]}
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        validate(config_doc)
+
+    assert any(e.path == "settings.lights.title" for e in excinfo.value.errors)
+
+
+def test_an_unknown_light_position_names_the_field(config_doc):
+    config_doc["settings"]["lights"] = {"position": "links", "controls": []}
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        validate(config_doc)
+
+    assert any(e.path == "settings.lights.position" for e in excinfo.value.errors)
+
+
+def test_a_misspelled_light_field_is_named(config_doc):
+    config_doc["settings"]["lights"] = {
+        "controls": [{"entity": "scene.dark", "lable": "x"}]
+    }
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        validate(config_doc)
+
+    assert any(
+        e.path == "settings.lights.controls[0].lable" for e in excinfo.value.errors
+    )
+
+
 def test_shipped_default_document_is_valid():
     """
     The starter config we write on first setup must load cleanly.
@@ -165,3 +276,11 @@ def test_shipped_default_document_is_valid():
     }
     assert config.activities["musik"].requires("barco") is False
     assert config.devices["shield"].required is False
+    # The light row ships configured — it is what makes the card usable with
+    # the theater off.
+    assert [c.entity for c in config.lights.controls] == [
+        "scene.dark",
+        "scene.low_ambience",
+        "scene.bright_ambience",
+        "light.kino_deckenspots",
+    ]

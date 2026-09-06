@@ -20,6 +20,9 @@ from .model import (
     DeviceRequirement,
     DeviceSpec,
     KinoConfig,
+    LightControl,
+    LightPanel,
+    LightPosition,
     PowerTarget,
 )
 
@@ -58,6 +61,14 @@ _ACTIVITY_KEYS = frozenset(
 )
 
 _REQUIREMENT_KEYS = frozenset({"power", "required", "settings"})
+
+_LIGHT_PANEL_KEYS = frozenset({"controls", "position", "title"})
+
+_LIGHT_CONTROL_KEYS = frozenset({"entity", "name", "icon"})
+
+#: What the card knows how to drive from a light button: the two that are
+#: applied (scene, script) and the three that toggle.
+_LIGHT_DOMAINS = frozenset({"scene", "script", "light", "switch", "input_boolean"})
 
 
 class ConfigError(Exception):
@@ -151,6 +162,111 @@ def _scene_or_none(value: Any, path: str, errors: list[ConfigError]) -> str | No
         errors.append(ConfigError(path, f"{value!r} ist keine scene.*-Entity"))
         return None
     return value
+
+
+def _parse_light_control(
+    raw: Any, path: str, errors: list[ConfigError]
+) -> LightControl | None:
+    """Parse one entry of the light row — a bare entity ID, or an object."""
+    if isinstance(raw, str):
+        raw = {"entity": raw}
+    if not isinstance(raw, Mapping):
+        errors.append(ConfigError(path, "erwartet eine Entity oder ein Objekt"))
+        return None
+    _unknown_keys(raw, _LIGHT_CONTROL_KEYS, path, errors)
+
+    entity = raw.get("entity")
+    if not isinstance(entity, str) or not entity:
+        errors.append(ConfigError(f"{path}.entity", "erwartet eine Entity"))
+        return None
+    domain, _, object_id = entity.partition(".")
+    if not object_id or domain not in _LIGHT_DOMAINS:
+        errors.append(
+            ConfigError(
+                f"{path}.entity",
+                f"{entity!r} lässt sich nicht schalten (erlaubt: "
+                + ", ".join(sorted(_LIGHT_DOMAINS))
+                + ")",
+            )
+        )
+        return None
+
+    name = raw.get("name")
+    if name is not None and not isinstance(name, str):
+        errors.append(ConfigError(f"{path}.name", f"erwartet Text, gefunden {name!r}"))
+        name = None
+    icon = raw.get("icon")
+    if icon is not None and not isinstance(icon, str):
+        errors.append(ConfigError(f"{path}.icon", f"erwartet Text, gefunden {icon!r}"))
+        icon = None
+    return LightControl(entity=entity, name=name or None, icon=icon or None)
+
+
+def _parse_light_controls(
+    raw: Any, errors: list[ConfigError]
+) -> tuple[LightControl, ...]:
+    """Parse the light row's entries; an entity listed twice is a typo."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        errors.append(ConfigError("settings.lights.controls", "erwartet eine Liste"))
+        return ()
+
+    controls: list[LightControl] = []
+    seen: set[str] = set()
+    for index, item in enumerate(raw):
+        path = f"settings.lights.controls[{index}]"
+        control = _parse_light_control(item, path, errors)
+        if control is None:
+            continue
+        if control.entity in seen:
+            errors.append(ConfigError(path, f"{control.entity} ist bereits aufgeführt"))
+            continue
+        seen.add(control.entity)
+        controls.append(control)
+    return tuple(controls)
+
+
+def _parse_lights(raw: Any, errors: list[ConfigError]) -> LightPanel:
+    """Parse the card's light row (FR-36a).
+
+    Written either as a bare list of entities — which is what most rooms
+    need — or as an object that also says where the row sits and what it is
+    called. Nothing configured means no row at all.
+    """
+    if raw is None:
+        return LightPanel()
+    if isinstance(raw, (list, tuple)):
+        raw = {"controls": raw}
+    if not isinstance(raw, Mapping):
+        errors.append(
+            ConfigError("settings.lights", "erwartet eine Liste oder ein Objekt")
+        )
+        return LightPanel()
+    _unknown_keys(raw, _LIGHT_PANEL_KEYS, "settings.lights", errors)
+
+    controls = _parse_light_controls(raw.get("controls"), errors)
+
+    position = raw.get("position", LightPosition.BELOW.value)
+    try:
+        parsed_position = LightPosition(position)
+    except (TypeError, ValueError):
+        errors.append(
+            ConfigError(
+                "settings.lights.position",
+                f"{position!r} ist unbekannt (erlaubt: above, below)",
+            )
+        )
+        parsed_position = LightPosition.BELOW
+
+    title = raw.get("title", "Licht")
+    if not isinstance(title, str):
+        errors.append(
+            ConfigError("settings.lights.title", f"erwartet Text, gefunden {title!r}")
+        )
+        title = "Licht"
+
+    return LightPanel(controls=controls, position=parsed_position, title=title.strip())
 
 
 def _check_path_map(value: Any, path: str, errors: list[ConfigError]) -> None:
@@ -498,6 +614,8 @@ def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
         settings.get("shutdown_light_scene"), "settings.shutdown_light_scene", errors
     )
 
+    lights = _parse_lights(settings.get("lights"), errors)
+
     # A device no activity ever mentions is dead weight and almost certainly a
     # typo; flag it rather than let it sit there doing nothing (FR-115).
     mentioned = {d for a in activities.values() for d in a.devices}
@@ -518,6 +636,7 @@ def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
         volume_max_db=-20.0 if max_db is None else max_db,
         volume_step_db=2.0 if step_db is None else step_db,
         shutdown_light_scene=shutdown_scene,
+        lights=lights,
         drift_debounce_seconds=20.0 if debounce is None else debounce,
         preferred_audio_language=settings.get("preferred_audio_language"),
         preferred_subtitle_language=settings.get("preferred_subtitle_language"),

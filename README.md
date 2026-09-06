@@ -188,6 +188,34 @@ attached ("Wiederherstellen" / "Ignorieren"); turning everything off asks
 once, in words, and while it runs the footer says "Wird ausgeschaltet…"
 instead of offering a dead volume stepper.
 
+### Light
+
+A row of light buttons the card drives directly — configured in
+`settings.lights`, and visible whether the theater is on, off or mid-switch,
+because turning the ceiling light down is not a reason to start the projector.
+A `scene` or a `script` is applied; a `light`, `switch` or `input_boolean`
+toggles and its button shows what the entity currently is, dimmed lights with
+their level. Nothing configured means no row at all.
+
+```yaml
+settings:
+  lights:
+    position: below        # below (default) or above the activity tiles
+    title: Licht           # the row's label; title: "" for none
+    controls:
+      - scene.dark                     # a bare entity is enough
+      - entity: scene.low_ambience
+        name: Gedimmt                  # optional; else the HA name
+        icon: mdi:lightbulb-on-30      # optional
+      - light.kino_deckenspots
+```
+
+The whole block is optional, and so is the object form: `lights: [scene.dark,
+scene.bright_ambience]` is a valid configuration. The **Licht** screen in the
+admin panel edits all of it. This is separate from the per-activity
+`light_scene`, which is what the room does *on its own* when an activity
+starts.
+
 ### The library
 
 * **Browse while off.** The library home (Weitersehen, Favoriten and
@@ -322,7 +350,8 @@ or `room` activity (Streaming, Steam) shows its configured hand-off text —
 ## Admin panel
 
 An admin-only **Kino Admin** entry appears in the sidebar (the second user
-never sees it, and the admin can tell it from the dashboard). Six tabs:
+never sees it, and the admin can tell it from the dashboard). Four tabs,
+plus the screens behind **Mehr**:
 
 | Tab | |
 |---|---|
@@ -330,6 +359,7 @@ never sees it, and the admin can tell it from the dashboard). Six tabs:
 | **Geräte** | Which Home Assistant entity backs each logical device — pickers filtered to the domains each driver role accepts — plus timeouts, duration estimates and the Zidoo's path mapping. Missing entities are flagged |
 | **Gerätestatus** | Observed against expected, per device and per setting (Ist / Soll), plus start/stop for one device in isolation |
 | **Planer** | The computed delta for any activity — stop / keep / reconfigure / start, with the reason per device — **without executing it** |
+| **Licht** | Which scenes, lights and switches the card's light row offers, in which order, with which labels and icons — and whether the row sits above or below the activity tiles |
 | **Verlauf** | Recent transitions with per-step timings, and the learned durations behind the ETA — resettable per device or wholesale |
 | **Demos** | The install-wide demo settings — lead-in, retro-capture window, confirmation timeout and the optional flags — plus **export and import of the whole demo dataset** as JSON. Clips and showcases are created on the card; this is where they are backed up and moved between installs |
 | **Datei** | The whole document as JSON — copy to clipboard, paste back, apply |

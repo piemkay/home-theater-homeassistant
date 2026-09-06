@@ -74,6 +74,13 @@ class ControlClass(str, Enum):
     OFF = "off"
 
 
+class LightPosition(str, Enum):
+    """Where the card's light row sits, relative to the activities (FR-36a)."""
+
+    ABOVE = "above"
+    BELOW = "below"
+
+
 class ActionKind(str, Enum):
     """The four outcomes of the differential planner (FR-10)."""
 
@@ -154,6 +161,36 @@ class ActivityDef:
 
 
 @dataclass(frozen=True)
+class LightControl:
+    """One button of the card's light row (FR-36a).
+
+    A scene or a script is *applied* — it has no state to mirror. Everything
+    else is a toggle whose button reflects what the entity currently is.
+    """
+
+    entity: str
+    name: str | None = None
+    icon: str | None = None
+
+    @property
+    def domain(self) -> str:
+        return self.entity.split(".", 1)[0]
+
+    @property
+    def momentary(self) -> bool:
+        return self.domain in ("scene", "script")
+
+
+@dataclass(frozen=True)
+class LightPanel:
+    """The light row: what it offers and where it sits (FR-36a)."""
+
+    controls: tuple[LightControl, ...] = ()
+    position: LightPosition = LightPosition.BELOW
+    title: str = "Licht"
+
+
+@dataclass(frozen=True)
 class KinoConfig:
     """The whole validated configuration document (FR-91)."""
 
@@ -165,6 +202,8 @@ class KinoConfig:
     volume_max_db: float = -20.0
     volume_step_db: float = 2.0
     shutdown_light_scene: str | None = None
+    #: Manual light control offered by the card, independent of the activity.
+    lights: LightPanel = field(default_factory=LightPanel)
     drift_debounce_seconds: float = 20.0
     preferred_audio_language: str | None = None
     preferred_subtitle_language: str | None = None

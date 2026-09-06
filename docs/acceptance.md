@@ -37,6 +37,7 @@ Requirements §13. "Automated" means an executable test asserts the behaviour;
 | A30 | Two stacked names mean "with both of them" (0.6.2) | ✅ automated + **verified live** | `test_jellyfin.py::TestSeveralPeople`; live: Tom Holland + Zendaya returned 643 of 620 films before the fix, the three Spider-Man films after |
 | A31 | Choose from the wall without opening anything: both scores on every tile (0.6.2) | ✅ automated + **verified live** | `kino-card.test.js` "critics score on the wall"; live: fresh and rotten tomatoes render in all five layouts, and a title without a critics score grows no badge |
 | A32 | A 21-track remux does not bury the rest of the detail sheet (0.6.2) | ✅ automated + **verified live** | `kino-card.test.js` "a long list is cut to three"; live: *Heat* shows 3 of 21 subtitles with "+ 18 weitere", cast row still on screen, commentaries last once expanded |
+| A33 | Turn the room's light down without starting the theater (0.8) | partial | `kino-card.test.js` "the light row", `test_schema.py` (6 cases), `kino-panel.test.js` "the light row editor"; **live**: with the theater off, tap a scene and a light — the scene applies, the light's chip follows the lamp |
 
 ---
 

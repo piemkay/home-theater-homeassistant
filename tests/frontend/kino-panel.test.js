@@ -380,3 +380,122 @@ describe("going back in the panel", () => {
     assert.equal(p._tab, "activities");
   });
 });
+
+describe("the light row editor", () => {
+  const lightPanel = () => {
+    const panel = Object.create(KinoPanel.prototype);
+    panel._document = DOC();
+    panel._render = () => {};
+    panel._scheduleValidate = () => {};
+    return panel;
+  };
+
+  test("a hand-written short-hand list is understood", () => {
+    const doc = DOC();
+    doc.settings.lights = ["scene.dark", { entity: "light.spots", name: "Spots" }];
+    const panel = panelHelpers.lightPanel(doc);
+    assert.equal(panel.position, "below");
+    assert.equal(panel.title, "Licht");
+    assert.deepEqual(panel.controls, [
+      { entity: "scene.dark" },
+      { entity: "light.spots", name: "Spots" },
+    ]);
+  });
+
+  test("an entry with nothing to say about it stays a bare entity", () => {
+    const doc = DOC();
+    panelHelpers.setLightPanel(doc, {
+      title: "Licht",
+      position: "below",
+      controls: [{ entity: "scene.dark" }, { entity: "light.spots", icon: "mdi:lamp" }],
+    });
+    assert.deepEqual(doc.settings.lights, {
+      controls: ["scene.dark", { entity: "light.spots", icon: "mdi:lamp" }],
+    });
+  });
+
+  test("the defaults are not written into the document", () => {
+    const doc = DOC();
+    panelHelpers.setLightPanel(doc, { title: "Licht", position: "below", controls: [] });
+    assert.equal("lights" in doc.settings, false);
+  });
+
+  test("anything the card needs to know is written", () => {
+    const doc = DOC();
+    panelHelpers.setLightPanel(doc, {
+      title: "Beleuchtung",
+      position: "above",
+      controls: [{ entity: "scene.dark" }],
+    });
+    assert.deepEqual(doc.settings.lights, {
+      controls: ["scene.dark"],
+      title: "Beleuchtung",
+      position: "above",
+    });
+  });
+
+  test("adding, reordering and removing survive the round trip", () => {
+    const p = lightPanel();
+    p._editLights((panel) => panel.controls.push({ entity: "scene.dark" }));
+    p._editLights((panel) => panel.controls.push({ entity: "light.spots" }));
+    assert.deepEqual(p._document.settings.lights.controls, [
+      "scene.dark",
+      "light.spots",
+    ]);
+
+    // The order in the document is the order on the card.
+    p._onClick({
+      target: { closest: () => ({ dataset: { act: "light-up", key: "1" } }) },
+    });
+    assert.deepEqual(p._document.settings.lights.controls, [
+      "light.spots",
+      "scene.dark",
+    ]);
+
+    p._onClick({
+      target: { closest: () => ({ dataset: { act: "light-remove", key: "0" } }) },
+    });
+    assert.deepEqual(p._document.settings.lights.controls, ["scene.dark"]);
+  });
+
+  test("the top entry cannot be moved off the top", () => {
+    const p = lightPanel();
+    p._document.settings.lights = ["scene.dark", "light.spots"];
+    p._onClick({
+      target: { closest: () => ({ dataset: { act: "light-up", key: "0" } }) },
+    });
+    assert.deepEqual(p._document.settings.lights.controls, [
+      "scene.dark",
+      "light.spots",
+    ]);
+  });
+
+  test("a label typed into a row lands on that row", () => {
+    const p = lightPanel();
+    p._document.settings.lights = ["scene.dark", "light.spots"];
+    p._onChange({
+      target: { dataset: { field: "light-name", key: "1" }, value: "Spots" },
+    });
+    assert.deepEqual(p._document.settings.lights.controls, [
+      "scene.dark",
+      { entity: "light.spots", name: "Spots" },
+    ]);
+    // Cleared again, the entry falls back to the entity's own name.
+    p._onChange({
+      target: { dataset: { field: "light-name", key: "1" }, value: "" },
+    });
+    assert.deepEqual(p._document.settings.lights.controls, [
+      "scene.dark",
+      "light.spots",
+    ]);
+  });
+
+  test("the position is a document change like any other", () => {
+    const p = lightPanel();
+    p._document.settings.lights = ["scene.dark"];
+    p._onChange({
+      target: { dataset: { field: "light-position" }, value: "above" },
+    });
+    assert.equal(p._document.settings.lights.position, "above");
+  });
+});

@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.7.3";
+const CARD_VERSION = "0.8.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -633,6 +633,29 @@ export const helpers = {
     }
   },
 
+  /** A dimmable light's level in percent, or null when it has none. */
+  brightnessPercent(state) {
+    const raw = state && state.attributes ? state.attributes.brightness : null;
+    if (raw == null) return null;
+    const percent = Math.round((Number(raw) / 255) * 100);
+    if (!Number.isFinite(percent)) return null;
+    // 1 % rather than 0 %: a light that is on never reads as switched off.
+    return Math.min(100, Math.max(1, percent));
+  },
+
+  /**
+   * What a tap on a light chip does.
+   *
+   * A scene or a script is applied and then forgotten; everything else is a
+   * toggle. Derived from the entity's own domain, so the card asks the same
+   * question the backend answered in `momentary`.
+   */
+  lightService(entityId) {
+    const domain = String(entityId || "").split(".")[0];
+    const momentary = domain === "scene" || domain === "script";
+    return { domain, service: momentary ? "turn_on" : "toggle", momentary };
+  },
+
   /** Which body the card should render for an activity. */
   bodyFor(activity) {
     if (!activity) return "aus";
@@ -788,6 +811,31 @@ button { font-family: inherit; }
   border: 1px solid var(--kino-border); display: flex; align-items: center; gap: 6px;
 }
 .devicechip span:last-child { font-size: 11px; color: var(--kino-text2); font-weight: 600; }
+
+/* -- the light row (FR-36a) -------------------------------------------
+   Scenes and scripts are applied and have nothing to mirror, so their chip
+   answers the tap itself; a light or a switch shows what it is. */
+.lightblock { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lightlabel {
+  font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--kino-text3);
+}
+.lightchip {
+  display: flex; align-items: center; gap: 7px; min-height: 34px;
+  padding: 7px 13px; border-radius: 17px; border: none; cursor: pointer;
+  background: var(--kino-surface2); color: var(--kino-text2);
+  font-family: inherit; font-size: 12px; font-weight: 700;
+}
+.lightchip[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
+.lightchip[aria-pressed="true"] .lightlevel { opacity: .65; }
+.lightchip[aria-disabled="true"] { opacity: .45; }
+.lightchip .lighticon { --mdc-icon-size: 16px; flex-shrink: 0; }
+.lightchip .lightlevel { font-size: 10px; opacity: .7; font-variant-numeric: tabular-nums; }
+.lightchip.flashing { animation: kino-flash .7s ease-out; }
+@keyframes kino-flash {
+  from { background: var(--kino-gold); color: var(--kino-goldText); }
+  to { background: var(--kino-surface2); color: var(--kino-text2); }
+}
 
 .banner {
   margin-bottom: 12px; padding: 14px; border-radius: 14px;
@@ -1784,6 +1832,14 @@ class KinoCard extends CardBase {
     ]) {
       const state = id ? states[id] : null;
       parts.push(state && `${state.state}/${(state.attributes.options || []).length}`);
+    }
+    // Only the light row's toggles: a scene's state is the timestamp it was
+    // last applied at, and redrawing the whole card for that would recreate
+    // every poster — and wipe the chip's own acknowledgement of the tap.
+    for (const control of (this._kino.lights || {}).controls || []) {
+      if (control.momentary) continue;
+      const state = states[control.entity];
+      parts.push(state && `${state.state}/${(state.attributes || {}).brightness}`);
     }
     return parts.join("|");
   }
@@ -2948,6 +3004,36 @@ class KinoCard extends CardBase {
     }
   }
 
+  /**
+   * A tap on the light row (FR-36a).
+   *
+   * A scene or a script leaves nothing on screen to change, so the chip
+   * acknowledges the tap itself; a light or a switch is answered by its own
+   * state arriving on the next update.
+   */
+  async _light(entityId, element) {
+    const { domain, service, momentary } = helpers.lightService(entityId);
+    if (!domain || !entityId) return;
+    if (momentary) this._flashLight(element);
+    try {
+      await this._callService(domain, service, { entity_id: entityId });
+    } catch (err) {
+      this._actionError = err.message || String(err);
+      this._render();
+    }
+  }
+
+  /** Light the chip up once, without redrawing the card around it. */
+  _flashLight(element) {
+    if (!element || !element.classList) return;
+    element.classList.remove("flashing");
+    // Reading the layout restarts the animation when the same chip is
+    // tapped twice; without it the second tap looks like nothing happened.
+    void element.offsetWidth;
+    element.classList.add("flashing");
+    setTimeout(() => element.classList.remove("flashing"), 700);
+  }
+
   /* -- rendering ----------------------------------------------------- */
 
   _activityByKey(key) {
@@ -3378,10 +3464,17 @@ class KinoCard extends CardBase {
       this._view.scEdit ||
       this._view.abSetup ||
       demoRun;
+    // The light row sits above or below the activities, as configured — and
+    // in both places it is rendered outside everything the activity state
+    // switches on, so it is there whether the theater is on, off or busy.
+    const lights = this._renderLights();
+    const lightsAbove = (this._kino.lights || {}).position === "above";
     this._container.innerHTML = [
       this._renderHeader(),
       '<div class="scroller">',
+      lightsAbove ? lights : "",
       this._renderActivitySelector(),
+      lightsAbove ? "" : lights,
       this._renderDeviceChips(),
       this._renderActionError(),
       this._renderDriftBanner(),
@@ -3499,6 +3592,54 @@ class KinoCard extends CardBase {
     return `<div class="maxcol" style="padding:0 20px 12px">
       ${compact}
       ${showGrid ? `<div class="tilegrid" style="margin-top:${compact ? 10 : 0}px">${tiles}</div>` : ""}
+    </div>`;
+  }
+
+  /**
+   * Manual light control, independent of the activity (FR-36a).
+   *
+   * Turning the ceiling light down is not a reason to start the projector,
+   * so the row is there with the theater off as well as on — and during a
+   * transition, when the room is exactly where somebody stands and waits.
+   *
+   * Which entities it offers comes from `settings.lights`: nothing
+   * configured means no row at all. Names and states are read from Home
+   * Assistant, so a light renamed there is renamed here.
+   */
+  _renderLights() {
+    const panel = (this._kino && this._kino.lights) || {};
+    const controls = panel.controls || [];
+    if (!controls.length) return "";
+    const states = (this._hass && this._hass.states) || {};
+    const chips = controls
+      .map((control) => {
+        const state = states[control.entity];
+        // A renamed or removed entity stays visible rather than silently
+        // disappearing — a gap in the row is a question nobody can answer.
+        const missing = !state || state.state === "unavailable";
+        const on = !control.momentary && !!state && state.state === "on";
+        const level = on ? helpers.brightnessPercent(state) : null;
+        const name =
+          control.name ||
+          (state && state.attributes && state.attributes.friendly_name) ||
+          control.entity;
+        return `<button class="lightchip" data-act="light"
+          data-key="${this._esc(control.entity)}" aria-pressed="${on}"${
+            missing ? ' aria-disabled="true" title="Entity nicht verfügbar"' : ""
+          }>
+          ${
+            control.icon
+              ? `<ha-icon class="lighticon" icon="${this._esc(control.icon)}"></ha-icon>`
+              : ""
+          }
+          <span>${this._esc(name)}</span>
+          ${level != null ? `<span class="lightlevel">${level}%</span>` : ""}
+        </button>`;
+      })
+      .join("");
+    return `<div class="maxcol lightblock" style="padding:0 20px 12px">
+      ${panel.title ? `<span class="lightlabel">${this._esc(panel.title)}</span>` : ""}
+      ${chips}
     </div>`;
   }
 
@@ -5697,6 +5838,9 @@ class KinoCard extends CardBase {
         break;
       case "confirm-power-off":
         await this._activate(this._kino.offActivity);
+        break;
+      case "light":
+        await this._light(key, target);
         break;
       case "restore":
         await this._restoreDevice(key);

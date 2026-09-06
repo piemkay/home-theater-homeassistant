@@ -16,7 +16,7 @@
  * app renders as a centered column; the navigation model never changes.
  */
 
-const PANEL_VERSION = "0.5.1";
+const PANEL_VERSION = "0.6.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -76,6 +76,61 @@ export const panelHelpers = {
       if (value !== "" && value != null) entry[key] = value;
     }
     activity.devices[deviceKey] = entry;
+    return document;
+  },
+
+  /**
+   * The card's light row, normalised.
+   *
+   * The schema accepts a bare list of entities (`lights: [scene.dark]`) as
+   * well as the full object, and each entry as a bare entity ID as well as
+   * an object. The editor always works with the full shape and writes back
+   * the same one, so a hand-written file survives a visit to the panel.
+   */
+  lightPanel(document) {
+    const raw = document?.settings?.lights;
+    const source = Array.isArray(raw) ? { controls: raw } : raw || {};
+    const controls = Array.isArray(source.controls) ? source.controls : [];
+    return {
+      title: source.title == null ? "Licht" : String(source.title),
+      position: source.position === "above" ? "above" : "below",
+      controls: controls.map((entry) =>
+        typeof entry === "string"
+          ? { entity: entry }
+          : {
+              entity: entry?.entity || "",
+              ...(entry?.name ? { name: entry.name } : {}),
+              ...(entry?.icon ? { icon: entry.icon } : {}),
+            }
+      ),
+    };
+  },
+
+  /**
+   * Write the light row back, dropping what carries no information.
+   *
+   * A row with nothing in it leaves `settings.lights` out of the document
+   * altogether rather than parking an empty object there.
+   */
+  setLightPanel(document, panel) {
+    const settings = (document.settings = document.settings || {});
+    const controls = (panel.controls || []).map((control) => {
+      const entry = { entity: control.entity || "" };
+      if (control.name) entry.name = control.name;
+      if (control.icon) entry.icon = control.icon;
+      // A bare entity ID is what a hand-written file looks like; keep it
+      // that way when there is nothing else to say about the entry.
+      return entry.name || entry.icon ? entry : entry.entity;
+    });
+    const title = panel.title == null ? "Licht" : String(panel.title);
+    if (!controls.length && title === "Licht" && panel.position !== "above") {
+      delete settings.lights;
+      return document;
+    }
+    const out = { controls };
+    if (title !== "Licht") out.title = title;
+    if (panel.position === "above") out.position = "above";
+    settings.lights = out;
     return document;
   },
 
@@ -476,6 +531,18 @@ textarea { min-height: 420px; line-height: 1.55; resize: vertical; border-radius
   background: var(--kino-surface2); color: var(--kino-text2);
 }
 
+/* -- the card's light row ---------------------------------------------- */
+.lightrow { display: flex; flex-direction: column; gap: 10px; }
+.lighthead { display: flex; align-items: center; gap: 10px; }
+.lighthead .rowkey { flex: 1; }
+.lightmove { display: flex; align-items: center; gap: 6px; }
+.movebtn {
+  width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--kino-border);
+  background: transparent; color: var(--kino-text2); cursor: pointer;
+  font-size: 13px; line-height: 1; flex-shrink: 0;
+}
+.movebtn[disabled] { opacity: .35; cursor: default; }
+
 /* -- path map ---------------------------------------------------------- */
 .pathrow {
   display: flex; flex-direction: column; gap: 6px;
@@ -609,6 +676,9 @@ nav { flex-shrink: 0; border-top: 1px solid var(--kino-border); background: var(
 `;
 
 /* ------------------------------------------------------------------ */
+
+/** What the card knows how to drive from a light chip — see the schema. */
+const LIGHT_DOMAINS = ["scene", "script", "light", "switch", "input_boolean"];
 
 /** How many screens back the panel remembers. Far more than anyone walks. */
 const NAV_DEPTH = 50;
@@ -1001,6 +1071,8 @@ class KinoPanel extends PanelBase {
     } else if (push?.screen === "device") {
       title = panelHelpers.deviceName(this._document, push.key);
       sub = push.key;
+    } else if (push?.screen === "lights") {
+      title = "Licht";
     } else if (push?.screen === "log") {
       title = "Verlauf";
     } else if (push?.screen === "raw") {
@@ -1103,6 +1175,7 @@ class KinoPanel extends PanelBase {
     const push = this._push;
     if (push?.screen === "activity") return this._renderActivityEdit(push.key);
     if (push?.screen === "device") return this._renderDeviceEdit(push.key);
+    if (push?.screen === "lights") return this._renderLights();
     if (push?.screen === "log") return this._renderLog();
     if (push?.screen === "raw") return this._renderRaw();
     if (push?.screen === "demo") return this._renderDemo();
@@ -1273,20 +1346,33 @@ class KinoPanel extends PanelBase {
   }
 
   _entitySelect(field, activityKey, value, domains) {
+    return `<select data-field="${field}" data-activity="${this._esc(activityKey)}">
+      ${this._entityOptionsHtml(value, domains)}
+    </select>`;
+  }
+
+  /**
+   * The options of an entity picker.
+   *
+   * An entity the catalogue no longer offers — renamed in Home Assistant, or
+   * removed — is kept as a marked option rather than silently swapped for
+   * "—", which would look like the field was never filled in.
+   */
+  _entityOptionsHtml(value, domains) {
     const options = this._entityOptions(domains);
     const known = !value || options.some((o) => o.id === value);
-    return `<select data-field="${field}" data-activity="${this._esc(activityKey)}">
-      <option value=""${!value ? " selected" : ""}>—</option>
-      ${!known ? `<option value="${this._esc(value)}" selected>${this._esc(value)} (fehlt!)</option>` : ""}
-      ${options
-        .map(
-          (o) =>
-            `<option value="${this._esc(o.id)}"${value === o.id ? " selected" : ""}>${this._esc(
-              o.name
-            )}</option>`
-        )
-        .join("")}
-    </select>`;
+    return [
+      `<option value=""${!value ? " selected" : ""}>—</option>`,
+      !known
+        ? `<option value="${this._esc(value)}" selected>${this._esc(value)} (fehlt!)</option>`
+        : "",
+      ...options.map(
+        (o) =>
+          `<option value="${this._esc(o.id)}"${value === o.id ? " selected" : ""}>${this._esc(
+            o.name
+          )}</option>`
+      ),
+    ].join("");
   }
 
   /* -- 10.3 device wiring (FR-130) ----------------------------------- */
@@ -1595,6 +1681,13 @@ class KinoPanel extends PanelBase {
   _renderMore() {
     const file = (this._path || "kino.yaml").split(/[\\/]/).pop();
     return `<div class="list">
+      <button class="rowbtn" data-act="open-lights">
+        <span class="rowbody">
+          <span class="rowname">Licht</span>
+          <span class="rowsub">Welche Szenen und Lampen die Karte anbietet</span>
+        </span>
+        ${CHEVRON}
+      </button>
       <button class="rowbtn" data-act="open-log">
         <span class="rowbody">
           <span class="rowname">Verlauf</span>
@@ -1618,6 +1711,78 @@ class KinoPanel extends PanelBase {
       </button>
     </div>
     <div class="morefoot">kino-panel ${PANEL_VERSION} · ${this._esc(file)} · .bak wird behalten</div>`;
+  }
+
+  /* -- 10.3 the card's light row (FR-36a) ----------------------------- */
+
+  /**
+   * Which light controls the card offers, in which order, and where.
+   *
+   * The row is the one thing on the card that has nothing to do with an
+   * activity — it is there with the theater off — so it is configured here
+   * rather than per activity. Its order is the order on the card.
+   */
+  _renderLights() {
+    const panel = panelHelpers.lightPanel(this._document);
+    const rows = panel.controls
+      .map((control, index) => {
+        const entity = control.entity || "";
+        const domain = entity.split(".")[0];
+        const kind =
+          domain === "scene" || domain === "script"
+            ? "wird angewendet"
+            : "schaltet um";
+        return `<div class="card lightrow">
+          <div class="lighthead">
+            <span class="rowkey">${this._esc(entity ? kind : "leer")}</span>
+            <div class="lightmove">
+              <button class="movebtn" data-act="light-up" data-key="${index}"
+                title="Nach oben" aria-label="Nach oben"${index === 0 ? " disabled" : ""}>↑</button>
+              <button class="movebtn" data-act="light-down" data-key="${index}"
+                title="Nach unten" aria-label="Nach unten"${
+                  index === panel.controls.length - 1 ? " disabled" : ""
+                }>↓</button>
+              <button class="removebtn" data-act="light-remove" data-key="${index}"
+                title="Entfernen" aria-label="Eintrag entfernen">✕</button>
+            </div>
+          </div>
+          <div class="frow"><span>Entity</span>
+            <select data-field="light-entity" data-key="${index}">
+              ${this._entityOptionsHtml(entity, LIGHT_DOMAINS)}
+            </select></div>
+          <div class="frow"><span>Beschriftung</span>
+            <input data-field="light-name" data-key="${index}"
+              placeholder="Name aus Home Assistant"
+              value="${this._esc(control.name || "")}"></div>
+          <div class="frow"><span>Icon</span>
+            <input class="mono" data-field="light-icon" data-key="${index}"
+              placeholder="mdi:…" value="${this._esc(control.icon || "")}"></div>
+        </div>`;
+      })
+      .join("");
+
+    return `<div class="stack">
+      ${this._renderErrors("settings.lights")}
+      <p class="sub" style="margin:0">
+        Szenen und Lampen, die die Karte direkt schaltet — sichtbar auch,
+        wenn das Kino aus ist. Eine Szene wird angewendet, eine Lampe oder ein
+        Schalter schaltet um. Ohne Eintrag zeigt die Karte keine Lichtzeile.
+      </p>
+      <div class="card formcard">
+        <div class="frow"><span>Überschrift</span>
+          <input data-field="light-title" placeholder="Licht"
+            value="${this._esc(panel.title)}"></div>
+        <div class="frow"><span>Position</span>
+          <select data-field="light-position">
+            <option value="below"${panel.position !== "above" ? " selected" : ""}>unter den Aktivitäten</option>
+            <option value="above"${panel.position === "above" ? " selected" : ""}>über den Aktivitäten</option>
+          </select></div>
+      </div>
+
+      <div class="seclabel">EINTRÄGE</div>
+      ${rows || '<p class="sub" style="margin:0">Noch kein Eintrag.</p>'}
+      <button class="dashed" data-act="light-add">+ Eintrag</button>
+    </div>`;
   }
 
   _renderLog() {
@@ -2009,6 +2174,28 @@ class KinoPanel extends PanelBase {
         this._notice = null;
         this._render();
         break;
+      case "open-lights":
+        this._navPush();
+        this._push = { screen: "lights" };
+        this._notice = null;
+        this._render();
+        break;
+      case "light-add":
+        this._editLights((panel) => panel.controls.push({ entity: "" }));
+        break;
+      case "light-remove":
+        this._editLights((panel) => panel.controls.splice(Number(key), 1));
+        break;
+      case "light-up":
+      case "light-down":
+        this._editLights((panel) => {
+          const from = Number(key);
+          const to = act === "light-up" ? from - 1 : from + 1;
+          if (to < 0 || to >= panel.controls.length) return;
+          const [moved] = panel.controls.splice(from, 1);
+          panel.controls.splice(to, 0, moved);
+        });
+        break;
       case "open-log":
         this._navPush();
         this._push = { screen: "log" };
@@ -2162,6 +2349,21 @@ class KinoPanel extends PanelBase {
     }
   }
 
+  /**
+   * Change the light row and put it straight back into the document.
+   *
+   * Read-modify-write rather than editing in place: the document may hold
+   * the short-hand form, and normalising once here keeps every caller from
+   * having to know about it.
+   */
+  _editLights(mutate) {
+    const panel = panelHelpers.lightPanel(this._document);
+    mutate(panel);
+    panelHelpers.setLightPanel(this._document, panel);
+    this._scheduleValidate();
+    this._render();
+  }
+
   /** The live `path_map` object for a device, created on first use. */
   _pathMap(deviceKey) {
     const device = this._document.devices[deviceKey];
@@ -2225,6 +2427,24 @@ class KinoPanel extends PanelBase {
         if (el.value) doc.activities[activity].icon = el.value;
         else delete doc.activities[activity].icon;
         break;
+      case "light-title":
+      case "light-position":
+      case "light-entity":
+      case "light-name":
+      case "light-icon": {
+        const panel = panelHelpers.lightPanel(doc);
+        if (field === "light-title") panel.title = el.value;
+        else if (field === "light-position") panel.position = el.value;
+        else {
+          const control = panel.controls[Number(key)];
+          if (!control) break;
+          const name = field.slice("light-".length);
+          if (el.value) control[name] = el.value;
+          else delete control[name];
+        }
+        panelHelpers.setLightPanel(doc, panel);
+        break;
+      }
       case "device-setting": {
         const requirement = panelHelpers.requirement(doc, activity, device);
         const value =

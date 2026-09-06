@@ -545,6 +545,22 @@ def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
             "maxDb": config.volume_max_db,
             "stepDb": config.volume_step_db,
         },
+        # The manual light row (FR-36a). Names and states are read from Home
+        # Assistant by the card itself; the config only says which entities
+        # it may offer, in which order, and where the row belongs.
+        "lights": {
+            "title": config.lights.title,
+            "position": config.lights.position.value,
+            "controls": [
+                {
+                    "entity": control.entity,
+                    "name": control.name,
+                    "icon": control.icon,
+                    "momentary": control.momentary,
+                }
+                for control in config.lights.controls
+            ],
+        },
         "offActivity": config.off_activity,
         "entities": _own_entities(hass, coordinator),
         "controls": _sound_controls(coordinator),
@@ -714,6 +730,10 @@ _EDITABLE_DOMAINS = (
     "button",
     "number",
     "scene",
+    # The light row picks from these three as well (FR-36a).
+    "light",
+    "script",
+    "input_boolean",
 )
 
 

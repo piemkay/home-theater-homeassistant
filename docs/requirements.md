@@ -224,6 +224,10 @@ Explicitly **not** a sequence of fixed waits.
   unreachable device SHALL NOT block the others, and an unverified shutdown SHALL raise a
   visible error.
 - **FR-35** Shutdown SHALL restore the room to a defined light state.
+- **FR-36a** The card SHALL offer **manual light control** — a configurable row of scenes,
+  lights and switches — independently of the activity, available while the theater is off,
+  on and mid-transition. Which entities appear, in which order, and whether the row sits
+  above or below the activity tiles SHALL be configuration, not code.
 
 ### 5.5 Activity matrix — TO BE COMPLETED
 
@@ -609,6 +613,8 @@ has no usable editor.
 
 - **FR-130** Device connection settings: endpoints, credentials, timeouts, and which HA entity
   backs each logical device.
+- **FR-130a** The card's **light row** (FR-36a): which entities it offers, their order,
+  labels and icons, and whether it sits above or below the activity tiles.
 - **FR-131** Safety and UX settings: maximum volume ceiling (FR-64), volume step size, preferred
   audio and subtitle language (§15 Q6), shutdown light scene.
 - **FR-132** Card settings: default sort, which filters are exposed, grid density per breakpoint.
