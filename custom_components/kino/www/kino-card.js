@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.8.1";
+const CARD_VERSION = "0.8.2";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -3946,14 +3946,17 @@ class KinoCard extends CardBase {
         const state = states[control.entity];
         const missing = !state || state.state === "unavailable";
         const pressed = !!active && active.entity === control.entity;
+        // Nothing configured falls back to the icon Home Assistant already
+        // gives the entity — which is the whole point when the card was
+        // filled from an area and nobody typed anything at all.
+        const icon =
+          control.icon || (state && state.attributes && state.attributes.icon);
         return `<button class="scenetile" data-act="light"
           data-key="${this._esc(control.entity)}" aria-pressed="${pressed}"${
             missing ? ' aria-disabled="true" title="Entity nicht verfügbar"' : ""
           }>
           <span class="ic">${
-            control.icon
-              ? `<ha-icon icon="${this._esc(control.icon)}"></ha-icon>`
-              : ""
+            icon ? `<ha-icon icon="${this._esc(icon)}"></ha-icon>` : ""
           }</span>
           <span class="nm">${this._esc(this._lightName(control, state))}</span>
         </button>`;

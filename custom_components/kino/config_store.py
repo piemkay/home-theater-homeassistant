@@ -136,10 +136,22 @@ settings:
   off_activity: aus
   shutdown_light_scene: scene.low_ambience
   drift_debounce_seconds: 20
-  # Die Lichtzeile der Karte: sichtbar, auch wenn das Kino aus ist. Szenen
-  # werden angewendet, Lampen und Schalter schalten um. `position: above`
-  # setzt die Zeile über die Aktivitäten.
+  # Die Lichtkarte: sichtbar, auch wenn das Kino aus ist. Szenen werden
+  # angewendet, Lampen schalten um, dimmen und wechseln die Farbe.
+  #
+  # `area` genügt — Home Assistant weiß schon, welche Lichter und Szenen im
+  # Kino hängen. `exclude` nimmt heraus, was ein Bereich nun einmal auch
+  # enthält: das Tastenlicht der Fernbedienung, die Master-Entity eines
+  # LED-Streifens neben seinen Segmenten. `controls` ist nur für eigene
+  # Beschriftungen und für Lampen außerhalb des Bereichs nötig.
+  # `position: above` setzt die Karte über die Aktivitäten.
   lights:
+    area: kino
+    exclude:
+      - light.theater_remote_button_backlight
+      - light.wled_front_main
+      - light.wled_top_left_main
+      - light.wled_top_right_main
     controls:
       - entity: scene.dark
         name: Dunkel
@@ -150,9 +162,6 @@ settings:
       - entity: scene.bright_ambience
         name: Hell
         icon: mdi:lightbulb-on
-      - entity: light.kino_deckenspots
-        name: Spots
-        icon: mdi:track-light
   volume:
     device: trinnov
     min_db: -60.0

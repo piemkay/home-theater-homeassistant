@@ -256,6 +256,121 @@ def test_a_misspelled_light_field_is_named(config_doc):
     )
 
 
+def test_an_area_is_all_the_configuration_a_light_card_needs(config_doc):
+    """The point of FR-36d: name the room, not every lamp in it."""
+    config_doc["settings"]["lights"] = {"area": "kino"}
+
+    config = validate(config_doc)
+
+    assert config.lights.area == "kino"
+    assert config.lights.controls == ()
+    assert config.lights.exclude == frozenset()
+
+
+def test_an_area_and_hand_written_controls_coexist(config_doc):
+    config_doc["settings"]["lights"] = {
+        "area": "kino",
+        "exclude": ["light.theater_remote_button_backlight"],
+        "controls": [{"entity": "scene.dark", "name": "Dunkel"}],
+    }
+
+    config = validate(config_doc)
+
+    assert config.lights.area == "kino"
+    assert config.lights.exclude == frozenset({"light.theater_remote_button_backlight"})
+    assert config.lights.controls[0].name == "Dunkel"
+
+
+def test_an_empty_area_is_rejected_rather_than_silently_ignored(config_doc):
+    config_doc["settings"]["lights"] = {"area": "   "}
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        validate(config_doc)
+
+    assert any(e.path == "settings.lights.area" for e in excinfo.value.errors)
+
+
+def test_an_area_that_is_not_text_names_the_field(config_doc):
+    config_doc["settings"]["lights"] = {"area": 7}
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        validate(config_doc)
+
+    assert any(e.path == "settings.lights.area" for e in excinfo.value.errors)
+
+
+def test_an_exclusion_that_is_not_an_entity_is_named(config_doc):
+    config_doc["settings"]["lights"] = {"area": "kino", "exclude": ["kino_spots"]}
+
+    with pytest.raises(ConfigErrors) as excinfo:
+        validate(config_doc)
+
+    assert any(e.path == "settings.lights.exclude[0]" for e in excinfo.value.errors)
+
+
+def test_an_area_fills_the_card_and_the_configured_order_still_wins(config_doc):
+    """FR-36d: name the room; the hand-written entries stay in front."""
+    config_doc["settings"]["lights"] = {
+        "area": "kino",
+        "controls": [{"entity": "scene.dark", "name": "Dunkel"}],
+    }
+    panel = validate(config_doc).lights
+
+    resolved = panel.resolve(
+        [
+            ("light.spots", "Kino Deckenspots"),
+            ("scene.dark", "Dark"),
+            ("scene.bright", "Bright Ambience"),
+        ]
+    )
+
+    # The configured one first, keeping its label and not appearing twice.
+    assert [c.entity for c in resolved] == [
+        "scene.dark",
+        "scene.bright",
+        "light.spots",
+    ]
+    assert resolved[0].name == "Dunkel"
+    assert resolved[1].name is None
+
+
+def test_an_excluded_entity_is_dropped_whichever_side_it_came_from(config_doc):
+    config_doc["settings"]["lights"] = {
+        "area": "kino",
+        "exclude": ["light.remote_backlight", "scene.dark"],
+        "controls": [{"entity": "scene.dark", "name": "Dunkel"}],
+    }
+    panel = validate(config_doc).lights
+
+    resolved = panel.resolve(
+        [("light.remote_backlight", "Remote"), ("light.spots", "Spots")]
+    )
+
+    assert [c.entity for c in resolved] == ["light.spots"]
+
+
+def test_without_an_area_nothing_is_discovered(config_doc):
+    config_doc["settings"]["lights"] = {"controls": ["scene.dark"]}
+    panel = validate(config_doc).lights
+
+    assert [c.entity for c in panel.resolve()] == ["scene.dark"]
+
+
+def test_discovery_is_ordered_by_name_not_by_entity_id(config_doc):
+    config_doc["settings"]["lights"] = {"area": "kino"}
+    panel = validate(config_doc).lights
+
+    resolved = panel.resolve(
+        [
+            ("light.zzz", "Ambilight"),
+            ("light.aaa", "Vorhang"),
+            ("scene.mmm", "Dunkel"),
+        ]
+    )
+
+    assert [c.entity for c in resolved] == ["light.zzz", "scene.mmm", "light.aaa"]
+
+
 def test_shipped_default_document_is_valid():
     """
     The starter config we write on first setup must load cleanly.
@@ -276,11 +391,14 @@ def test_shipped_default_document_is_valid():
     }
     assert config.activities["musik"].requires("barco") is False
     assert config.devices["shield"].required is False
-    # The light row ships configured — it is what makes the card usable with
-    # the theater off.
+    # The light card ships pointed at an area — it is what makes the card
+    # usable with the theater off, without listing a single lamp.
+    assert config.lights.area == "kino"
+    assert "light.wled_front_main" in config.lights.exclude
+    # What is listed by hand is only the German labelling of the scenes.
     assert [c.entity for c in config.lights.controls] == [
         "scene.dark",
         "scene.low_ambience",
         "scene.bright_ambience",
-        "light.kino_deckenspots",
     ]
+    assert config.lights.controls[0].name == "Dunkel"

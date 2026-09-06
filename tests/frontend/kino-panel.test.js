@@ -498,4 +498,106 @@ describe("the light row editor", () => {
     });
     assert.equal(p._document.settings.lights.position, "above");
   });
+  test("an area is the whole configuration, and is what gets written", () => {
+    const doc = DOC();
+    panelHelpers.setLightPanel(doc, {
+      area: "kino",
+      exclude: [],
+      title: "Licht",
+      position: "below",
+      controls: [],
+    });
+    assert.deepEqual(doc.settings.lights, { area: "kino" });
+  });
+
+  test("exclusions are written sorted, so the file does not churn", () => {
+    const doc = DOC();
+    panelHelpers.setLightPanel(doc, {
+      area: "kino",
+      exclude: ["light.z_main", "light.a_main"],
+      title: "Licht",
+      position: "below",
+      controls: [],
+    });
+    assert.deepEqual(doc.settings.lights.exclude, ["light.a_main", "light.z_main"]);
+  });
+
+  test("an area document round-trips through the editor unchanged", () => {
+    const doc = DOC();
+    doc.settings.lights = {
+      area: "kino",
+      exclude: ["light.remote_backlight"],
+      controls: [{ entity: "scene.dark", name: "Dunkel" }],
+    };
+    const read = panelHelpers.lightPanel(doc);
+    assert.equal(read.area, "kino");
+    assert.deepEqual(read.exclude, ["light.remote_backlight"]);
+    panelHelpers.setLightPanel(doc, read);
+    assert.deepEqual(doc.settings.lights, {
+      area: "kino",
+      exclude: ["light.remote_backlight"],
+      controls: [{ entity: "scene.dark", name: "Dunkel" }],
+    });
+  });
+
+  test("a document with no area at all is still written without one", () => {
+    const doc = DOC();
+    panelHelpers.setLightPanel(doc, {
+      area: "",
+      exclude: [],
+      title: "Licht",
+      position: "below",
+      controls: [{ entity: "scene.dark" }],
+    });
+    assert.deepEqual(doc.settings.lights, { controls: ["scene.dark"] });
+  });
+
+  /** An area holds far more than a light card wants; the toggle is the cure. */
+  test("hiding an entity from the area writes it to exclude, and back", () => {
+    const p = lightPanel();
+    p._meta = {
+      areas: [{ id: "kino", name: "Kino" }],
+      entities: {
+        light: [
+          { id: "light.spots", name: "Spots", area: "kino" },
+          { id: "light.remote", name: "Remote Backlight", area: "kino" },
+          { id: "light.hall", name: "Flur", area: "flur" },
+        ],
+        scene: [{ id: "scene.dark", name: "Dark", area: "kino" }],
+      },
+    };
+    p._document.settings.lights = { area: "kino" };
+
+    // Only the area's own lights and scenes, by name.
+    assert.deepEqual(
+      p._areaEntities("kino").map((e) => e.id),
+      ["scene.dark", "light.remote", "light.spots"]
+    );
+
+    const click = (act, key) =>
+      p._onClick({ target: { closest: () => ({ dataset: { act, key } }) } });
+
+    click("light-area-toggle", "light.remote");
+    assert.deepEqual(p._document.settings.lights.exclude, ["light.remote"]);
+    click("light-area-toggle", "light.remote");
+    assert.equal(p._document.settings.lights.exclude, undefined);
+  });
+
+  test("leaving the area behind takes its exclusions with it", () => {
+    const p = lightPanel();
+    p._document.settings.lights = { area: "kino", exclude: ["light.remote"] };
+    p._onChange({ target: { dataset: { field: "light-area" }, value: "" } });
+    assert.equal(p._document.settings.lights, undefined);
+  });
+
+  test("choosing an area keeps the hand-written labels", () => {
+    const p = lightPanel();
+    p._document.settings.lights = { controls: [{ entity: "scene.dark", name: "Dunkel" }] };
+    p._onChange({ target: { dataset: { field: "light-area" }, value: "kino" } });
+    assert.deepEqual(p._document.settings.lights, {
+      area: "kino",
+      controls: [{ entity: "scene.dark", name: "Dunkel" }],
+    });
+  });
 });
+

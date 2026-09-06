@@ -211,26 +211,52 @@ room is not a reason to start the projector.
 * An entity that has been renamed or removed stays visible and greyed rather
   than leaving a hole nobody can explain.
 
+**Point it at an area and you are done.** Home Assistant already knows which
+lights and scenes are in the cinema, so naming them again here is work with no
+information in it:
+
 ```yaml
 settings:
   lights:
-    position: below        # below (default) or above the activity tiles
-    title: Licht           # the card's label; title: "" for none
-    controls:
-      - scene.dark                     # a bare entity is enough
-      - entity: scene.low_ambience
-        name: Gedimmt                  # optional; else the HA name
-        icon: mdi:lightbulb-on-30      # optional
-      - light.kino_deckenspots
+    area: kino
 ```
 
-Scenes and scripts become the tile row; lights, switches and input_booleans
-become the list — one list in the file, split by what each entity is. The
-whole block is optional, and so is the object form: `lights: [scene.dark,
-scene.bright_ambience]` is a valid configuration. The **Licht** screen in the
-admin panel edits all of it. This is separate from the per-activity
-`light_scene`, which is what the room does *on its own* when an activity
-starts.
+An area holds more than a light card wants, though — a remote's own button
+backlight, the master entity of an LED strip that also exposes its segments —
+so anything you would rather not see comes out again:
+
+```yaml
+settings:
+  lights:
+    area: kino
+    exclude:
+      - light.theater_remote_button_backlight
+      - light.wled_front_main
+    controls:                          # optional, and only for
+      - entity: scene.dark             # …a label of your own
+        name: Dunkel
+        icon: mdi:weather-night
+      - light.flur_stehlampe           # …or a lamp outside the area
+    position: below        # below (default) or above the activity tiles
+    title: Licht           # the card's label; title: "" for none
+```
+
+Only `light` and `scene` entities are picked up from an area, and only ones
+Home Assistant does not hide, disable, or file as configuration or
+diagnostics — a cinema's area also holds the projector's buttons, and none of
+that belongs on a light card. Anything listed under `controls` keeps its
+place and its order at the front; the area's own entities follow, sorted by
+name. Where no icon is configured the entity's own is used.
+
+The area is optional. Without one the card shows exactly what `controls`
+lists and nothing else, and `lights: [scene.dark, scene.bright_ambience]` is
+still a valid configuration. Scenes and scripts become the tile row; lights,
+switches and input_booleans become the list — split by what each entity is.
+
+The **Licht** screen in the admin panel does all of it: pick the area from a
+list, and every entity it turns up appears with a switch to leave it out.
+This is separate from the per-activity `light_scene`, which is what the room
+does *on its own* when an activity starts.
 
 The layout follows [`design/kino-licht.dc.html`](design/kino-licht.dc.html).
 
@@ -377,7 +403,7 @@ plus the screens behind **Mehr**:
 | **Geräte** | Which Home Assistant entity backs each logical device — pickers filtered to the domains each driver role accepts — plus timeouts, duration estimates and the Zidoo's path mapping. Missing entities are flagged |
 | **Gerätestatus** | Observed against expected, per device and per setting (Ist / Soll), plus start/stop for one device in isolation |
 | **Planer** | The computed delta for any activity — stop / keep / reconfigure / start, with the reason per device — **without executing it** |
-| **Licht** | Which scenes, lights and switches the card's light row offers, in which order, with which labels and icons — and whether the row sits above or below the activity tiles |
+| **Licht** | The area the cinema is in — every light and scene in it fills the card, each with a switch to leave it out — plus any extra entity, label or icon of your own, and whether the card sits above or below the activity tiles |
 | **Verlauf** | Recent transitions with per-step timings, and the learned durations behind the ETA — resettable per device or wholesale |
 | **Demos** | The install-wide demo settings — lead-in, retro-capture window, confirmation timeout and the optional flags — plus **export and import of the whole demo dataset** as JSON. Clips and showcases are created on the card; this is where they are backed up and moved between installs |
 | **Datei** | The whole document as JSON — copy to clipboard, paste back, apply |

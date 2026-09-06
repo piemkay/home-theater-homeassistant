@@ -16,7 +16,7 @@
  * app renders as a centered column; the navigation model never changes.
  */
 
-const PANEL_VERSION = "0.6.0";
+const PANEL_VERSION = "0.7.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -92,6 +92,8 @@ export const panelHelpers = {
     const source = Array.isArray(raw) ? { controls: raw } : raw || {};
     const controls = Array.isArray(source.controls) ? source.controls : [];
     return {
+      area: source.area || "",
+      exclude: Array.isArray(source.exclude) ? source.exclude.slice() : [],
       title: source.title == null ? "Licht" : String(source.title),
       position: source.position === "above" ? "above" : "below",
       controls: controls.map((entry) =>
@@ -123,11 +125,22 @@ export const panelHelpers = {
       return entry.name || entry.icon ? entry : entry.entity;
     });
     const title = panel.title == null ? "Licht" : String(panel.title);
-    if (!controls.length && title === "Licht" && panel.position !== "above") {
+    const exclude = (panel.exclude || []).filter(Boolean);
+    if (
+      !controls.length &&
+      !panel.area &&
+      !exclude.length &&
+      title === "Licht" &&
+      panel.position !== "above"
+    ) {
       delete settings.lights;
       return document;
     }
-    const out = { controls };
+    const out = {};
+    // An area first, because that is the line that does the work.
+    if (panel.area) out.area = panel.area;
+    if (exclude.length) out.exclude = exclude.slice().sort();
+    if (controls.length) out.controls = controls;
     if (title !== "Licht") out.title = title;
     if (panel.position === "above") out.position = "above";
     settings.lights = out;
@@ -532,6 +545,11 @@ textarea { min-height: 420px; line-height: 1.55; resize: vertical; border-radius
 }
 
 /* -- the card's light row ---------------------------------------------- */
+.arearow {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border-radius: 10px; background: var(--kino-surface2);
+}
+.arearow .rowbody { flex: 1; min-width: 0; }
 .lightrow { display: flex; flex-direction: column; gap: 10px; }
 .lighthead { display: flex; align-items: center; gap: 10px; }
 .lighthead .rowkey { flex: 1; }
@@ -680,6 +698,9 @@ nav { flex-shrink: 0; border-top: 1px solid var(--kino-border); background: var(
 /** What the card knows how to drive from a light chip — see the schema. */
 const LIGHT_DOMAINS = ["scene", "script", "light", "switch", "input_boolean"];
 
+/** What an area contributes on its own — see `_AREA_LIGHT_DOMAINS`. */
+const AREA_LIGHT_DOMAINS = ["scene", "light"];
+
 /** How many screens back the panel remembers. Far more than anyone walks. */
 const NAV_DEPTH = 50;
 
@@ -697,7 +718,13 @@ class KinoPanel extends PanelBase {
     this._push = null;
     this._document = null;
     this._original = null;
-    this._meta = { drivers: {}, entities: {}, knownDrivers: [], controlClasses: [] };
+    this._meta = {
+      drivers: {},
+      entities: {},
+      areas: [],
+      knownDrivers: [],
+      controlClasses: [],
+    };
     this._errors = [];
     this._notice = null;
     this._board = null;
@@ -867,6 +894,7 @@ class KinoPanel extends PanelBase {
       this._meta = {
         drivers: result.drivers || {},
         entities: result.entities || {},
+        areas: result.areas || [],
         knownDrivers: result.knownDrivers || [],
         controlClasses: result.controlClasses || [],
       };
@@ -1722,8 +1750,79 @@ class KinoPanel extends PanelBase {
    * activity — it is there with the theater off — so it is configured here
    * rather than per activity. Its order is the order on the card.
    */
+  /** What pointing at this area would pick up, as the card will see it. */
+  _areaEntities(areaId) {
+    if (!areaId) return [];
+    const catalogue = this._meta.entities || {};
+    const found = [];
+    for (const domain of AREA_LIGHT_DOMAINS) {
+      for (const entry of catalogue[domain] || []) {
+        if (entry && entry.area === areaId) found.push({ ...entry, domain });
+      }
+    }
+    return found.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }
+
   _renderLights() {
     const panel = panelHelpers.lightPanel(this._document);
+    const areaName = (this._meta.areas || []).find((a) => a.id === panel.area);
+    const found = this._areaEntities(panel.area);
+    const excluded = new Set(panel.exclude || []);
+    const shown = found.filter((e) => !excluded.has(e.id));
+
+    const areaBlock = `<div class="card formcard">
+      <div class="frow"><span>Bereich</span>
+        <select data-field="light-area">
+          <option value=""${!panel.area ? " selected" : ""}>— von Hand —</option>
+          ${(this._meta.areas || [])
+            .map(
+              (a) =>
+                `<option value="${this._esc(a.id)}"${
+                  panel.area === a.id ? " selected" : ""
+                }>${this._esc(a.name)}</option>`
+            )
+            .join("")}
+        </select></div>
+      ${
+        panel.area
+          ? `<p class="sub" style="margin:0">
+              ${
+                found.length
+                  ? `${shown.length} von ${found.length} Einträgen aus
+                     „${this._esc(areaName ? areaName.name : panel.area)}“.
+                     Ein Bereich enthält mehr als eine Lichtzeile braucht —
+                     Doppelgänger und Fremdkörper hier abwählen.`
+                  : `In diesem Bereich liegen keine Lichter oder Szenen.
+                     In Home Assistant unter Einstellungen → Bereiche
+                     zuordnen — dann füllt sich die Karte von selbst.`
+              }
+            </p>
+            ${
+              found.length
+                ? `<div class="list" style="gap:6px">${found
+                    .map((entry) => {
+                      const on = !excluded.has(entry.id);
+                      return `<div class="arearow">
+                        <span class="rowbody">
+                          <span class="rowname">${this._esc(entry.name)}</span>
+                          <span class="rowkey">${this._esc(entry.id)}</span>
+                        </span>
+                        <button class="switch" role="switch" aria-checked="${on}"
+                          aria-label="${this._esc(entry.name)} anzeigen"
+                          data-act="light-area-toggle" data-key="${this._esc(entry.id)}">
+                          <span class="knob"></span></button>
+                      </div>`;
+                    })
+                    .join("")}</div>`
+                : ""
+            }`
+          : `<p class="sub" style="margin:0">
+              Ohne Bereich zeigt die Karte genau die Einträge unten — und
+              sonst nichts.
+            </p>`
+      }
+    </div>`;
+
     const rows = panel.controls
       .map((control, index) => {
         const entity = control.entity || "";
@@ -1766,7 +1865,8 @@ class KinoPanel extends PanelBase {
       <p class="sub" style="margin:0">
         Szenen und Lampen, die die Karte direkt schaltet — sichtbar auch,
         wenn das Kino aus ist. Eine Szene wird angewendet, eine Lampe oder ein
-        Schalter schaltet um. Ohne Eintrag zeigt die Karte keine Lichtzeile.
+        Schalter schaltet um. Am einfachsten den Bereich wählen, in dem das
+        Kino liegt: Home Assistant weiß bereits, was darin hängt.
       </p>
       <div class="card formcard">
         <div class="frow"><span>Überschrift</span>
@@ -1779,7 +1879,19 @@ class KinoPanel extends PanelBase {
           </select></div>
       </div>
 
-      <div class="seclabel">EINTRÄGE</div>
+      ${areaBlock}
+
+      <div class="seclabel">${
+        panel.area ? "ZUSÄTZLICH UND BESCHRIFTUNG" : "EINTRÄGE"
+      }</div>
+      ${
+        panel.area
+          ? `<p class="sub" style="margin:0">
+              Nur nötig für etwas außerhalb des Bereichs — oder um einem
+              Eintrag einen eigenen Namen oder ein eigenes Icon zu geben.
+            </p>`
+          : ""
+      }
       ${rows || '<p class="sub" style="margin:0">Noch kein Eintrag.</p>'}
       <button class="dashed" data-act="light-add">+ Eintrag</button>
     </div>`;
@@ -2180,6 +2292,13 @@ class KinoPanel extends PanelBase {
         this._notice = null;
         this._render();
         break;
+      case "light-area-toggle":
+        this._editLights((panel) => {
+          const at = panel.exclude.indexOf(key);
+          if (at === -1) panel.exclude.push(key);
+          else panel.exclude.splice(at, 1);
+        });
+        break;
       case "light-add":
         this._editLights((panel) => panel.controls.push({ entity: "" }));
         break;
@@ -2429,12 +2548,18 @@ class KinoPanel extends PanelBase {
         break;
       case "light-title":
       case "light-position":
+      case "light-area":
       case "light-entity":
       case "light-name":
       case "light-icon": {
         const panel = panelHelpers.lightPanel(doc);
         if (field === "light-title") panel.title = el.value;
         else if (field === "light-position") panel.position = el.value;
+        else if (field === "light-area") {
+          panel.area = el.value;
+          // Exclusions belong to the area that was left behind.
+          if (!el.value) panel.exclude = [];
+        }
         else {
           const control = panel.controls[Number(key)];
           if (!control) break;

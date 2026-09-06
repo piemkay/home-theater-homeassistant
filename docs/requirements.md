@@ -236,6 +236,12 @@ Explicitly **not** a sequence of fixed waits.
   the controls the entity reports it supports: on/off always, **brightness** where dimmable,
   **colour** where colour-capable. A continuous control SHALL issue one command per gesture,
   not one per intermediate value.
+- **FR-36d** The block SHALL be fillable from a **Home Assistant area**: naming the area the
+  cinema is in SHALL be sufficient configuration, with its lights and scenes discovered
+  rather than listed. Because an area holds more than a light card wants, individual
+  discovered entities SHALL be removable, and entities outside the area SHALL still be
+  addable. Discovery SHALL respect what Home Assistant already says about an entity —
+  hidden, disabled and configuration/diagnostic entities SHALL NOT appear.
 
 ### 5.5 Activity matrix — TO BE COMPLETED
 
@@ -621,8 +627,9 @@ has no usable editor.
 
 - **FR-130** Device connection settings: endpoints, credentials, timeouts, and which HA entity
   backs each logical device.
-- **FR-130a** The card's **light row** (FR-36a): which entities it offers, their order,
-  labels and icons, and whether it sits above or below the activity tiles.
+- **FR-130a** The card's **light card** (FR-36a): the area it is filled from (FR-36d) and
+  which of that area's entities to leave out, plus any extra entity, their order, labels and
+  icons, and whether it sits above or below the activity tiles.
 - **FR-131** Safety and UX settings: maximum volume ceiling (FR-64), volume step size, preferred
   audio and subtitle language (§15 Q6), shutdown light scene.
 - **FR-132** Card settings: default sort, which filters are exposed, grid density per breakpoint.

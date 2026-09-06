@@ -18,6 +18,8 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .config_store import ConfigNotFoundError, ConfigStore
@@ -485,6 +487,98 @@ def _sound_controls(coordinator) -> dict[str, str]:
     }
 
 
+#: What an area is allowed to contribute on its own. Deliberately narrow:
+#: a cinema's area also holds the projector's buttons and the remote's own
+#: diagnostics, and none of that belongs on a light card.
+_AREA_LIGHT_DOMAINS = ("scene", "light")
+
+
+def _resolve_area(hass: HomeAssistant, area: str | None) -> str | None:
+    """Accept an area ID or the name a human would type."""
+    if not area:
+        return None
+    registry = ar.async_get(hass)
+    if registry.async_get_area(area) is not None:
+        return area
+    found = registry.async_get_area_by_name(area)
+    return found.id if found is not None else None
+
+
+def _is_room_entity(entry) -> bool:
+    """Report whether this is something somebody would reach for in the room.
+
+    Not what an integration exposes about itself. Home Assistant already
+    says so three ways — hidden, disabled, or filed as configuration or
+    diagnostics — and a remote control's own button backlight is exactly the
+    third. One predicate, because the card and the editor's preview of it
+    must agree: a row the editor offers that the card then refuses is an
+    inert switch and a count that lies.
+    """
+    return (
+        entry.disabled_by is None
+        and entry.hidden_by is None
+        and entry.entity_category is None
+    )
+
+
+def _area_of(entry, devices) -> str | None:
+    """Return the area an entity sits in, directly or through its device."""
+    if entry.area_id is not None:
+        return entry.area_id
+    if entry.device_id is None:
+        return None
+    device = devices.async_get(entry.device_id)
+    return device.area_id if device is not None else None
+
+
+def _area_entities(hass: HomeAssistant, area_id: str) -> list[str]:
+    """Every light and scene the area holds, from the live registry."""
+    entities = er.async_get(hass)
+    devices = dr.async_get(hass)
+    return [
+        entry.entity_id
+        for entry in entities.entities.values()
+        if entry.domain in _AREA_LIGHT_DOMAINS
+        and _is_room_entity(entry)
+        and _area_of(entry, devices) == area_id
+    ]
+
+
+def _light_controls(hass: HomeAssistant, coordinator) -> list[dict[str, Any]]:
+    """Build what the light card offers, area and hand-written config combined.
+
+    Everything about *which* control wins and in what order lives in
+    :meth:`LightPanel.resolve`, which has no Home Assistant in it and is
+    tested on its own. All that happens here is reading the registry.
+    """
+    panel = coordinator.config.lights
+    area_id = _resolve_area(hass, panel.area)
+    discovered = (
+        [
+            (entity_id, _display_name(hass, entity_id))
+            for entity_id in _area_entities(hass, area_id)
+        ]
+        if area_id is not None
+        else []
+    )
+    return [
+        {
+            "entity": control.entity,
+            "name": control.name,
+            "icon": control.icon,
+            "momentary": control.momentary,
+        }
+        for control in panel.resolve(discovered)
+    ]
+
+
+def _display_name(hass: HomeAssistant, entity_id: str) -> str:
+    state = hass.states.get(entity_id)
+    if state is not None:
+        return str(state.attributes.get("friendly_name") or entity_id)
+    return entity_id
+
+
 def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
     snapshot = coordinator.engine.snapshot()
     config = coordinator.config
@@ -551,15 +645,7 @@ def _state_payload(hass: HomeAssistant, coordinator) -> dict[str, Any]:
         "lights": {
             "title": config.lights.title,
             "position": config.lights.position.value,
-            "controls": [
-                {
-                    "entity": control.entity,
-                    "name": control.name,
-                    "icon": control.icon,
-                    "momentary": control.momentary,
-                }
-                for control in config.lights.controls
-            ],
+            "controls": _light_controls(hass, coordinator),
         },
         "offActivity": config.off_activity,
         "entities": _own_entities(hass, coordinator),
@@ -737,21 +823,57 @@ _EDITABLE_DOMAINS = (
 )
 
 
+def _areas(hass: HomeAssistant) -> list[dict[str, str | None]]:
+    """List the areas the light card may be pointed at (FR-36d)."""
+    floors = ar.async_get(hass)
+    return sorted(
+        (
+            {"id": area.id, "name": area.name, "floor": area.floor_id}
+            for area in floors.async_list_areas()
+        ),
+        key=lambda area: str(area["name"]).lower(),
+    )
+
+
+def _entity_areas(hass: HomeAssistant) -> dict[str, str]:
+    """Which area each entity sits in, for the light screen's preview.
+
+    Only entities the card would actually take from an area get one, by the
+    same rule the card uses — an entity the editor lists but the card drops
+    is a switch that does nothing. Everything else still reaches the editor
+    through the catalogue; it simply has no area, which is what the device
+    pickers want anyway.
+    """
+    entities = er.async_get(hass)
+    devices = dr.async_get(hass)
+    out: dict[str, str] = {}
+    for entry in entities.entities.values():
+        if not _is_room_entity(entry):
+            continue
+        area_id = _area_of(entry, devices)
+        if area_id is not None:
+            out[entry.entity_id] = area_id
+    return out
+
+
 def _entity_catalogue(hass: HomeAssistant) -> dict[str, list[dict[str, str]]]:
     """Entities the editor offers when wiring a device up (FR-130).
 
     Friendly names travel with the IDs: picking `switch.hodr_cs_power` out of
     a list of a few hundred switches is a very different job when the list
-    reads "Hodr CS Power" as well.
+    reads "Hodr CS Power" as well. So does the area, so the light screen can
+    show what pointing at one would actually pick up (FR-36d).
     """
     catalogue: dict[str, list[dict[str, str]]] = {
         domain: [] for domain in _EDITABLE_DOMAINS
     }
+    areas = _entity_areas(hass)
     for state in hass.states.async_all(_EDITABLE_DOMAINS):
         catalogue[state.domain].append(
             {
                 "id": state.entity_id,
                 "name": str(state.attributes.get("friendly_name") or state.entity_id),
+                "area": areas.get(state.entity_id),
             }
         )
     return {
@@ -796,6 +918,7 @@ async def ws_config_get(hass, connection, msg) -> None:
             "entities": _entity_catalogue(hass),
             "knownDrivers": sorted(KNOWN_DRIVERS),
             "controlClasses": [c.value for c in ControlClass],
+            "areas": _areas(hass),
         },
     )
 

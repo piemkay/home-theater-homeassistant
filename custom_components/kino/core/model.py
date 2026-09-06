@@ -8,7 +8,7 @@ runtime (NFR-6).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -183,11 +183,56 @@ class LightControl:
 
 @dataclass(frozen=True)
 class LightPanel:
-    """The light row: what it offers and where it sits (FR-36a)."""
+    """The light card: what it offers and where it sits (FR-36a).
 
+    Normally it offers a whole *area*: Home Assistant already knows which
+    lights and scenes are in the cinema, so naming them a second time here
+    is work with no information in it (FR-36d). ``controls`` then only
+    carries what the area cannot say — a label, an icon, or a lamp that
+    lives outside it.
+    """
+
+    #: The Home Assistant area whose lights and scenes fill the card.
+    area: str | None = None
+    #: Entities from that area to leave out — a remote's own backlight, a
+    #: strip's master entity duplicating its segments.
+    exclude: frozenset[str] = frozenset()
     controls: tuple[LightControl, ...] = ()
     position: LightPosition = LightPosition.BELOW
     title: str = "Licht"
+
+    def resolve(
+        self, discovered: Sequence[tuple[str, str]] = ()
+    ) -> tuple[LightControl, ...]:
+        """Combine what was configured with what the area turned up.
+
+        ``discovered`` is ``(entity_id, display name)`` for everything the
+        area holds; resolving it is left to the Home Assistant layer, which
+        is the only part that can read a registry.
+
+        The configured controls come first, in the order somebody put them
+        in — that is a decision, and it outranks an alphabet. Whatever the
+        area adds beyond them follows, ordered by the name it is shown
+        under, so the card does not reshuffle itself when Home Assistant
+        happens to reorder its registry. An excluded entity is dropped
+        whichever side it came from.
+        """
+        out: list[LightControl] = []
+        seen: set[str] = set()
+        for control in self.controls:
+            if control.entity in self.exclude or control.entity in seen:
+                continue
+            seen.add(control.entity)
+            out.append(control)
+        extra = [
+            (name, entity)
+            for entity, name in discovered
+            if entity not in seen and entity not in self.exclude
+        ]
+        for _name, entity in sorted(extra, key=lambda pair: (pair[0].lower(), pair[1])):
+            seen.add(entity)
+            out.append(LightControl(entity=entity))
+        return tuple(out)
 
 
 @dataclass(frozen=True)

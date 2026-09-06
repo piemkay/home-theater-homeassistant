@@ -2611,6 +2611,33 @@ describe("the light card", () => {
     assert.ok(fields.every((f) => f.includes(".")), "the name carries the entity");
   });
 
+  /**
+   * A card filled from an area has no configured icons at all, so the one
+   * Home Assistant already gives the entity is what has to show.
+   */
+  test("an entity's own icon stands in when none is configured", () => {
+    const html = makeCard(
+      { controls: [{ entity: "scene.kini_gaming", momentary: true }] },
+      {
+        "scene.kini_gaming": {
+          state: "2026-09-06T20:00:00+00:00",
+          attributes: { friendly_name: "Kino Gaming", icon: "mdi:controller" },
+        },
+      }
+    )._renderLights();
+    assert.match(html, /icon="mdi:controller"/);
+    assert.match(html, /<span class="nm">Kino Gaming<\/span>/);
+  });
+
+  test("a configured icon still wins over the entity's own", () => {
+    const html = makeCard(
+      { controls: [{ entity: "scene.dark", icon: "mdi:weather-night", momentary: true }] },
+      { "scene.dark": { state: "x", attributes: { icon: "mdi:palette" } } }
+    )._renderLights();
+    assert.match(html, /icon="mdi:weather-night"/);
+    assert.doesNotMatch(html, /mdi:palette/);
+  });
+
   test("a tile without an icon still lines its label up with the others", () => {
     const html = makeCard({
       controls: [

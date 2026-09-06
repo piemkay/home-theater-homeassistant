@@ -62,7 +62,7 @@ _ACTIVITY_KEYS = frozenset(
 
 _REQUIREMENT_KEYS = frozenset({"power", "required", "settings"})
 
-_LIGHT_PANEL_KEYS = frozenset({"controls", "position", "title"})
+_LIGHT_PANEL_KEYS = frozenset({"area", "exclude", "controls", "position", "title"})
 
 _LIGHT_CONTROL_KEYS = frozenset({"entity", "name", "icon"})
 
@@ -247,6 +247,30 @@ def _parse_lights(raw: Any, errors: list[ConfigError]) -> LightPanel:
 
     controls = _parse_light_controls(raw.get("controls"), errors)
 
+    area = raw.get("area")
+    if area is not None and (not isinstance(area, str) or not area.strip()):
+        errors.append(
+            ConfigError("settings.lights.area", f"erwartet einen Bereich, ist {area!r}")
+        )
+        area = None
+
+    # Which entities of the area to leave out. Validated as entity IDs rather
+    # than against the area itself: the schema has no Home Assistant to ask,
+    # and an entry that names nothing simply excludes nothing.
+    exclude = set()
+    for index, item in enumerate(
+        _as_str_list(raw.get("exclude"), "settings.lights.exclude", errors)
+    ):
+        if "." not in item or not item.split(".", 1)[1]:
+            errors.append(
+                ConfigError(
+                    f"settings.lights.exclude[{index}]",
+                    f"{item!r} ist keine Entity",
+                )
+            )
+            continue
+        exclude.add(item)
+
     position = raw.get("position", LightPosition.BELOW.value)
     try:
         parsed_position = LightPosition(position)
@@ -266,7 +290,13 @@ def _parse_lights(raw: Any, errors: list[ConfigError]) -> LightPanel:
         )
         title = "Licht"
 
-    return LightPanel(controls=controls, position=parsed_position, title=title.strip())
+    return LightPanel(
+        area=area.strip() if isinstance(area, str) else None,
+        exclude=frozenset(exclude),
+        controls=controls,
+        position=parsed_position,
+        title=title.strip(),
+    )
 
 
 def _check_path_map(value: Any, path: str, errors: list[ConfigError]) -> None:
