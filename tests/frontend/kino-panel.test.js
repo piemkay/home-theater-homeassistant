@@ -583,6 +583,46 @@ describe("the light row editor", () => {
     assert.equal(p._document.settings.lights.exclude, undefined);
   });
 
+  /**
+   * A scene and a lamp are two different things on the card, so one
+   * alphabetical pile of entities reads as a list of entities rather than as
+   * the card it configures.
+   */
+  test("the area's scenes and lights are listed apart, each with its own count", () => {
+    const p = lightPanel();
+    const found = [
+      { id: "scene.bright", name: "Bright Ambience", domain: "scene" },
+      { id: "scene.dark", name: "Dark", domain: "scene" },
+      { id: "light.decke", name: "Decke", domain: "light" },
+      { id: "light.spots", name: "Kino Deckenspots", domain: "light" },
+      { id: "light.main", name: "WLED Main", domain: "light" },
+    ];
+    const html = p._renderAreaGroups(found, new Set(["light.main"]));
+
+    // Two headings, scenes before lamps.
+    assert.ok(html.indexOf("Szenen") < html.indexOf("Lichter"));
+    // Each counts only its own, and counts what is shown against the total.
+    assert.match(html, /<span>Szenen<\/span>\s*<span class="n">2 \/ 2<\/span>/);
+    assert.match(html, /<span>Lichter<\/span>\s*<span class="n">2 \/ 3<\/span>/);
+    // Every entity still has its row and its switch.
+    assert.equal((html.match(/class="arearow"/g) || []).length, 5);
+    assert.match(html, /data-key="light\.main"[\s\S]*?/);
+    assert.equal((html.match(/aria-checked="false"/g) || []).length, 1);
+    // A scene never lands under Lichter.
+    const lampHalf = html.slice(html.indexOf("Lichter"));
+    assert.doesNotMatch(lampHalf, /scene\./);
+  });
+
+  test("a group with nothing in it grows no heading", () => {
+    const p = lightPanel();
+    const html = p._renderAreaGroups(
+      [{ id: "light.spots", name: "Spots", domain: "light" }],
+      new Set()
+    );
+    assert.doesNotMatch(html, /Szenen/);
+    assert.match(html, /Lichter/);
+  });
+
   test("leaving the area behind takes its exclusions with it", () => {
     const p = lightPanel();
     p._document.settings.lights = { area: "kino", exclude: ["light.remote"] };

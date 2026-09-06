@@ -16,7 +16,7 @@
  * app renders as a centered column; the navigation model never changes.
  */
 
-const PANEL_VERSION = "0.7.0";
+const PANEL_VERSION = "0.7.1";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -545,6 +545,13 @@ textarea { min-height: 420px; line-height: 1.55; resize: vertical; border-radius
 }
 
 /* -- the card's light row ---------------------------------------------- */
+.areagroup { display: flex; flex-direction: column; gap: 6px; }
+.arealabel {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--kino-text3); padding: 0 2px;
+}
+.arealabel .n { letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .arearow {
   display: flex; align-items: center; gap: 10px; padding: 8px 10px;
   border-radius: 10px; background: var(--kino-surface2);
@@ -1763,6 +1770,51 @@ class KinoPanel extends PanelBase {
     return found.sort((a, b) => String(a.name).localeCompare(String(b.name)));
   }
 
+  /**
+   * The area's entities, scenes apart from lamps.
+   *
+   * They are two different things on the card — a scene is the whole room in
+   * one tap, a lamp is one fitting — so mixing them into one alphabetical
+   * list made the screen read as a pile of entities rather than as the card
+   * it configures.
+   */
+  _renderAreaGroups(found, excluded) {
+    const groups = [
+      ["Szenen", found.filter((entry) => entry.domain === "scene")],
+      ["Lichter", found.filter((entry) => entry.domain === "light")],
+    ];
+    return groups
+      .filter(([, entries]) => entries.length)
+      .map(
+        ([label, entries]) => `<div class="areagroup">
+          <div class="arealabel">
+            <span>${label}</span>
+            <span class="n">${
+              entries.filter((e) => !excluded.has(e.id)).length
+            } / ${entries.length}</span>
+          </div>
+          <div class="list" style="gap:6px">${entries
+            .map((entry) => this._renderAreaRow(entry, !excluded.has(entry.id)))
+            .join("")}</div>
+        </div>`
+      )
+      .join("");
+  }
+
+  /** One discovered entity, with the switch that leaves it out. */
+  _renderAreaRow(entry, shown) {
+    return `<div class="arearow">
+      <span class="rowbody">
+        <span class="rowname">${this._esc(entry.name)}</span>
+        <span class="rowkey">${this._esc(entry.id)}</span>
+      </span>
+      <button class="switch" role="switch" aria-checked="${shown}"
+        aria-label="${this._esc(entry.name)} anzeigen"
+        data-act="light-area-toggle" data-key="${this._esc(entry.id)}">
+        <span class="knob"></span></button>
+    </div>`;
+  }
+
   _renderLights() {
     const panel = panelHelpers.lightPanel(this._document);
     const areaName = (this._meta.areas || []).find((a) => a.id === panel.area);
@@ -1797,25 +1849,7 @@ class KinoPanel extends PanelBase {
                      zuordnen — dann füllt sich die Karte von selbst.`
               }
             </p>
-            ${
-              found.length
-                ? `<div class="list" style="gap:6px">${found
-                    .map((entry) => {
-                      const on = !excluded.has(entry.id);
-                      return `<div class="arearow">
-                        <span class="rowbody">
-                          <span class="rowname">${this._esc(entry.name)}</span>
-                          <span class="rowkey">${this._esc(entry.id)}</span>
-                        </span>
-                        <button class="switch" role="switch" aria-checked="${on}"
-                          aria-label="${this._esc(entry.name)} anzeigen"
-                          data-act="light-area-toggle" data-key="${this._esc(entry.id)}">
-                          <span class="knob"></span></button>
-                      </div>`;
-                    })
-                    .join("")}</div>`
-                : ""
-            }`
+            ${this._renderAreaGroups(found, excluded)}`
           : `<p class="sub" style="margin:0">
               Ohne Bereich zeigt die Karte genau die Einträge unten — und
               sonst nichts.
