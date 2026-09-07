@@ -576,6 +576,14 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
   (FR-36a), **Filme & Serien** (one segmented control for Filme / Serien / Demos, where the
   marked segment is what "Erkunden" opens), then the poster rows of FR-70 and FR-70a.
   Reference design: `design/kino-start.dc.html`.
+- **FR-78b** The Start screen SHALL carry the search field of FR-70 directly, and it SHALL be
+  the same field the library uses — one `data-field`, so a search begun on the Start screen
+  opens the library carrying the word and the caret with it.
+- **FR-78c** Every screen reachable from the Start screen's segmented control — library,
+  Demos, and the filter sheet behind the library's toolbar — SHALL use the Start screen's own
+  furniture: its screen header, its segmented control, its search field, and controls on the
+  same 12 px / 10 px corner family. Gold stays reserved for "this is running": a selected
+  segment lifts on `--kino-surface3` instead.
 - **FR-78a** The activity tiles SHALL all be visible without opening anything, on the Start
   screen and in the compact selector's dropdown alike, and SHALL stay tappable during a
   transition. The library SHALL remain on screen during a transition (FR-41 does not pause

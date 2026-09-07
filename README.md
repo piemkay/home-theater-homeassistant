@@ -515,7 +515,16 @@ became one segmented control, where the marked segment is what "Erkunden"
 opens. Licht (0.8) sits in the same furniture as the rest. Device chips appear
 when they have something to report rather than showing four green dots, and a
 transition no longer blanks the library — the two minutes the beamer warms up
-are exactly when somebody is choosing what to watch. On top of:
+are exactly when somebody is choosing what to watch.
+
+**0.9.1** puts the search field on the Start screen, where it had never been:
+it is the same field the library uses, so the third letter you type opens the
+library carrying the word and the caret with it. And the screens that control
+leads to — library, Demos, the filter sheet — stopped looking like a different
+app one tap away: same header, same segmented control, same search box, and
+the card's capsules squared off to the 12 px corners the rest of it uses. Gold
+went back to meaning "this is running"; a selected tab no longer borrows it.
+On top of:
 
 Release **0.7 "Demo"**: reference clips, showcases and A/B calibration — capture
 from the player, trim on the phone, replay with lead-in padding and a scheduled

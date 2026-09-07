@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.9.0";
+const CARD_VERSION = "0.9.1";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -911,7 +911,7 @@ const STYLES = `
 .dot { width: 8px; height: 8px; border-radius: 5px; }
 .dot.pulsing { animation: kino-pulse 1.2s ease-in-out infinite; }
 .iconbtn {
-  width: 36px; height: 36px; border-radius: 18px; border: none;
+  width: 36px; height: 36px; border-radius: 10px; border: none;
   background: var(--kino-surface2); color: var(--kino-text);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; padding: 0; flex-shrink: 0;
@@ -932,15 +932,15 @@ button { font-family: inherit; }
   font-family: inherit; color: var(--kino-text2);
   background: var(--kino-surface2);
 }
-.chipbtn { padding: 10px 14px; border-radius: 20px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kino-text); min-height: 40px; }
-.pill { height: 36px; padding: 0 13px; border-radius: 18px; font-size: 12px; flex-shrink: 0; }
+.chipbtn { padding: 10px 14px; border-radius: 12px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kino-text); min-height: 40px; }
+.pill { height: 36px; padding: 0 13px; border-radius: 10px; font-size: 12px; flex-shrink: 0; }
 .pill[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
-.primary { padding: 15px; border-radius: 14px; background: var(--kino-gold); color: var(--kino-goldText); font-size: 14px; font-weight: 800; width: 100%; min-height: 48px; }
+.primary { padding: 15px; border-radius: 12px; background: var(--kino-gold); color: var(--kino-goldText); font-size: 14px; font-weight: 800; width: 100%; min-height: 48px; }
 .ghost { padding: 12px; border-radius: 12px; border: 1px solid var(--kino-border); background: transparent; font-size: 13px; }
 
 .devicechips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .devicechip {
-  padding: 7px 10px; border-radius: 14px; background: var(--kino-surface);
+  padding: 7px 10px; border-radius: 10px; background: var(--kino-surface);
   border: 1px solid var(--kino-border); display: flex; align-items: center; gap: 6px;
 }
 .devicechip span:last-child { font-size: 11px; color: var(--kino-text2); font-weight: 600; }
@@ -1010,7 +1010,7 @@ button { font-family: inherit; }
 }
 
 .banner {
-  margin-bottom: 12px; padding: 14px; border-radius: 14px;
+  margin-bottom: 12px; padding: 14px; border-radius: 12px;
   background: oklch(0.65 0.19 25 / 0.14);
   border: 1px solid oklch(0.65 0.19 25 / 0.4);
   display: flex; flex-direction: column; gap: 8px;
@@ -1100,8 +1100,8 @@ button { font-family: inherit; }
 /* The segmented control. Three destinations on one track; the pressed one
    is the one Erkunden opens, so the highlight is a promise, not a tab. */
 .st-seg {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px;
-  background: var(--kino-surface2); border-radius: 12px; padding: 4px;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+  gap: 4px; background: var(--kino-surface2); border-radius: 12px; padding: 4px;
 }
 .st-segbtn {
   height: 36px; border-radius: 9px; border: none; cursor: pointer;
@@ -1112,7 +1112,30 @@ button { font-family: inherit; }
 .st-segbtn[aria-pressed="true"] { background: var(--kino-surface3); color: var(--kino-text); }
 .st-hint { font-size: 12px; color: var(--kino-text2); }
 
-.progress { margin-bottom: 14px; padding: 16px; border-radius: 16px; background: var(--kino-surface); border: 1px solid var(--kino-border); }
+/* A screen you reached from the Start screen: back, where you are, and the
+   one action that belongs to it. Smaller than the 19px h2 it replaces —
+   next to a 13px section heading that was shouting. */
+.st-screenhead {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  min-height: 30px;
+}
+.st-screenhead h2 { margin: 0; flex: 1; font-size: 16px; font-weight: 800; }
+.st-back {
+  display: flex; align-items: center; gap: 4px; flex: none;
+  padding: 0; background: none; border: none; font-family: inherit;
+  font-size: 12.5px; font-weight: 600; color: var(--kino-goldInk); cursor: pointer;
+}
+
+/* A search box: the glyph sits inside the field rather than beside it, so
+   the row is one block of the same 12px family as everything around it. */
+.st-search { position: relative; display: block; }
+.st-search .ic {
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+  display: flex; color: var(--kino-text3); pointer-events: none;
+}
+.st-search input[type="text"] { padding-left: 38px; }
+
+.progress { margin-bottom: 14px; padding: 16px; border-radius: 12px; background: var(--kino-surface); border: 1px solid var(--kino-border); }
 .progress .head { display: flex; justify-content: space-between; align-items: baseline; }
 .progress .head b { font-size: 14px; }
 .progress .head span { font-size: 11px; color: var(--kino-text3); }
@@ -1176,7 +1199,7 @@ button { font-family: inherit; }
 .listrow .flags .warn { background: var(--kino-red); color: #fff; font-size: 9px; font-weight: 800; padding: 2px 5px; border-radius: 4px; }
 
 .iconbtn {
-  width: 36px; height: 36px; border-radius: 18px; border: none; cursor: pointer;
+  width: 36px; height: 36px; border-radius: 10px; border: none; cursor: pointer;
   background: var(--kino-surface2); color: var(--kino-text2);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
@@ -1184,7 +1207,7 @@ button { font-family: inherit; }
 
 input[type="text"], select {
   width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px;
-  border: 1px solid var(--kino-border); background: var(--kino-surface);
+  border: none; background: var(--kino-surface2);
   color: var(--kino-text); font-size: 13px; font-family: inherit; font-weight: 600;
   min-height: 44px;
 }
@@ -1626,6 +1649,10 @@ button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 const POWER_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
   <circle cx="12" cy="13" r="8"></circle><line x1="12" y1="2" x2="12" y2="12"></line></svg>`;
+
+const SEARCH_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+  <circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>`;
 
 const CHEVRON_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>`;
@@ -4473,6 +4500,24 @@ class KinoCard extends CardBase {
     await this._loadDemo(true);
   }
 
+  /**
+   * The search box, on the Start screen and in the library both.
+   *
+   * One field, one `data-field`, deliberately: `_render` puts the caret back
+   * by field name after a redraw, so typing the third letter here — which
+   * opens the library, because the Start screen has no grid to fill — hands
+   * the caret and the word straight to the library's own box. To the person
+   * typing there is one search field that happens to bring results with it.
+   */
+  _searchField() {
+    return `<label class="st-search">
+      <span class="ic">${SEARCH_ICON}</span>
+      <input type="text" data-field="query" placeholder="Titel suchen…"
+        value="${this._esc(this._view.query)}" autocomplete="off" spellcheck="false"
+        inputmode="search" enterkeyhint="search" aria-label="Titel suchen">
+    </label>`;
+  }
+
   _renderLibraryHome() {
     const resumeRow = this._homeRow("Weitersehen", this._resume, true);
     const recentRow = this._homeRow("Zuletzt hinzugefügt", this._recent, false);
@@ -4504,6 +4549,7 @@ class KinoCard extends CardBase {
           ${seg("Serien", "shows", "open-library", "shows")}
           ${seg("Demos", "demos", "open-demos")}
         </div>
+        ${this._searchField()}
         <div class="st-hint">Durchsuchen, filtern und sortieren.</div>
       </div>
       ${resumeRow}
@@ -4515,16 +4561,16 @@ class KinoCard extends CardBase {
 
   _renderDemos() {
     const tab = this._view.demoTab;
-    const chip = (key, label) =>
-      `<button class="pill" data-act="demo-tab" data-key="${key}"
+    const seg = (key, label) =>
+      `<button class="st-segbtn" data-act="demo-tab" data-key="${key}"
          aria-pressed="${tab === key}">${label}</button>`;
     return `
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <a class="link" data-act="back-home">‹ Zurück</a>
-        <h2 style="margin:0;flex:1">Demos</h2>
+      <div class="st-screenhead">
+        <button class="st-back" data-act="back-home">‹ Zurück</button>
+        <h2>Demos</h2>
       </div>
-      <div class="row" style="margin-bottom:12px;justify-content:flex-start">
-        ${chip("clips", "Clips")}${chip("showcases", "Showcases")}
+      <div class="st-seg" style="margin-bottom:12px">
+        ${seg("clips", "Clips")}${seg("showcases", "Showcases")}
       </div>
       ${tab === "clips" ? this._renderClipList() : this._renderShowcaseList()}`;
   }
@@ -4829,22 +4875,23 @@ class KinoCard extends CardBase {
 
     return `
       <div class="maxcol">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-          <a class="link" data-act="back-home">‹ Zurück</a>
-          <h2 style="flex:1">Bibliothek · ${this._view.category === "shows" ? "Serien" : "Filme"}</h2>
-          <a class="link" style="color:var(--kino-text2)" data-act="force-refresh">${
-            this._view.refreshing ? "Wird aktualisiert…" : "Aktualisieren"
-          }</a>
+        <div class="st-screenhead">
+          <button class="st-back" data-act="back-home">‹ Zurück</button>
+          <h2>Bibliothek</h2>
+          <span class="st-meta" data-act="force-refresh"
+            style="cursor:pointer">${
+              this._view.refreshing ? "Wird aktualisiert…" : "Aktualisieren"
+            }</span>
         </div>
-        <div class="row" style="margin-bottom:10px">
-          <button class="pill" style="flex:1;height:40px" data-act="category" data-key="movies" aria-pressed="${this._view.category === "movies"}">Filme</button>
-          <button class="pill" style="flex:1;height:40px" data-act="category" data-key="shows" aria-pressed="${this._view.category === "shows"}">Serien</button>
+        <div class="st-seg" style="margin-bottom:10px">
+          <button class="st-segbtn" data-act="category" data-key="movies"
+            aria-pressed="${this._view.category === "movies"}">Filme</button>
+          <button class="st-segbtn" data-act="category" data-key="shows"
+            aria-pressed="${this._view.category === "shows"}">Serien</button>
         </div>
-        <input type="text" data-field="query" placeholder="Titel suchen…"
-          value="${this._esc(this._view.query)}" autocomplete="off" spellcheck="false"
-          inputmode="search" enterkeyhint="search" style="margin-bottom:12px">
+        <div style="margin-bottom:10px">${this._searchField()}</div>
         <div class="row" style="margin-bottom:10px">
-          <button class="pill" style="flex:0 0 auto;height:40px" data-act="open-filters" aria-pressed="${count > 0}">
+          <button class="pill" style="flex:0 0 auto;height:44px" data-act="open-filters" aria-pressed="${count > 0}">
             ${count ? `Filter · ${count}` : "Filter"}
           </button>
           <select data-field="sort" class="sortsel">
@@ -4853,15 +4900,15 @@ class KinoCard extends CardBase {
                 `<option value="${value}"${this._view.sort === value ? " selected" : ""}>${label}</option>`
             ).join("")}
           </select>
-          <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="sort-dir"
+          <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="sort-dir"
             aria-pressed="${!!this._view.sortDir}" title="Sortierrichtung umkehren">
             ${(this._view.sortDir || helpers.defaultSortDir(this._view.sort)) === "asc" ? "↑" : "↓"}
           </button>
-          <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="view-mode"
+          <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="view-mode"
             title="Ansicht: ${(VIEW_MODES.find(([k]) => k === this._view.viewMode) || VIEW_MODES[0])[1]}">
             ${VIEW_ICON}
           </button>
-          <button class="pill" style="flex:0 0 auto;width:40px;height:40px;padding:0" data-act="grid-size"
+          <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="grid-size"
             title="Kachelgröße: ${(GRID_SIZES.find(([k]) => k === this._view.gridSize) || GRID_SIZES[2])[1]}">
             ${SIZE_ICON}
           </button>
@@ -5021,10 +5068,10 @@ class KinoCard extends CardBase {
     const langLabel = (v) => helpers.langLabel(v);
 
     return `<div class="sheet" data-sheet="filter" style="z-index:35">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <a class="link" data-act="close-filters">‹ Zurück</a>
-        <h2 style="flex:1">Filter</h2>
-        <a class="link" style="color:var(--kino-text2)" data-act="reset-filters">Zurücksetzen</a>
+      <div class="st-screenhead">
+        <button class="st-back" data-act="close-filters">‹ Zurück</button>
+        <h2>Filter</h2>
+        <span class="st-meta" data-act="reset-filters" style="cursor:pointer">Zurücksetzen</span>
       </div>
       ${this._filterGroup("tags", "Format &amp; Status", multi(TAGS, "tag", f.tags))}
       ${this._filterGroup("genres", "Genre", multi(this._facets.genres || [], "genre", f.genres))}
@@ -7207,6 +7254,15 @@ class KinoCard extends CardBase {
     // Incremental results as the user types, without a request per keystroke.
     this._searchTimer = setTimeout(() => {
       this._searchTimer = null;
+      // Typed on the Start screen, where there is no grid to fill: the third
+      // letter opens the one that can show it. Nothing fires before that —
+      // the guard above returns early while `_searchQuery()` is still empty
+      // — so the screen changes when the search becomes a search, not on the
+      // first keystroke.
+      if (this._view.main === "home") {
+        this._openLibrary(this._view.startTab === "shows" ? "shows" : "movies");
+        return;
+      }
       this._loadLibrary();
     }, SEARCH_DEBOUNCE_MS);
   }

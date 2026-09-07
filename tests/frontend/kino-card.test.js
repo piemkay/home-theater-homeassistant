@@ -935,6 +935,66 @@ describe("the Start screen (FR-78)", () => {
     assert.doesNotMatch(c._renderBody(), /Fernbedienung der Shield/);
   });
 
+  /**
+   * The Start screen is the card's face now, and searching from it used to
+   * mean opening the library first and finding the box there.
+   */
+  test("the Start screen has a search box", () => {
+    const html = card()._renderLibraryHome();
+    assert.match(html, /class="st-search"/);
+    assert.match(html, /data-field="query"/);
+    assert.match(html, /placeholder="Titel suchen…"/);
+  });
+
+  /**
+   * One field name across both screens: `_render` restores the caret by
+   * `data-field`, so the word and the caret follow the user into the
+   * library instead of being retyped there.
+   */
+  test("the third letter opens the library, the first two do not", async () => {
+    const c = card();
+    c._container = { querySelector: () => null };
+    c._appliedQuery = "";
+    const opened = [];
+    c._openLibrary = async (cat) => opened.push(cat);
+    c._loadLibrary = async () => opened.push("load");
+    const type = (value) =>
+      c._onInput({ target: { dataset: { field: "query" }, value } });
+
+    type("Du");
+    await new Promise((r) => setTimeout(r, 400));
+    assert.deepEqual(opened, [], "two letters is not a search");
+
+    type("Dun");
+    await new Promise((r) => setTimeout(r, 400));
+    assert.deepEqual(opened, ["movies"]);
+    assert.equal(c._view.query, "Dun");
+  });
+
+  test("the search follows the lit segment into Serien", async () => {
+    const c = card({}, { startTab: "shows" });
+    c._container = { querySelector: () => null };
+    c._appliedQuery = "";
+    const opened = [];
+    c._openLibrary = async (cat) => opened.push(cat);
+    c._onInput({ target: { dataset: { field: "query" }, value: "Dun" } });
+    await new Promise((r) => setTimeout(r, 400));
+    assert.deepEqual(opened, ["shows"]);
+  });
+
+  /** Inside the library the same field searches in place, as it always did. */
+  test("in the library the field does not navigate", async () => {
+    const c = card({}, { main: "library" });
+    c._container = { querySelector: () => null };
+    c._appliedQuery = "";
+    const opened = [];
+    c._openLibrary = async (cat) => opened.push(cat);
+    c._loadLibrary = async () => opened.push("load");
+    c._onInput({ target: { dataset: { field: "query" }, value: "Dun" } });
+    await new Promise((r) => setTimeout(r, 400));
+    assert.deepEqual(opened, ["load"]);
+  });
+
   test("a grid where no tile has an icon grows no icon gutter", () => {
     const bare = ACTIVITIES.map(({ icon, ...rest }) => rest);
     assert.doesNotMatch(card({ activities: bare })._renderActivitySelector(), /class="ic"/);
@@ -1028,6 +1088,61 @@ describe("view modes", () => {
     const html = c._renderItems([item]);
     assert.match(html, /class="seen"/);
     assert.match(html, /class="fav"/);
+  });
+});
+
+/**
+ * The three places the Start screen's segmented control leads to. They kept
+ * 0.8's capsules and a 19px title while the screen above them was redrawn,
+ * which read as two different apps one tap apart (FR-78).
+ */
+describe("the screens under the segmented control speak one language", () => {
+  const library = () => {
+    const c = Object.create(KinoCard.prototype);
+    c._view = {
+      main: "library",
+      category: "movies",
+      query: "",
+      sort: "added",
+      sortDir: null,
+      viewMode: "poster",
+      gridSize: "m",
+      refreshing: false,
+      filters: helpers.emptyFilters(),
+    };
+    c._facets = { genres: [], countries: [], ratings: [], yearMin: 1957, yearMax: 2026 };
+    c._library = { items: [], total: 0, hasMore: false, loading: false, error: null };
+    c._kino = { artworkSignature: "sig" };
+    return c;
+  };
+
+  test("the library's category control is the same segmented control", () => {
+    const html = library()._renderLibrary();
+    assert.match(html, /class="st-seg"/);
+    assert.equal((html.match(/class="st-segbtn"/g) || []).length, 2);
+    assert.match(html, /data-act="category" data-key="movies"\n?\s*aria-pressed="true"/);
+    // Gold means "this is running" everywhere else on the card; a selected
+    // tab borrowing it was the loudest of the mismatches.
+    assert.doesNotMatch(html, /class="pill"[^>]*data-act="category"/);
+  });
+
+  test("the library carries the same search box as the Start screen", () => {
+    const html = library()._renderLibrary();
+    assert.match(html, /class="st-search"/);
+    assert.match(html, /data-field="query"/);
+  });
+
+  test("both screens use the same header", () => {
+    const c = library();
+    assert.match(c._renderLibrary(), /class="st-screenhead"/);
+    assert.match(c._renderLibrary(), /class="st-back" data-act="back-home"/);
+    const demos = Object.create(KinoCard.prototype);
+    demos._view = { demoTab: "clips", demoTagFilter: [] };
+    demos._demo = { clips: [], showcases: [], vocabulary: [] };
+    const html = demos._renderDemos();
+    assert.match(html, /class="st-screenhead"/);
+    assert.match(html, /class="st-seg"/);
+    assert.doesNotMatch(html, /class="pill" data-act="demo-tab"/);
   });
 });
 

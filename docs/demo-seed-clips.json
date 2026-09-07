@@ -1,0 +1,1044 @@
+{
+  "clips": [
+    {
+      "id": "seed-br2049-farm",
+      "itemId": "bff002094a08af13bf468d48e20873de",
+      "path": null,
+      "title": "Blade Runner 2049",
+      "episode": null,
+      "startMs": 150000,
+      "endMs": 420000,
+      "name": "Blade Runner 2049 — Sapper-Farm",
+      "tags": [
+        "bass_heavy",
+        "hdr_blacks",
+        "atmos_heights"
+      ],
+      "notes": "Anflug über die Protein-Farm und der Kampf in der Hütte: tiefer, trockener LFE unter Zimmers Drones, dazu fast schwarzes Bild mit wenigen harten Lichtern. Der Klassiker zum Einsteigen.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „0min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-dune-harvester",
+      "itemId": "720bc36d1f3456df613a9b31db32297b",
+      "path": null,
+      "title": "Dune",
+      "episode": null,
+      "startMs": 3780000,
+      "endMs": 4050000,
+      "name": "Dune — Spice-Harvester",
+      "tags": [
+        "bass_heavy",
+        "atmos_heights",
+        "panning"
+      ],
+      "notes": "Rettung der Harvester-Crew: Ornithopter über Kopf, der Wurm von unten. Prüft Höhen und Tiefton gleichzeitig.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „1hr 3min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-godzilla-kotm-titles",
+      "itemId": "4e39229026add12194c98907f259ffb4",
+      "path": null,
+      "title": "Godzilla: King of the Monsters",
+      "episode": null,
+      "startMs": 35000,
+      "endMs": 180000,
+      "name": "Godzilla: King of the Monsters — Titelsequenz",
+      "tags": [
+        "bass_heavy"
+      ],
+      "notes": "Die Schritte in der Titelsequenz sind extrem heiß aufgenommen — Foltertest für den Tiefton. Nicht als erstes im Abend spielen.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „0min — good LFE torture test“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-rpo-race",
+      "itemId": "39f788e020385dc40be27f993b7423f7",
+      "path": null,
+      "title": "Ready Player One",
+      "episode": null,
+      "startMs": 840000,
+      "endMs": 1140000,
+      "name": "Ready Player One — Das Rennen",
+      "tags": [
+        "bass_heavy",
+        "panning",
+        "guest_safe"
+      ],
+      "notes": "King Kong und die Abrissbirne: viel Bewegung rundherum, sauberer Punch. Funktioniert auch bei Gästen, die keinen Film kennen müssen.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „14min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-oppenheimer-trinity",
+      "itemId": "cfdabaf526b93d7744a8aba455d7c375",
+      "path": null,
+      "title": "Oppenheimer",
+      "episode": null,
+      "startMs": 6960000,
+      "endMs": 7290000,
+      "name": "Oppenheimer — Trinity-Test",
+      "tags": [
+        "bass_heavy",
+        "dialogue"
+      ],
+      "notes": "Die Stille vor dem Knall und dann der Druck: der beste Dynamik-Test der Sammlung. Pegel vorher prüfen.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "theatercalc.com (Atmos-Demo-Szenen)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-interstellar-waves",
+      "itemId": "43d15977c45e38dbc029ac8583b34907",
+      "path": null,
+      "title": "Interstellar",
+      "episode": null,
+      "startMs": 3540000,
+      "endMs": 3840000,
+      "name": "Interstellar — Wasserplanet",
+      "tags": [
+        "bass_heavy",
+        "dialogue",
+        "spoilers"
+      ],
+      "notes": "Die Welle auf Millers Planet. Nolans Mix drückt den Dialog bewusst unter den Score — guter Test, ob die Center-Verständlichkeit trägt.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „59min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-godzilla-minus-ginza",
+      "itemId": "311b12d72ffc99cb7f4a4441a23f3022",
+      "path": null,
+      "title": "Godzilla Minus One",
+      "episode": null,
+      "startMs": 3780000,
+      "endMs": 4080000,
+      "name": "Godzilla Minus One — Ginza",
+      "tags": [
+        "bass_heavy",
+        "panning"
+      ],
+      "notes": "Der Angriff auf Ginza: Trümmer von allen Seiten, Hitzestrahl mit sehr tiefem Ausklang.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "kuratiert (Godzilla Minus One gilt als Atmos-Referenz 2024/25)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-dune2-wormride",
+      "itemId": "5992452bd87ae40546147aa420b9ff93",
+      "path": null,
+      "title": "Dune: Part Two",
+      "episode": null,
+      "startMs": 5340000,
+      "endMs": 5610000,
+      "name": "Dune: Part Two — Wurmritt",
+      "tags": [
+        "atmos_heights",
+        "bass_heavy",
+        "spoilers"
+      ],
+      "notes": "Pauls erster Ritt: 360°-Wind und Sand über Kopf, Rumpeln von unten. Gilt vielen als die beste Atmos-Szene der letzten Jahre.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "theatercalc.com (Platz 1 der Atmos-Demos)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-topgun-darkstar",
+      "itemId": "13949e28819208c171f4186ffe0b0664",
+      "path": null,
+      "title": "Top Gun: Maverick",
+      "episode": null,
+      "startMs": 240000,
+      "endMs": 570000,
+      "name": "Top Gun: Maverick — Darkstar",
+      "tags": [
+        "atmos_heights",
+        "bass_heavy",
+        "guest_safe"
+      ],
+      "notes": "Mach 10: Triebwerk zieht von vorn nach hinten durch die Höhen, der Überschallknall ist der saubere Bass-Hit. Sehr gästetauglich.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "theatercalc.com / thespatialmix.com",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-gravity-debris",
+      "itemId": "f8647d5c3c47bde06096736dc943a396",
+      "path": null,
+      "title": "Gravity",
+      "episode": null,
+      "startMs": 540000,
+      "endMs": 870000,
+      "name": "Gravity — Trümmerhagel",
+      "tags": [
+        "atmos_heights",
+        "panning",
+        "guest_safe"
+      ],
+      "notes": "Von absoluter Stille in den Einschlag. Objekte wandern sauber durch die Kuppel — der Ortungstest schlechthin.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „10min — spin sequence“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-johnwick4-arc",
+      "itemId": "306a15f3a4210058c5a4ce67a2f0b8b3",
+      "path": null,
+      "title": "John Wick: Chapter 4",
+      "episode": null,
+      "startMs": 7200000,
+      "endMs": 7500000,
+      "name": "John Wick 4 — Arc de Triomphe",
+      "tags": [
+        "atmos_heights",
+        "panning"
+      ],
+      "notes": "Kreisverkehr im Kugelhagel: Autos umrunden den Hörplatz, Schüsse extrem trocken und präzise geortet.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "theatercalc.com (John Wick 4 Atmos-Demos)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-madmax-sandstorm",
+      "itemId": "e567d55d88e19ac0c069aac0918a1342",
+      "path": null,
+      "title": "Mad Max: Fury Road",
+      "episode": null,
+      "startMs": 1710000,
+      "endMs": 1980000,
+      "name": "Mad Max: Fury Road — Sandsturm",
+      "tags": [
+        "atmos_heights",
+        "bass_heavy",
+        "panning"
+      ],
+      "notes": "Blitze in den Höhen, Wind aus allen Richtungen, Trümmer über Kopf. Dauerlast für die ganze Kette.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "theatercalc.com („approximately 30 minutes in“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-quietplace2-dayone",
+      "itemId": "01473ef44b77b6dd13f9c2591751564d",
+      "path": null,
+      "title": "A Quiet Place Part II",
+      "episode": null,
+      "startMs": 60000,
+      "endMs": 390000,
+      "name": "A Quiet Place Part II — Tag Eins",
+      "tags": [
+        "atmos_heights",
+        "dialogue",
+        "bass_heavy"
+      ],
+      "notes": "Vom Flüstern in den Schrei: extremer Dynamikumfang, dazu sehr genaue Platzierung im Raum. Der Härtetest für die Ruhe im Raum.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org / theatercalc.com („0min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-tenet-plane",
+      "itemId": "fad1ee880e87636c450f66eb2717afc7",
+      "path": null,
+      "title": "Tenet",
+      "episode": null,
+      "startMs": 2280000,
+      "endMs": 2580000,
+      "name": "Tenet — Flugzeug-Crash",
+      "tags": [
+        "atmos_heights",
+        "bass_heavy"
+      ],
+      "notes": "Die 747 im Hangar: massiver Tiefton, Metall über Kopf. Auch hier gilt Nolans harter Mix als Dialog-Test.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „38min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-edgeoftomorrow-beach",
+      "itemId": "9a9f511703f03e34273fccb829499754",
+      "path": null,
+      "title": "Edge of Tomorrow",
+      "episode": null,
+      "startMs": 984000,
+      "endMs": 1495000,
+      "name": "Edge of Tomorrow — Strandlandung",
+      "tags": [
+        "panning",
+        "atmos_heights",
+        "bass_heavy"
+      ],
+      "notes": "Der Absprung und der Strand. Einer der wenigen Demos mit exakt dokumentiertem Ein- und Ausstieg.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „16:24–24:55“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-master-commander-broadside",
+      "itemId": "bccdb09ad90db5a2f5a35b0d76567089",
+      "path": null,
+      "title": "Master and Commander: The Far Side of the World",
+      "episode": null,
+      "startMs": 450000,
+      "endMs": 720000,
+      "name": "Master and Commander — Erste Breitseite",
+      "tags": [
+        "panning",
+        "bass_heavy"
+      ],
+      "notes": "Der Nebelangriff der Acheron. Alter Klassiker, immer noch der beste Test für Schüsse, die von hinten rechts nach vorn links durchgehen.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „8min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-blackhawk-irene",
+      "itemId": "10afb61d7d774a98d1616aa98dc05cea",
+      "path": null,
+      "title": "Black Hawk Down",
+      "episode": null,
+      "startMs": 2070000,
+      "endMs": 2370000,
+      "name": "Black Hawk Down — „Irene“",
+      "tags": [
+        "panning",
+        "atmos_heights"
+      ],
+      "notes": "Der Anflug der Helikopter über die Küste: Rotoren wandern präzise durch den Raum, danach Chaos ohne Matsch.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „34min 30sec“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-fifthelement-shape",
+      "itemId": "9f0f8fe8be0eafa5f3856e203f548efc",
+      "path": null,
+      "title": "The Fifth Element",
+      "episode": null,
+      "startMs": 750000,
+      "endMs": 960000,
+      "name": "Das fünfte Element — „It's taking shape“",
+      "tags": [
+        "panning",
+        "dialogue"
+      ],
+      "notes": "Die Rekonstruktion im Labor. Sehr sauberer, ruhiger Ortungstest ohne Pegelstress — gut direkt nach einer lauten Szene.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „12min 30sec“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-flyingdaggers-echo",
+      "itemId": "85a185be642580b90de82c9cc7dfdd91",
+      "path": null,
+      "title": "House of Flying Daggers",
+      "episode": null,
+      "startMs": 510000,
+      "endMs": 780000,
+      "name": "House of Flying Daggers — Echo-Spiel",
+      "tags": [
+        "panning",
+        "dialogue",
+        "guest_safe"
+      ],
+      "notes": "Bohnen gegen Trommeln: jeder Treffer ist ein einzeln ortbares Objekt. Der eleganteste Ortungstest der Sammlung.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "AVForums / SVS (Klassiker der Bass- und Panning-Demos)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-tron-lightcycle",
+      "itemId": "1ec69efc12a684cd6cc82eb9f744b8fc",
+      "path": null,
+      "title": "TRON: Legacy",
+      "episode": null,
+      "startMs": 2460000,
+      "endMs": 2760000,
+      "name": "TRON: Legacy — Lichtrennen",
+      "tags": [
+        "panning",
+        "bass_heavy",
+        "guest_safe"
+      ],
+      "notes": "Daft Punk plus Disc-Wars: Upmix und LFE zugleich, dazu leuchtende Kanten auf tiefem Schwarz.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „41min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-starisborn-shallow",
+      "itemId": "28cac531dc55af908e2d760e78202b3f",
+      "path": null,
+      "title": "A Star Is Born",
+      "episode": null,
+      "startMs": 2280000,
+      "endMs": 2580000,
+      "name": "A Star Is Born — Shallow",
+      "tags": [
+        "dialogue",
+        "guest_safe"
+      ],
+      "notes": "Kein Bass-Demo, sondern der Balance-Test: Stimme, Publikum, Band. Wenn das trägt, stimmt die Abstimmung.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „38min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-arrival-contact",
+      "itemId": "06b7973f0f4a36242c7dbc8e12eb7c20",
+      "path": null,
+      "title": "Arrival",
+      "episode": null,
+      "startMs": 960000,
+      "endMs": 1260000,
+      "name": "Arrival — Erster Kontakt",
+      "tags": [
+        "dialogue",
+        "bass_heavy",
+        "spoilers"
+      ],
+      "notes": "Helikopterflug zur Schale und der Eintritt: sehr tiefer, langer Ton unter leisem Dialog. Test für Raummoden.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "HiFiVision-Thread (Helikopter „~15:10“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-sicario-border",
+      "itemId": "7888a13ab72a75a0ffd7d286f6bbe6b3",
+      "path": null,
+      "title": "Sicario",
+      "episode": null,
+      "startMs": 1800000,
+      "endMs": 2100000,
+      "name": "Sicario — Grenzübergang Juárez",
+      "tags": [
+        "dialogue",
+        "bass_heavy"
+      ],
+      "notes": "Jóhannssons Score baut Druck auf, während der Dialog knapp darüber bleibt. Zeigt, ob der Center gegen tiefe Streicher besteht.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "kuratiert (Standard-Demo für Dialog gegen Score)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-whiplash-caravan",
+      "itemId": "869d01706ffd5d079fc679061fa5b9aa",
+      "path": null,
+      "title": "Whiplash",
+      "episode": null,
+      "startMs": 5460000,
+      "endMs": 5820000,
+      "name": "Whiplash — Caravan",
+      "tags": [
+        "dialogue",
+        "panning",
+        "spoilers"
+      ],
+      "notes": "Das Schlagzeug-Finale: Transienten, Blechbläser, Raum. Verrät sofort, ob die Hochtonabstimmung zu hart ist.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "kuratiert (Dynamik- und Transienten-Test)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-batman-chase",
+      "itemId": "1205b1e41ad04a1db55af98504545342",
+      "path": null,
+      "title": "The Batman",
+      "episode": null,
+      "startMs": 4680000,
+      "endMs": 4980000,
+      "name": "The Batman — Verfolgungsjagd",
+      "tags": [
+        "hdr_blacks",
+        "hdr_highlights",
+        "bass_heavy"
+      ],
+      "notes": "Nachts im Regen: fast durchgehend schwarzes Bild mit harten Scheinwerfern — der Test für Schwarzwert und Tone-Mapping.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „1hr 18min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-1917-ecoust",
+      "itemId": "3668542e3466b41226da751346375486",
+      "path": null,
+      "title": "1917",
+      "episode": null,
+      "startMs": 4320000,
+      "endMs": 4620000,
+      "name": "1917 — Nacht in Écoust",
+      "tags": [
+        "hdr_blacks",
+        "hdr_highlights",
+        "atmos_heights"
+      ],
+      "notes": "Leuchtkugeln über der Ruinenstadt: bewegte Lichtquellen auf tiefem Schwarz. Die härteste Probe für den Envy und den Projektor.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "theatercalc.com (Burning Church Village)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-avatar2-reef",
+      "itemId": "6075b519233782f728b157fe39eff2c0",
+      "path": null,
+      "title": "Avatar: The Way of Water",
+      "episode": null,
+      "startMs": 3840000,
+      "endMs": 4110000,
+      "name": "Avatar: The Way of Water — Riff der Metkayina",
+      "tags": [
+        "hdr_highlights",
+        "panning",
+        "guest_safe"
+      ],
+      "notes": "Wasser, Sonne, Farbe: der Test für Spitzlichter und Farbvolumen. Bei Gästen der sicherste Wow-Moment am Bild.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "kuratiert (HDR-/Farbreferenz)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-spiderverse-gwen",
+      "itemId": "eb0c7c3b92a907c2f811fd35fc697263",
+      "path": null,
+      "title": "Spider-Man: Across the Spider-Verse",
+      "episode": null,
+      "startMs": 240000,
+      "endMs": 570000,
+      "name": "Across the Spider-Verse — Gwen gegen den Geier",
+      "tags": [
+        "hdr_highlights",
+        "panning",
+        "guest_safe"
+      ],
+      "notes": "Aquarell-Hintergründe, die die Farbe wechseln, plus Portal-Effekte rundum. Zeigt Farbraum und Gradation ohne dunkles Bild.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "theatercalc.com (Multiverse-/Mumbattan-Szenen)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-greatestshowman-open",
+      "itemId": "9de2722d46c863332b8d1a31ddf5cd74",
+      "path": null,
+      "title": "The Greatest Showman",
+      "episode": null,
+      "startMs": 40000,
+      "endMs": 270000,
+      "name": "The Greatest Showman — The Greatest Show",
+      "tags": [
+        "guest_safe",
+        "dialogue",
+        "bass_heavy"
+      ],
+      "notes": "Vier Minuten, sofort verständlich, laut ohne wehzutun. Der beste Einstieg, wenn jemand zum ersten Mal im Raum sitzt.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "digitalnoesis.org (Demo-Tabelle, „0min“)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-coco-underworld",
+      "itemId": "8621cea90f97a2785b200bfbad3ee85e",
+      "path": null,
+      "title": "Coco",
+      "episode": null,
+      "startMs": 1680000,
+      "endMs": 1920000,
+      "name": "Coco — Reich der Toten",
+      "tags": [
+        "guest_safe",
+        "hdr_highlights"
+      ],
+      "notes": "Der Blick über die Stadt der Toten: tausende kleine Lichter, sehr farbig, für alle Altersgruppen.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "kuratiert (Farb-/Highlight-Demo, familientauglich)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-bohemian-liveaid",
+      "itemId": "d8eb8eaf699f7489036dedb841b05fc5",
+      "path": null,
+      "title": "Bohemian Rhapsody",
+      "episode": null,
+      "startMs": 6480000,
+      "endMs": 6840000,
+      "name": "Bohemian Rhapsody — Live Aid",
+      "tags": [
+        "guest_safe",
+        "dialogue",
+        "atmos_heights"
+      ],
+      "notes": "Wembley im Wohnzimmer: Publikum in den Höhen, Stimme trocken im Center. Läuft praktisch immer.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "theatercalc.com (Live-Aid-Sequenz)",
+        "timecodeConfidence": "approximate"
+      }
+    },
+    {
+      "id": "seed-lalaland-open",
+      "itemId": "6e471e67bc3ed8215fcec7974020edf4",
+      "path": null,
+      "title": "La La Land",
+      "episode": null,
+      "startMs": 40000,
+      "endMs": 360000,
+      "name": "La La Land — Another Day of Sun",
+      "tags": [
+        "guest_safe",
+        "panning",
+        "hdr_highlights"
+      ],
+      "notes": "Die Nummer auf dem Freeway: Bewegung, Farbe, Chor rundum — und kein einziger Schuss. Der freundliche Gegenentwurf zum Bass-Block.",
+      "audioTrack": null,
+      "subtitleTrack": null,
+      "volumeOffsetDb": null,
+      "trinnovPreset": null,
+      "madvrProfile": null,
+      "barcoProfile": null,
+      "expectedFormat": null,
+      "createdAt": "2026-08-14T12:00:00+00:00",
+      "captureMeta": {
+        "origin": "seed",
+        "source": "kuratiert (gästetaugliche Eröffnung)",
+        "timecodeConfidence": "approximate"
+      }
+    }
+  ],
+  "showcases": [
+    {
+      "id": "seed-sc-kurze-runde",
+      "name": "Für Gäste",
+      "clips": [
+        "seed-greatestshowman-open",
+        "seed-topgun-darkstar",
+        "seed-coco-underworld",
+        "seed-lalaland-open",
+        "seed-bohemian-liveaid"
+      ],
+      "advance": "auto",
+      "gapSeconds": 10,
+      "referenceVolumeDb": null
+    },
+    {
+      "id": "seed-sc-bass-lfe",
+      "name": "Bass & LFE",
+      "clips": [
+        "seed-br2049-farm",
+        "seed-dune-harvester",
+        "seed-rpo-race",
+        "seed-godzilla-minus-ginza",
+        "seed-godzilla-kotm-titles",
+        "seed-oppenheimer-trinity"
+      ],
+      "advance": "tap",
+      "gapSeconds": 8,
+      "referenceVolumeDb": null
+    },
+    {
+      "id": "seed-sc-atmos-oben",
+      "name": "Atmos: oben & rundum",
+      "clips": [
+        "seed-gravity-debris",
+        "seed-dune2-wormride",
+        "seed-madmax-sandstorm",
+        "seed-johnwick4-arc",
+        "seed-quietplace2-dayone",
+        "seed-tenet-plane"
+      ],
+      "advance": "auto",
+      "gapSeconds": 8,
+      "referenceVolumeDb": null
+    },
+    {
+      "id": "seed-sc-panning-ortung",
+      "name": "Panning & Ortung",
+      "clips": [
+        "seed-fifthelement-shape",
+        "seed-flyingdaggers-echo",
+        "seed-master-commander-broadside",
+        "seed-blackhawk-irene",
+        "seed-edgeoftomorrow-beach",
+        "seed-tron-lightcycle"
+      ],
+      "advance": "auto",
+      "gapSeconds": 8,
+      "referenceVolumeDb": null
+    },
+    {
+      "id": "seed-sc-bild-schwarz-licht",
+      "name": "Bild: Schwarz & Licht",
+      "clips": [
+        "seed-1917-ecoust",
+        "seed-batman-chase",
+        "seed-avatar2-reef",
+        "seed-spiderverse-gwen"
+      ],
+      "advance": "tap",
+      "gapSeconds": 12,
+      "referenceVolumeDb": null
+    },
+    {
+      "id": "seed-sc-dialog-dynamik",
+      "name": "Dialog & Dynamik",
+      "clips": [
+        "seed-starisborn-shallow",
+        "seed-fifthelement-shape",
+        "seed-arrival-contact",
+        "seed-sicario-border",
+        "seed-whiplash-caravan"
+      ],
+      "advance": "auto",
+      "gapSeconds": 10,
+      "referenceVolumeDb": null
+    },
+    {
+      "id": "seed-sc-grosse-vorfuehrung",
+      "name": "Große Vorführung",
+      "clips": [
+        "seed-greatestshowman-open",
+        "seed-gravity-debris",
+        "seed-br2049-farm",
+        "seed-edgeoftomorrow-beach",
+        "seed-1917-ecoust",
+        "seed-dune2-wormride",
+        "seed-avatar2-reef",
+        "seed-topgun-darkstar",
+        "seed-bohemian-liveaid"
+      ],
+      "advance": "auto",
+      "gapSeconds": 12,
+      "referenceVolumeDb": null
+    }
+  ],
+  "vocabulary": [
+    "bass_heavy",
+    "atmos_heights",
+    "panning",
+    "dialogue",
+    "hdr_blacks",
+    "hdr_highlights",
+    "guest_safe",
+    "spoilers"
+  ],
+  "settings": {
+    "leadInSeconds": 8.0,
+    "retroCaptureSeconds": 60,
+    "muteDuringLeadIn": false,
+    "rampOut": false,
+    "confirmTimeoutSeconds": 15.0,
+    "preflightFormatCheck": false
+  }
+}
