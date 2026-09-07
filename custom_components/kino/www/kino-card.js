@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.9.1";
+const CARD_VERSION = "0.9.2";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -7260,6 +7260,11 @@ class KinoCard extends CardBase {
       // — so the screen changes when the search becomes a search, not on the
       // first keystroke.
       if (this._view.main === "home") {
+        // Emptying the box is not a search. A back step out of the library
+        // restores the word that opened it (the nav snapshot was taken with
+        // it typed), so without this, clearing the field on the way past
+        // would open the library again on an empty query.
+        if (!this._searchQuery()) return;
         this._openLibrary(this._view.startTab === "shows" ? "shows" : "movies");
         return;
       }

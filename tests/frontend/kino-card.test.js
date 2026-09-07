@@ -971,6 +971,24 @@ describe("the Start screen (FR-78)", () => {
     assert.equal(c._view.query, "Dun");
   });
 
+  /**
+   * A back step out of the library restores the word that opened it, so the
+   * Start box comes back filled. Clearing it must not count as a search and
+   * open the library again on nothing.
+   */
+  test("emptying the box on Start opens nothing", async () => {
+    const c = card();
+    c._container = { querySelector: () => null };
+    c._appliedQuery = "Dun";
+    c._view.query = "Dun";
+    const opened = [];
+    c._openLibrary = async (cat) => opened.push(cat);
+    c._onInput({ target: { dataset: { field: "query" }, value: "" } });
+    await new Promise((r) => setTimeout(r, 400));
+    assert.deepEqual(opened, []);
+    assert.equal(c._view.query, "");
+  });
+
   test("the search follows the lit segment into Serien", async () => {
     const c = card({}, { startTab: "shows" });
     c._container = { querySelector: () => null };
