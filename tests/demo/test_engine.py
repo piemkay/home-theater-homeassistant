@@ -525,7 +525,9 @@ class TestState:
         clips = [make_clip("c1", 0, 60_000), make_clip("c2", 0, 1000)]
         engine = DemoEngine(runtime, settings)
         runtime.position_step = 0.0
-        await engine.start_showcase(Showcase(id="s", name="Gäste", gap_seconds=0), clips)
+        await engine.start_showcase(
+            Showcase(id="s", name="Gäste", gap_seconds=0), clips
+        )
         await asyncio.sleep(0.02)
         state = engine.state()
         assert state["name"] == "Gäste"

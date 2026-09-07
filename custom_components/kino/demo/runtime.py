@@ -379,14 +379,10 @@ class HassDemoRuntime:
             await self._safely(trinnov.apply({"preset": look["preset"]}), "Preset")
         madvr = self._madvr
         if look.get("madvr") and madvr is not None:
-            await self._safely(
-                madvr.apply({"profile": look["madvr"]}), "madVR-Profil"
-            )
+            await self._safely(madvr.apply({"profile": look["madvr"]}), "madVR-Profil")
         barco = self._driver_by_driver_name("barco") if look.get("barco") else None
         if barco is not None:
-            await self._safely(
-                barco.apply({"profile": look["barco"]}), "Beamer-Profil"
-            )
+            await self._safely(barco.apply({"profile": look["barco"]}), "Beamer-Profil")
 
     async def _safely(self, awaitable: Any, what: str) -> None:
         try:

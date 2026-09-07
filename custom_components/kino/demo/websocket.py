@@ -215,9 +215,7 @@ async def ws_demo_play(hass, connection, msg) -> None:
         elif msg.get("clip_id"):
             clip = store.clip(msg["clip_id"])
             if clip is None:
-                connection.send_error(
-                    msg["id"], "unknown_clip", "Clip nicht gefunden."
-                )
+                connection.send_error(msg["id"], "unknown_clip", "Clip nicht gefunden.")
                 return
             await coordinator.demo.start_clip(clip)
         else:

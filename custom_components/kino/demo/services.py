@@ -62,7 +62,7 @@ async def _capture(hass: HomeAssistant, call: ServiceCall) -> dict[str, Any]:
     for coordinator in _coordinators(hass):
         settings = coordinator.demo_store.settings
         driver = _zidoo_of(coordinator)
-        position = (driver.now_playing().get("position") if driver else None)
+        position = driver.now_playing().get("position") if driver else None
         if position is None and not call.data.get("end"):
             raise HomeAssistantError(
                 "Es läuft nichts, dessen Position übernommen werden könnte."
@@ -114,9 +114,7 @@ def _capture_meta(
     """Record what the room was doing when the clip was grabbed (§2.1)."""
     now = driver.now_playing() if driver else {}
     volume = coordinator.config.volume_device
-    volume_driver = (
-        coordinator.engine.drivers.get(volume) if volume else None
-    )
+    volume_driver = coordinator.engine.drivers.get(volume) if volume else None
     return {
         "audio_format": now.get("audio_format"),
         "video_format": now.get("video_format"),

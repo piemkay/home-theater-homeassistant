@@ -113,7 +113,10 @@ class TestDemoSettings:
     def test_clamps_absurd_values(self):
         assert DemoSettings.from_dict({"leadInSeconds": 999}).lead_in_seconds == 60.0
         assert DemoSettings.from_dict({"leadInSeconds": -5}).lead_in_seconds == 0.0
-        assert DemoSettings.from_dict({"retroCaptureSeconds": 1}).retro_capture_seconds == 5
+        assert (
+            DemoSettings.from_dict({"retroCaptureSeconds": 1}).retro_capture_seconds
+            == 5
+        )
 
     def test_accepts_both_spellings(self):
         assert DemoSettings.from_dict({"lead_in_seconds": 3}).lead_in_seconds == 3.0

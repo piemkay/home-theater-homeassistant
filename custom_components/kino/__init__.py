@@ -121,7 +121,6 @@ def _coordinators(hass: HomeAssistant) -> list[KinoCoordinator]:
     return [runtime.coordinator for runtime in hass.data.get(DOMAIN, {}).values()]
 
 
-
 def _async_register_services(hass: HomeAssistant) -> None:  # noqa: C901
     """Register the Kino services once, regardless of entry count."""
     if hass.services.has_service(DOMAIN, SERVICE_RELOAD):

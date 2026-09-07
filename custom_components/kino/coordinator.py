@@ -84,9 +84,7 @@ class KinoCoordinator(DataUpdateCoordinator[EngineSnapshot]):
         #: Demo mode: the stored clips and showcases, and the engine that
         #: replays them through this coordinator's own activity layer.
         self.demo_store = DemoStore(hass)
-        self.demo = DemoEngine(
-            HassDemoRuntime(hass, self), self.demo_store.settings
-        )
+        self.demo = DemoEngine(HassDemoRuntime(hass, self), self.demo_store.settings)
         self.engine.add_listener(self._on_engine_change)
 
     def _build_engine(self, config: KinoConfig) -> ActivityEngine:
