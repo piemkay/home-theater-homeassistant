@@ -570,6 +570,23 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
   layout, German labels).
 - **FR-77** Distribution: installable alongside the integration (single repo; registered as a
   Lovelace resource by the integration where possible).
+- **FR-78** The card's **Start screen** SHALL be a stack of labelled sections, each with its
+  own right-hand line — a status, a count or a link. In order: **Aktivität** (every activity
+  as a tile, the running one marked, the room's status beside the heading), **Licht**
+  (FR-36a), **Filme & Serien** (one segmented control for Filme / Serien / Demos, where the
+  marked segment is what "Erkunden" opens), then the poster rows of FR-70 and FR-70a.
+  Reference design: `design/kino-start.dc.html`.
+- **FR-78a** The activity tiles SHALL all be visible without opening anything, on the Start
+  screen and in the compact selector's dropdown alike, and SHALL stay tappable during a
+  transition. The library SHALL remain on screen during a transition (FR-41 does not pause
+  while the beamer warms up); only the *target* activity's own body waits.
+- **FR-79** The card SHALL NOT draw a header of its own — Home Assistant's is directly above
+  it. Everything the card's header used to carry SHALL live in the body: the status line in
+  the **Aktivität** heading, and **Ausschalten** as a row below the activity tiles, offered
+  only when something is on.
+- **FR-79a** Device chips SHALL appear on the Start screen only when they have something to
+  report — a transition in flight, or a device that is not ready. On every other screen they
+  are the only device status there is, and SHALL stay.
 
 ---
 

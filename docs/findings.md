@@ -142,8 +142,11 @@ If a source name ever *is* wrong, activation fails with
 `'x' ist keine gültige Auswahl für source (verfügbar: …)`, which prints the
 valid options — so the first attempt tells you the answer.
 
-Note the scene entity for gaming is `scene.kini_gaming` — a typo in the entity
-ID that has to be reproduced verbatim in config until it is renamed.
+The gaming scene was once `scene.kini_gaming` — a typo in the entity ID that
+had to be reproduced verbatim in config. It has since been renamed: the entity
+registry now says `scene.kino_gaming`, and that is what the config document
+ships. A `light_scene` naming the old ID applies nothing and says nothing,
+because `scene.turn_on` on a missing entity is not an error the card sees.
 
 ## 4b. madVR profiles are per-source, and that is load-bearing
 

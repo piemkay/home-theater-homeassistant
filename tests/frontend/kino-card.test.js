@@ -461,6 +461,93 @@ describe("deviceColor", () => {
   });
 });
 
+describe("statusTitle (FR-78)", () => {
+  const FILM = { key: "film", name: "Bibliothek" };
+  const base = (over) => ({
+    state: "on",
+    activity: "film",
+    targetActivity: null,
+    offActivity: "aus",
+    degraded: false,
+    progress: null,
+    statusText: "Bereit",
+    ...over,
+  });
+
+  test("an idle room names what is on, not that something is", () => {
+    assert.equal(helpers.statusTitle(base(), FILM), "Bibliothek läuft");
+  });
+
+  test("an off room says so, in the words the design uses", () => {
+    const k = base({ state: "off", activity: "aus", statusText: "Ausgeschaltet" });
+    assert.equal(helpers.statusTitle(k, null), "Kino ist ausgeschaltet");
+  });
+
+  test("a transition names its direction", () => {
+    const k = base({ progress: { percent: 10, bottleneck: null }, targetActivity: "film" });
+    assert.equal(helpers.statusTitle(k, FILM), "Wechsel zu Bibliothek…");
+  });
+
+  test("shutting down is its own sentence, not a switch to Aus", () => {
+    const k = base({ progress: { percent: 10, bottleneck: null }, targetActivity: "aus" });
+    assert.equal(helpers.statusTitle(k, { key: "aus", name: "Aus" }), "Wird ausgeschaltet…");
+  });
+
+  /**
+   * The bottleneck names the device everyone is actually waiting for. It is
+   * the whole reason the line is worth 12px of the heading, so it outranks
+   * both the direction and the engine's generic text.
+   */
+  test("a bottleneck outranks the direction", () => {
+    const k = base({
+      progress: { percent: 40, bottleneck: "Beamer wärmt auf…" },
+      targetActivity: "film",
+    });
+    assert.equal(helpers.statusTitle(k, FILM), "Beamer wärmt auf…");
+  });
+
+  test("an error and a drift both defer to what the engine says", () => {
+    assert.equal(
+      helpers.statusTitle(base({ state: "error", statusText: "Trinnov antwortet nicht" })),
+      "Trinnov antwortet nicht"
+    );
+    assert.equal(
+      helpers.statusTitle(base({ degraded: true, statusText: "Beamer steht auf HDR 260 DP" }), FILM),
+      "Beamer steht auf HDR 260 DP"
+    );
+  });
+
+  test("no state at all is an empty line, never the word undefined", () => {
+    assert.equal(helpers.statusTitle(null), "");
+    assert.equal(helpers.statusTitle(base({ activity: "film" }), null), "Bereit");
+  });
+});
+
+describe("statusColor", () => {
+  const k = (over) => ({ activity: "film", offActivity: "aus", progress: null, ...over });
+
+  test("gold while busy beats red and teal both", () => {
+    assert.equal(helpers.statusColor(k({ progress: {}, degraded: true })), "var(--kino-gold)");
+  });
+
+  test("wrong is red, off is grey, running is teal", () => {
+    assert.equal(helpers.statusColor(k({ degraded: true })), "var(--kino-red)");
+    assert.equal(helpers.statusColor(k({ state: "error" })), "var(--kino-red)");
+    assert.equal(helpers.statusColor(k({ activity: "aus" })), "var(--kino-text3)");
+    assert.equal(helpers.statusColor(k({})), "var(--kino-teal)");
+    assert.equal(helpers.statusColor(null), "var(--kino-text3)");
+  });
+});
+
+describe("titleCount", () => {
+  test("counts a row's own titles, singular included", () => {
+    assert.equal(helpers.titleCount(3), "3 Titel");
+    assert.equal(helpers.titleCount(1), "1 Titel");
+    assert.equal(helpers.titleCount(0), "0 Titel");
+    assert.equal(helpers.titleCount(null), "0 Titel");
+  });
+});
+
 describe("bodyFor", () => {
   test("picks a body per control class (FR-47d)", () => {
     assert.equal(helpers.bodyFor(null), "aus");
@@ -616,9 +703,18 @@ describe("off-state body", () => {
 
   test("the library home is reachable while the theater is off (FR-41)", () => {
     const html = card()._renderBody();
-    assert.match(html, /Kino ist ausgeschaltet/);
     assert.match(html, /data-act="open-library"/);
     assert.match(html, /Zuletzt hinzugefügt/);
+    // The body no longer explains that the theater is off: that line is the
+    // status beside "Aktivität" now, one section up, and a banner repeating
+    // it cost a fifth of the phone (FR-78).
+    assert.doesNotMatch(html, /Kino ist ausgeschaltet/);
+  });
+
+  test("being off is said once, beside Aktivität (FR-78)", () => {
+    const html = card()._renderActivitySelector();
+    assert.match(html, /class="st-h">Aktivität</);
+    assert.match(html, /Kino ist ausgeschaltet/);
   });
 
   test("favourites get their own row, with a way into the full list (0.6.0)", () => {
@@ -647,6 +743,205 @@ describe("off-state body", () => {
     };
     c._library = { items: [], total: 0, hasMore: false, loading: true, error: null };
     assert.match(c._renderBody(), /Wird geladen/);
+  });
+});
+
+/**
+ * The Start screen, as design/kino-start.dc.html draws it: every activity on
+ * screen at once with the room's status beside the heading, Ausschalten as a
+ * row of its own, and one segmented control standing in for three tiles.
+ */
+describe("the Start screen (FR-78)", () => {
+  const ACTIVITIES = [
+    { key: "aus", name: "Aus", controlClass: "off", icon: "mdi:power" },
+    { key: "film", name: "Bibliothek", controlClass: "full", icon: "mdi:movie-open" },
+    { key: "netflix", name: "Streaming", controlClass: "handoff", icon: "mdi:television-play" },
+    { key: "musik", name: "Musik", controlClass: "mixed", icon: "mdi:music" },
+    { key: "steam", name: "Steam", controlClass: "room", icon: "mdi:controller" },
+  ];
+  const card = (kino = {}, view = {}) => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = {
+      activity: "aus",
+      targetActivity: null,
+      offActivity: "aus",
+      progress: null,
+      degraded: false,
+      statusText: "Ausgeschaltet",
+      activities: ACTIVITIES,
+      lights: null,
+      ...kino,
+    };
+    c._view = { main: "home", startTab: "movies", ...view };
+    c._library = { items: [], total: 0 };
+    c._resume = [];
+    c._recent = [];
+    c._favorites = [];
+    c._homeRowsAt = Date.now();
+    return c;
+  };
+
+  test("every activity is on screen, and Aus is not one of them", () => {
+    const html = card()._renderActivitySelector();
+    assert.equal((html.match(/data-act="activate"/g) || []).length, 4);
+    assert.match(html, /data-key="film"[\s\S]*?Bibliothek/);
+    assert.match(html, /data-key="steam"[\s\S]*?Steam/);
+    assert.doesNotMatch(html, /data-act="activate" data-key="aus"/);
+    // No chip to open first: the dropdown was a tap that only revealed taps.
+    assert.doesNotMatch(html, /data-act="toggle-menu"/);
+  });
+
+  test("the running activity is the pressed tile", () => {
+    const html = card({ activity: "film" })._renderActivitySelector();
+    assert.match(html, /data-key="film"[\s\S]{0,80}?aria-pressed="true"/);
+    assert.match(html, /data-key="musik"[\s\S]{0,80}?aria-pressed="false"/);
+    // The label is clipped at 52px, so the tooltip carries the whole name.
+    assert.match(html, /title="Bibliothek"/);
+  });
+
+  /**
+   * The card draws no header of its own — the bar above it is Home
+   * Assistant's. Ausschalten therefore has to live in the body, and it is
+   * there only when there is something to switch off.
+   */
+  test("Ausschalten is a row under the tiles, once there is something to switch off", () => {
+    assert.doesNotMatch(card()._renderActivitySelector(), /data-act="ask-power-off"/);
+    const on = card({ activity: "film" })._renderActivitySelector();
+    assert.match(on, /class="st-row" data-act="ask-power-off"/);
+    assert.match(on, /Ausschalten/);
+  });
+
+  test("a transition keeps the tiles tappable and says what is happening", () => {
+    const html = card({
+      activity: "film",
+      targetActivity: "netflix",
+      progress: { percent: 30, bottleneck: "Beamer wärmt auf…" },
+    })._renderActivitySelector();
+    assert.equal((html.match(/data-act="activate"/g) || []).length, 4);
+    assert.match(html, /Beamer wärmt auf…/);
+    assert.match(html, /class="dot pulsing"/);
+  });
+
+  test("every other screen keeps the compact chip", () => {
+    const html = card({ activity: "film" }, { main: "library" })._renderActivitySelector();
+    assert.match(html, /data-act="toggle-menu"/);
+    assert.doesNotMatch(html, /class="st-grid"/);
+  });
+
+  /**
+   * A switch takes up to two minutes in this room, and picking the wrong
+   * activity is exactly what you notice during them. The chip used to answer
+   * the tap by flipping its chevron and opening nothing (FR-78a).
+   */
+  test("the compact dropdown opens during a transition too", () => {
+    const busy = { activity: "film", targetActivity: "netflix", progress: { percent: 30 } };
+    const html = card(busy, { main: "library", activityMenu: true })._renderActivitySelector();
+    assert.equal((html.match(/data-act="activate"/g) || []).length, 4);
+    assert.match(html, /data-act="ask-power-off"/);
+  });
+
+  /**
+   * A failed shutdown reports the off activity while the room is still in
+   * whatever half-state the failure left it (machine.py::_fail). That is
+   * precisely when the retry has to be on screen — and with the card's
+   * header gone, this row is the only place it can be.
+   */
+  test("Ausschalten survives a failed shutdown", () => {
+    for (const main of ["home", "library"]) {
+      const html = card(
+        { state: "error", activity: "aus", statusText: "Trinnov antwortet nicht" },
+        { main }
+      )._renderActivitySelector();
+      assert.match(html, /data-act="ask-power-off"/, `missing on ${main}`);
+    }
+  });
+
+  test("a shutdown already running has nothing left to offer", () => {
+    const html = card({
+      activity: "film",
+      targetActivity: "aus",
+      progress: { percent: 20, bottleneck: null },
+    })._renderActivitySelector();
+    assert.doesNotMatch(html, /data-act="ask-power-off"/);
+    assert.match(html, /Wird ausgeschaltet…/);
+  });
+
+  test("a room that is cleanly off offers no Ausschalten", () => {
+    assert.doesNotMatch(card()._renderActivitySelector(), /data-act="ask-power-off"/);
+  });
+
+  test("three tiles become one segmented control", () => {
+    const html = card()._renderLibraryHome();
+    assert.match(html, /class="st-seg"/);
+    assert.equal((html.match(/class="st-segbtn"/g) || []).length, 3);
+    assert.match(html, /data-act="open-library" data-key="movies" aria-pressed="true"/);
+    assert.match(html, /data-act="open-library" data-key="shows" aria-pressed="false"/);
+    assert.match(html, /data-act="open-demos" aria-pressed="false"/);
+  });
+
+  /** The highlight is a promise about the link beside it, not a tab. */
+  test("Erkunden opens whichever segment is lit", () => {
+    const shows = card({}, { startTab: "shows" })._renderLibraryHome();
+    assert.match(shows, /data-act="open-start-tab">Erkunden</);
+    assert.match(shows, /data-key="shows" aria-pressed="true"/);
+    assert.match(card({}, { startTab: "demos" })._renderLibraryHome(), /data-act="open-demos" aria-pressed="true"/);
+  });
+
+  test("a poster row's heading counts its own titles", () => {
+    const c = card();
+    c._resume = [{ id: "a", title: "Heat" }, { id: "b", title: "Dune" }];
+    const html = c._renderLibraryHome();
+    assert.match(html, /class="st-h">Weitersehen<\/div>[\s\S]*?class="st-meta">2 Titel</);
+    // Favoriten keeps its way into the full list instead of a count.
+    c._favorites = [{ id: "f", title: "Alien" }];
+    assert.match(c._renderLibraryHome(), /data-act="open-favorites"/);
+  });
+
+  test("all three rows survive the redesign (FR-70, FR-70a)", () => {
+    const c = card();
+    c._resume = [{ id: "a", title: "Heat" }];
+    c._favorites = [{ id: "f", title: "Alien" }];
+    c._recent = [{ id: "r", title: "Neu" }];
+    const html = c._renderLibraryHome();
+    for (const row of ["Weitersehen", "Favoriten", "Zuletzt hinzugefügt"]) {
+      assert.match(html, new RegExp(`class="st-h">${row}<`));
+    }
+    assert.equal((html.match(/class="posterrow hscroll"/g) || []).length, 3);
+  });
+
+  /**
+   * The two minutes the beamer warms up are exactly when somebody is looking
+   * for what to watch, and the library never needed the theater (FR-41).
+   */
+  test("a transition no longer blanks the library", () => {
+    const c = card({
+      activity: "aus",
+      targetActivity: "film",
+      progress: { percent: 40, bottleneck: "Beamer wärmt auf…" },
+    });
+    c._recent = [{ id: "n1", title: "The Order", year: 2024 }];
+    const html = c._renderBody();
+    assert.match(html, /Zuletzt hinzugefügt/);
+    assert.match(html, /class="st-seg"/);
+  });
+
+  /** The target's own body still waits: it would be describing a lie. */
+  test("a handoff card waits until the handoff is real", () => {
+    const c = card({
+      activity: "aus",
+      targetActivity: "netflix",
+      progress: { percent: 40, bottleneck: null },
+    });
+    assert.doesNotMatch(c._renderBody(), /Fernbedienung der Shield/);
+  });
+
+  test("a grid where no tile has an icon grows no icon gutter", () => {
+    const bare = ACTIVITIES.map(({ icon, ...rest }) => rest);
+    assert.doesNotMatch(card({ activities: bare })._renderActivitySelector(), /class="ic"/);
+    assert.equal(
+      (card()._renderActivitySelector().match(/class="ic"/g) || []).length,
+      4
+    );
   });
 });
 
@@ -774,6 +1069,7 @@ describe("device chips", () => {
   test("shutting down still shows the devices being stopped", () => {
     const card = Object.create(KinoCard.prototype);
     card._kino = kino;
+    card._view = { main: "home" };
     const html = card._renderDeviceChips();
     assert.match(html, /Beamer/);
     assert.match(html, /Zidoo/);
@@ -782,7 +1078,41 @@ describe("device chips", () => {
   test("once off, there are no chips", () => {
     const card = Object.create(KinoCard.prototype);
     card._kino = { ...kino, activity: "aus", targetActivity: null, progress: null };
+    card._view = { main: "home" };
     assert.equal(card._renderDeviceChips(), "");
+  });
+
+  /**
+   * Four green dots between two sections of the Start screen say only
+   * "nothing to see" — and cost a band of the phone to say it (FR-78).
+   */
+  test("a healthy idle room shows no chips on the Start screen", () => {
+    const card = Object.create(KinoCard.prototype);
+    card._kino = {
+      ...kino,
+      activity: "film",
+      targetActivity: null,
+      progress: null,
+      devices: [
+        { key: "beamer", name: "Beamer", health: "ready" },
+        { key: "zidoo", name: "Zidoo", health: "ready" },
+      ],
+    };
+    card._view = { main: "home" };
+    assert.equal(card._renderDeviceChips(), "");
+    // One device off its perch, and the row is back.
+    card._kino = {
+      ...card._kino,
+      devices: [
+        { key: "beamer", name: "Beamer", health: "degraded" },
+        { key: "zidoo", name: "Zidoo", health: "ready" },
+      ],
+    };
+    assert.match(card._renderDeviceChips(), /Beamer/);
+    // And on every other screen they are the only device status there is.
+    card._kino = { ...card._kino, devices: kino.devices };
+    card._view = { main: "library" };
+    assert.match(card._renderDeviceChips(), /Beamer/);
   });
 
   test("a switch shows the union of touched devices, stops included (F6)", () => {
@@ -805,6 +1135,7 @@ describe("device chips", () => {
         { key: "shield", name: "Shield", health: "starting" },
       ],
     };
+    card._view = { main: "home" };
     const html = card._renderDeviceChips();
     assert.match(html, /Zidoo/);
     assert.match(html, /Shield/);
@@ -2376,9 +2707,9 @@ describe("the light card", () => {
 
   test("scenes are tiles, lamps are not", () => {
     const html = makeCard()._renderLights();
-    assert.equal((html.match(/class="scenetile"/g) || []).length, 2);
+    assert.equal((html.match(/class="st-tile"/g) || []).length, 2);
     assert.match(html, /data-key="scene\.dark"/);
-    assert.doesNotMatch(html, /class="scenetile"[^>]*data-key="light\./);
+    assert.doesNotMatch(html, /class="st-tile"[^>]*data-key="light\./);
     assert.match(html, /icon="mdi:weather-night"/);
   });
 
@@ -2390,7 +2721,7 @@ describe("the light card", () => {
     const html = makeCard()._renderLights();
     assert.match(html, /data-key="scene\.dark" aria-pressed="true"/);
     assert.match(html, /data-key="scene\.low_ambience" aria-pressed="false"/);
-    assert.match(html, /<span class="now">Dunkel<\/span>/);
+    assert.match(html, /class="st-meta"[^>]*>Dunkel</);
   });
 
   test("a lamp settling right after the scene does not un-mark it", () => {
@@ -2408,7 +2739,7 @@ describe("the light card", () => {
     };
     const card = makeCard(LIGHTS, states);
     assert.equal(card._activeScene(), null);
-    assert.match(card._renderLights(), /<span class="now">Manuell<\/span>/);
+    assert.match(card._renderLights(), /class="st-meta"[^>]*>Manuell</);
     assert.doesNotMatch(card._renderLights(), /aria-pressed="true"/);
   });
 
@@ -2525,7 +2856,7 @@ describe("the light card", () => {
     };
     const card = makeCard(LIGHTS, states);
     assert.equal(card._activeScene(), null);
-    assert.match(card._renderLights(), /<span class="now">Manuell<\/span>/);
+    assert.match(card._renderLights(), /class="st-meta"[^>]*>Manuell</);
   });
 
   test("a lamp that has not moved keeps the mark, on either timestamp", () => {
@@ -2554,7 +2885,7 @@ describe("the light card", () => {
     assert.equal(card._activeScene().entity, "scene.dark");
     card._noteManualLight();
     assert.equal(card._activeScene(), null);
-    assert.match(card._renderLights(), /<span class="now">Manuell<\/span>/);
+    assert.match(card._renderLights(), /class="st-meta"[^>]*>Manuell</);
   });
 
   test("...and applying a scene again takes the mark back", () => {
@@ -2584,11 +2915,11 @@ describe("the light card", () => {
 
   test("an empty title means no label, as the config documents", () => {
     const html = makeCard({ ...LIGHTS, title: "" })._renderLights();
-    assert.match(html, /<span class="cap"><\/span>/);
-    assert.doesNotMatch(html, /<span class="cap">Licht<\/span>/);
+    assert.match(html, /<div class="st-h"><\/div>/);
+    assert.doesNotMatch(html, /<div class="st-h">Licht<\/div>/);
     // Absent still falls back, so an untouched config is unchanged.
     const fallback = makeCard({ controls: LIGHTS.controls })._renderLights();
-    assert.match(fallback, /<span class="cap">Licht<\/span>/);
+    assert.match(fallback, /<div class="st-h">Licht<\/div>/);
   });
 
   /**
@@ -2617,9 +2948,9 @@ describe("the light card", () => {
    */
   test("an entity's own icon stands in when none is configured", () => {
     const html = makeCard(
-      { controls: [{ entity: "scene.kini_gaming", momentary: true }] },
+      { controls: [{ entity: "scene.kino_gaming", momentary: true }] },
       {
-        "scene.kini_gaming": {
+        "scene.kino_gaming": {
           state: "2026-09-06T20:00:00+00:00",
           attributes: { friendly_name: "Kino Gaming", icon: "mdi:controller" },
         },

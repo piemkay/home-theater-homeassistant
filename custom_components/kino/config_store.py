@@ -297,7 +297,7 @@ activities:
     name: Steam
     icon: mdi:controller
     control_class: room
-    light_scene: scene.kini_gaming
+    light_scene: scene.kino_gaming
     handoff_text: >-
       Nur Raumsteuerung. Bild und Ton werden vorbereitet,
       Steam läuft über den PC.

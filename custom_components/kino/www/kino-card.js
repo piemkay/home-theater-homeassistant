@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.8.2";
+const CARD_VERSION = "0.9.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -633,6 +633,62 @@ export const helpers = {
     }
   },
 
+  /**
+   * Where the room stands, in one line, beside "Aktivität" (FR-78).
+   *
+   * This is the line the card's own header used to carry, and it says more
+   * than that one did. The engine's `statusText` is authoritative when it
+   * has news — an error, a drift detail — and during a transition the
+   * bottleneck names the device everyone is actually waiting for, which
+   * beats a generic "wechselt". Otherwise the activity says it best: not
+   * "Eingeschaltet" but *what* is on.
+   */
+  statusTitle(k, current) {
+    if (!k) return "";
+    if (k.state === "error") return k.statusText || "Fehler";
+    if (k.progress) {
+      if (k.progress.bottleneck) return k.progress.bottleneck;
+      if (k.targetActivity === k.offActivity) return "Wird ausgeschaltet…";
+      return current ? `Wechsel zu ${current.name}…` : "Wird umgeschaltet…";
+    }
+    if (k.degraded) return k.statusText || "Eingeschränkt";
+    if (k.activity === k.offActivity) return "Kino ist ausgeschaltet";
+    return current ? `${current.name} läuft` : "Bereit";
+  },
+
+  /** The count on the right of a poster row's heading: "3 Titel". */
+  titleCount(count) {
+    const n = Number(count) || 0;
+    return n === 1 ? "1 Titel" : `${n} Titel`;
+  },
+
+  /**
+   * Is there anything to switch off?
+   *
+   * Not the same question as "is the activity `aus`". A failed shutdown
+   * leaves the engine reporting the off activity with `state: "error"`
+   * while the room is still in whatever half-state the failure left it
+   * (`machine.py::_fail`) — which is precisely when the retry has to be on
+   * screen. And a startup in flight is worth an Ausschalten too: aborting
+   * one is the most common reason to reach for it. A shutdown already
+   * running is the one case that has nothing left to offer.
+   */
+  canPowerOff(k) {
+    if (!k) return false;
+    if (k.state === "error") return true;
+    if (k.progress) return k.targetActivity !== k.offActivity;
+    return k.activity !== k.offActivity;
+  },
+
+  /** The dot beside that line: gold while busy, red when something is wrong. */
+  statusColor(k) {
+    if (!k) return "var(--kino-text3)";
+    if (k.progress) return "var(--kino-gold)";
+    if (k.degraded || k.state === "error") return "var(--kino-red)";
+    if (k.activity === k.offActivity) return "var(--kino-text3)";
+    return "var(--kino-teal)";
+  },
+
   /** A dimmable light's level in percent, or null when it has none. */
   brightnessPercent(state) {
     const raw = state && state.attributes ? state.attributes.brightness : null;
@@ -768,11 +824,29 @@ const STYLES = `
   --kino-bg: var(--ha-card-background, var(--card-background-color, oklch(0.15 0.015 265)));
   --kino-surface: oklch(0.205 0.016 265);
   --kino-surface2: oklch(0.25 0.017 265);
+  /* A third step, for the selected segment of a segmented control: it has to
+     lift off a --kino-surface2 track without becoming a gold button. */
+  --kino-surface3: oklch(0.292 0.02 261);
+  /* The ground a tile takes under the finger. The design's own pair is
+     #171b21 -> #1e232b, a lift of 0.034 in oklch L; --kino-surface2 sits
+     higher than the design's tile, so the hover has to move up with it or
+     the rule is a no-op nobody sees. */
+  --kino-hover: oklch(0.285 0.018 262);
   --kino-border: oklch(1 0 0 / 0.08);
+  /* The lighter rule: the divider *inside* a grouped list card. --kino-border
+     stays the outer edge, so the two do not flatten into one another. */
+  --kino-hairline: oklch(1 0 0 / 0.06);
   --kino-text: oklch(0.97 0.005 265);
   --kino-text2: oklch(0.72 0.01 265);
   --kino-text3: oklch(0.5 0.01 265);
+  /* Outline glyphs. They belong at --kino-text2's weight: the old
+     .tile .tileicon painted them --kino-text3 and they disappeared. */
+  --kino-glyph: oklch(0.736 0.016 261);
   --kino-gold: oklch(0.78 0.15 75);
+  /* Gold as *ink*. The fill colour is a 2.04:1 text colour on a light
+     theme's white card, so a link and the Licht readout need their own
+     token; on a dark theme the two are the same colour. */
+  --kino-goldInk: oklch(0.78 0.15 75);
   --kino-goldText: oklch(0.18 0.03 75);
   --kino-teal: oklch(0.72 0.12 190);
   --kino-red: oklch(0.65 0.19 25);
@@ -782,14 +856,21 @@ const STYLES = `
   :host {
     --kino-surface: oklch(0.96 0.004 265);
     --kino-surface2: oklch(0.92 0.006 265);
+    /* Inverted deliberately: on a light theme a selected segment lifts by
+       going lighter than its track, not darker. */
+    --kino-surface3: oklch(0.995 0.002 265);
+    --kino-hover: oklch(0.885 0.007 265);
     --kino-border: oklch(0 0 0 / 0.1);
+    --kino-hairline: oklch(0 0 0 / 0.08);
     --kino-text: oklch(0.22 0.01 265);
     --kino-text2: oklch(0.42 0.01 265);
     --kino-text3: oklch(0.58 0.01 265);
+    --kino-glyph: oklch(0.46 0.012 261);
+    --kino-goldInk: oklch(0.55 0.13 62);
     --kino-goldText: oklch(0.18 0.03 75);
   }
 }
-/* The mockup's frame: header and footer pinned, the middle scrolls. A card
+/* The mockup's frame: the footer pinned, the middle scrolls. A card
    that simply grew with its content put the transport bar at the bottom of
    the *page*, which on a 300-title grid is nowhere near the screen. */
 .wrap {
@@ -808,6 +889,9 @@ const STYLES = `
   flex: 1 1 auto;
   overflow-y: auto;
   min-height: 0;
+  /* The design's content area is padded 20px from the top of the frame.
+     With no header of ours to provide it, the scroller does. */
+  padding-top: 20px;
   scrollbar-width: none;
   overscroll-behavior: contain;
 }
@@ -817,43 +901,37 @@ const STYLES = `
 .hscroll::-webkit-scrollbar { display: none; }
 .hscroll { scrollbar-width: none; }
 
-header {
-  padding: 14px 20px 10px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.brand { font-weight: 800; font-size: 15px; letter-spacing: 1.5px; }
-.statuswrap { display: flex; align-items: center; gap: 10px; }
-.status { display: flex; align-items: center; gap: 7px; }
+/* The card has no header of its own. The bar the design draws above it —
+   sidebar button, title, status, power — is Home Assistant's own header,
+   and a second one underneath it was a wordmark nobody needed and 48px of
+   the phone nobody got back. What actually lived there moves down into the
+   Aktivität section: the status line into its heading, Ausschalten into a
+   row of its own (see .st-list). The scroller takes over the top padding
+   the header used to contribute. */
 .dot { width: 8px; height: 8px; border-radius: 5px; }
 .dot.pulsing { animation: kino-pulse 1.2s ease-in-out infinite; }
-.status span { font-size: 12px; color: var(--kino-text2); font-weight: 600; }
 .iconbtn {
   width: 36px; height: 36px; border-radius: 18px; border: none;
   background: var(--kino-surface2); color: var(--kino-text);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; padding: 0; flex-shrink: 0;
 }
-.body { padding: 0 20px 20px; }
+.body { padding: 0 20px 28px; }
 .section { margin-bottom: 18px; }
 h3 { margin: 0 0 10px; font-size: 15px; font-weight: 800; }
 h2 { margin: 0; font-size: 19px; font-weight: 800; }
 p { margin: 0; line-height: 1.5; }
-a.link { font-size: 12px; font-weight: 700; cursor: pointer; color: var(--kino-gold); }
+a.link { font-size: 12px; font-weight: 700; cursor: pointer; color: var(--kino-goldInk); }
 
 button { font-family: inherit; }
-.tile, .chipbtn, .pill, .primary, .ghost {
+/* .tile and .tilegrid are gone: the activity grid is .st-tile in .st-grid on
+   every screen now, so the compact chip's dropdown and the Start screen no
+   longer look like controls from two different apps. */
+.chipbtn, .pill, .primary, .ghost {
   border: none; cursor: pointer; font-weight: 700;
   font-family: inherit; color: var(--kino-text2);
   background: var(--kino-surface2);
 }
-.tilegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.tile {
-  padding: 14px 16px; border-radius: 14px; text-align: left; font-size: 13px; min-height: 48px;
-  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
-}
-.tile .tileicon { color: var(--kino-text3); --mdc-icon-size: 20px; }
-.tile[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
-.tile[aria-pressed="true"] .tileicon { color: var(--kino-goldText); }
 .chipbtn { padding: 10px 14px; border-radius: 20px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kino-text); min-height: 40px; }
 .pill { height: 36px; padding: 0 13px; border-radius: 18px; font-size: 12px; flex-shrink: 0; }
 .pill[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
@@ -867,67 +945,19 @@ button { font-family: inherit; }
 }
 .devicechip span:last-child { font-size: 11px; color: var(--kino-text2); font-weight: 600; }
 
-/* -- the light card (FR-36a) ------------------------------------------
+/* -- the light section (FR-36a, FR-78) -------------------------------
    Scenes are the whole room in one tap; the individual lights fold away
-   underneath, because most evenings nobody opens them. Structure follows
-   design/kino-licht.dc.html; every colour is a Kino token. */
-.lightcard {
-  border-radius: 18px; background: var(--kino-surface);
-  border: 1px solid var(--kino-border); overflow: hidden;
-}
-.lighthead {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 12px; padding: 16px 18px 12px;
-}
-.lighthead .cap {
-  font-size: 11px; font-weight: 700; letter-spacing: .16em;
-  color: var(--kino-text3);
-}
-.lighthead .now {
-  font-size: 13px; font-weight: 600; color: var(--kino-text);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.scenegrid {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px; padding: 0 12px 14px;
-}
-.scenetile {
-  display: flex; flex-direction: column; align-items: center; gap: 9px;
-  padding: 16px 6px 14px; border-radius: 13px; cursor: pointer;
-  background: var(--kino-surface2); border: 1px solid var(--kino-border);
-  color: var(--kino-text2); font-family: inherit; font-size: 13px;
-  font-weight: 700; transition: background .16s, border-color .16s, color .16s;
-}
-.scenetile[aria-pressed="true"] {
-  background: var(--kino-gold); border-color: var(--kino-gold);
-  color: var(--kino-goldText);
-}
-.scenetile[aria-disabled="true"] { opacity: .45; }
-/* The slot is there with or without an icon, so a row of tiles that mixes
-   the two still puts every label on one baseline. */
-.scenetile .ic { height: 22px; display: grid; place-items: center; }
-.scenetile ha-icon { --mdc-icon-size: 22px; }
-.scenetile .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-.alloffwrap { padding: 0 12px 14px; }
-.alloff {
-  width: 100%; display: flex; align-items: center; justify-content: center;
-  gap: 9px; padding: 14px; border-radius: 13px; background: var(--kino-bg);
-  border: 1px solid var(--kino-border); color: var(--kino-text);
-  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
-}
-.lightdiv { height: 1px; background: var(--kino-border); }
-.lightexp {
-  width: 100%; box-sizing: border-box; padding: 15px 18px; display: flex;
-  align-items: center; gap: 10px; background: transparent; border: none;
-  cursor: pointer; font-family: inherit;
-}
-.lightexp .nm { flex: 1; text-align: left; font-size: 14px; font-weight: 700; color: var(--kino-text); }
-.lightexp .ct { font-size: 12px; color: var(--kino-text3); font-weight: 600; }
-.lightexp .chev { display: grid; place-items: center; color: var(--kino-text3); transition: transform .18s; }
-.lightexp[aria-expanded="true"] .chev { transform: rotate(180deg); }
-.lightlist { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+   underneath, because most evenings nobody opens them. The section reuses
+   the Start screen's own furniture — .st-sec, .st-grid, .st-tile,
+   .st-list — so Licht and Aktivität are visibly one screen rather than a
+   card dropped onto one. Only the lamp rows are its own, and they still
+   follow design/kino-licht.dc.html.
+   The lamp list is inset on the grouped card's ground rather than being a
+   card of its own; the rows step back to --kino-bg so a strip's colour
+   swatches have something to sit on. */
+.lightlist { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .lightrow {
-  border-radius: 13px; background: var(--kino-bg);
+  border-radius: 10px; background: var(--kino-bg);
   border: 1px solid var(--kino-border); overflow: hidden;
 }
 .lightrow .top { padding: 13px 14px; display: flex; align-items: center; gap: 12px; }
@@ -989,6 +1019,98 @@ button { font-family: inherit; }
 .banner p { font-size: 12px; color: var(--kino-text2); }
 .row { display: flex; gap: 8px; }
 .row > * { flex: 1; }
+
+/* -- the Start screen (FR-78) ----------------------------------------
+   Structure and raster follow design/kino-start.dc.html: sections 24px
+   apart, 10px between the blocks inside one, blocks of 52px (a tile) and
+   48px (a list row), 12px corners. A section heading is 13px/700 with its
+   own right-aligned line — a status, a count, or a link — so every band on
+   the screen answers "what is this, and where does it stand" in one row. */
+.st-sec { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+/* The design ends the scroll 28px below the last section, not 24 + the
+   body's own 20. The last section stops contributing and .body says it. */
+.body > .maxcol > .st-sec:last-child { margin-bottom: 0; }
+.st-sechead { display: flex; align-items: baseline; gap: 12px; min-height: 18px; }
+.st-sechead .sp { flex: 1; }
+.st-h { font-size: 13px; font-weight: 700; color: var(--kino-text); }
+.st-meta {
+  font-size: 12px; color: var(--kino-text2); white-space: nowrap;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+.st-link {
+  font-size: 12.5px; font-weight: 600; color: var(--kino-goldInk);
+  cursor: pointer; white-space: nowrap;
+}
+/* The status line the old header carried, now beside "Aktivität". Not
+   baseline-aligned like its neighbours: a 6px dot has no baseline worth
+   sharing, so the pair centres on itself and sits on the heading's. */
+.st-status {
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  font-size: 12px; color: var(--kino-text2);
+}
+.st-status .dot { width: 6px; height: 6px; flex: none; }
+/* The engine writes this line, and it writes sentences: a bottleneck reads
+   "Beamer wärmt auf…", a drift detail names a device and a profile. Without
+   somewhere to shrink to, one of those pushed the whole card sideways. */
+.st-status span:last-child {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.st-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.st-tile {
+  height: 52px; border-radius: 12px; background: var(--kino-surface2);
+  display: flex; align-items: center; gap: 10px; padding: 0 14px;
+  border: none; cursor: pointer; font-family: inherit; font-size: 13px;
+  font-weight: 600; color: var(--kino-text); text-align: left;
+  transition: background .16s ease, color .16s ease;
+}
+.st-tile:hover { background: var(--kino-hover); }
+.st-tile:active { transform: scale(.985); }
+.st-tile .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The slot is there for every tile in a grid where any tile has an icon, so
+   a mixed row still starts all its labels at the same x. A grid where none
+   of them does gets no slot at all rather than 30px of empty gutter. */
+.st-tile .ic { width: 20px; display: grid; place-items: center; flex-shrink: 0; }
+.st-tile ha-icon { color: var(--kino-glyph); --mdc-icon-size: 20px; }
+.st-tile[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
+.st-tile[aria-pressed="true"] ha-icon { color: var(--kino-goldText); }
+/* An entity that was renamed or removed stays visible and greyed rather
+   than leaving a hole in the grid nobody can explain (FR-36a). */
+.st-tile[aria-disabled="true"] { opacity: .45; }
+
+/* A grouped list card: 48px rows on one ground, split by a hairline.
+   "Alles aus" and "Einzelne Lichter" are the design's two; "Ausschalten"
+   under the activities is the same shape, which is why this is a class. */
+.st-list { border-radius: 12px; background: var(--kino-surface2); overflow: hidden; }
+.st-row {
+  width: 100%; box-sizing: border-box; height: 48px; display: flex;
+  align-items: center; gap: 10px; padding: 0 14px; background: transparent;
+  border: none; cursor: pointer; font-family: inherit; font-size: 13px;
+  font-weight: 600; color: var(--kino-text); text-align: left;
+  transition: background .16s ease;
+}
+.st-row:hover { background: var(--kino-hover); }
+.st-row .sp { flex: 1; }
+.st-row .ct { font-size: 12px; color: var(--kino-text2); font-weight: 600; }
+.st-row .ic { display: flex; color: var(--kino-glyph); flex-shrink: 0; }
+.st-row .chev { display: grid; place-items: center; color: var(--kino-text2); transition: transform .18s; }
+.st-row[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.st-div { height: 1px; background: var(--kino-hairline); margin: 0 14px; }
+
+/* The segmented control. Three destinations on one track; the pressed one
+   is the one Erkunden opens, so the highlight is a promise, not a tab. */
+.st-seg {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px;
+  background: var(--kino-surface2); border-radius: 12px; padding: 4px;
+}
+.st-segbtn {
+  height: 36px; border-radius: 9px; border: none; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
+  background: transparent; color: var(--kino-text2);
+  transition: background .16s ease, color .16s ease;
+}
+.st-segbtn[aria-pressed="true"] { background: var(--kino-surface3); color: var(--kino-text); }
+.st-hint { font-size: 12px; color: var(--kino-text2); }
 
 .progress { margin-bottom: 14px; padding: 16px; border-radius: 16px; background: var(--kino-surface); border: 1px solid var(--kino-border); }
 .progress .head { display: flex; justify-content: space-between; align-items: baseline; }
@@ -1336,7 +1458,10 @@ button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 
 /* Tablet: the same card, denser (FR-71). */
 @media (min-width: 640px) {
-  .tilegrid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  /* The Start screen's grids get the same density (FR-71): four activities
+     side by side on a tablet instead of a 2x2 that leaves half the width
+     empty. The rule moved with the class it targets. */
+  .st-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
   .postergrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .thumbgrid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
   .postergrid.size-xs { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
@@ -1791,6 +1916,11 @@ class KinoCard extends CardBase {
     this._view = {
       main: "home",
       category: "movies",
+      // Which segment of the Start screen's Filme / Serien / Demos control
+      // is lit, and therefore where "Erkunden" goes. Deliberately outside
+      // NAV_KEYS: it is where you last went, not a step you can walk back
+      // out of, so a back gesture must not reset it.
+      startTab: "movies",
       query: "",
       sort: "added",
       sortDir: null,
@@ -3701,7 +3831,6 @@ class KinoCard extends CardBase {
     const lights = this._renderLights();
     const lightsAbove = (this._kino.lights || {}).position === "above";
     this._container.innerHTML = [
-      this._renderHeader(),
       '<div class="scroller">',
       lightsAbove ? lights : "",
       this._renderActivitySelector(),
@@ -3767,49 +3896,92 @@ class KinoCard extends CardBase {
     );
   }
 
-  _renderHeader() {
-    const k = this._kino;
-    const transitioning = !!k.progress;
-    const color = transitioning
-      ? "var(--kino-gold)"
-      : k.degraded || k.state === "error"
-        ? "var(--kino-red)"
-        : k.state === "off"
-          ? "var(--kino-text3)"
-          : "var(--kino-teal)";
-    return `
-      <header>
-        <span class="brand">KINO</span>
-        <div class="statuswrap">
-          <div class="status">
-            <span class="dot${transitioning ? " pulsing" : ""}" style="background:${color}"></span>
-            <span>${this._esc(k.statusText)}</span>
-          </div>
-          <button class="iconbtn" data-act="ask-power-off" title="Kino ausschalten"
-            style="color:${k.state === "off" ? "var(--kino-text3)" : "var(--kino-text)"}">
-            ${POWER_ICON}
-          </button>
-        </div>
-      </header>`;
-  }
-
-  _renderActivitySelector() {
+  /**
+   * One tile per activity, minus "Aus" — which is a row of its own, not a
+   * thing to switch to.
+   *
+   * Shared by the Start screen's always-open grid and the compact chip's
+   * dropdown on every other screen, so the two can never drift into looking
+   * like controls from two different apps.
+   */
+  _activityTiles() {
     const k = this._kino;
     const current = this._currentActivity;
-    const isOff = k.activity === k.offActivity && !k.progress;
-    const showGrid = isOff || (this._view.activityMenu && !k.progress);
-    // The configured mdi icons finally render (F16); two lines give the
-    // tiles some presence on a wide screen without changing the phone.
-    const tiles = k.activities
-      .filter((a) => a.key !== k.offActivity)
+    const offered = k.activities.filter((a) => a.key !== k.offActivity);
+    // The slot is there for every tile as soon as one activity has an icon,
+    // so a half-configured document still lines its labels up.
+    const anyIcon = offered.some((a) => a.icon);
+    return offered
       .map(
-        (a) => `<button class="tile" data-act="activate" data-key="${a.key}"
-          aria-pressed="${current && current.key === a.key}">
-          ${a.icon ? `<ha-icon class="tileicon" icon="${this._esc(a.icon)}"></ha-icon>` : ""}
-          <span>${this._esc(a.name)}</span>
+        (a) => `<button class="st-tile" data-act="activate" data-key="${a.key}"
+          title="${this._esc(a.name)}"
+          aria-pressed="${!!current && current.key === a.key}">
+          ${
+            anyIcon
+              ? `<span class="ic">${
+                  a.icon ? `<ha-icon icon="${this._esc(a.icon)}"></ha-icon>` : ""
+                }</span>`
+              : ""
+          }
+          <span class="nm">${this._esc(a.name)}</span>
         </button>`
       )
       .join("");
+  }
+
+  /**
+   * The Start screen's activity band (FR-78).
+   *
+   * The design puts every activity on screen at once — a 2×2 of 52px tiles
+   * with the running one gold — instead of the chip-and-dropdown the card
+   * collapsed to once something was on. On a phone that is the same two
+   * taps to switch as before, minus the one that only opened a menu.
+   *
+   * It also inherits what the card's own header used to carry: the status
+   * line moves into the heading, and Ausschalten becomes a row of its own
+   * below the tiles, the same shape "Alles aus" has under Licht. It is
+   * there only when there is something to switch off — an "Ausschalten"
+   * under an off theater is a button that lies about having work to do.
+   */
+  _renderActivitySection() {
+    const k = this._kino;
+    const current = this._currentActivity;
+    return `<div class="maxcol" style="padding:0 20px"><div class="st-sec">
+      <div class="st-sechead">
+        <div class="st-h">Aktivität</div>
+        <div class="sp"></div>
+        <div class="st-status">
+          <span class="dot${k.progress ? " pulsing" : ""}"
+            style="background:${helpers.statusColor(k)}"></span>
+          <span>${this._esc(helpers.statusTitle(k, current))}</span>
+        </div>
+      </div>
+      <div class="st-grid">${this._activityTiles()}</div>
+      ${
+        helpers.canPowerOff(k)
+          ? `<div class="st-list">
+               <button class="st-row" data-act="ask-power-off">
+                 <span class="ic">${POWER_ICON}</span>
+                 <span>Ausschalten</span>
+               </button>
+             </div>`
+          : ""
+      }
+    </div></div>`;
+  }
+
+  _renderActivitySelector() {
+    // The Start screen has its own shape for this; every other screen keeps
+    // the compact chip, which is what makes a deep library view navigable.
+    if (this._view.main === "home") return this._renderActivitySection();
+    const k = this._kino;
+    const current = this._currentActivity;
+    const isOff = k.activity === k.offActivity && !k.progress;
+    // Deliberately not gated on `!k.progress` any more. A switch takes up to
+    // two minutes in this room, and picking the wrong activity is exactly
+    // what you notice during them — a chip that answers the tap by flipping
+    // its chevron and opening nothing was the worst of both.
+    const showGrid = isOff || this._view.activityMenu;
     const compact = !isOff
       ? `<button class="chipbtn" data-act="toggle-menu">
            <span>${this._esc(
@@ -3826,7 +3998,22 @@ class KinoCard extends CardBase {
       : "";
     return `<div class="maxcol" style="padding:0 20px 12px">
       ${compact}
-      ${showGrid ? `<div class="tilegrid" style="margin-top:${compact ? 10 : 0}px">${tiles}</div>` : ""}
+      ${showGrid ? `<div class="st-grid" style="margin-top:${compact ? 10 : 0}px">${this._activityTiles()}</div>` : ""}
+      ${
+        // Ausschalten used to be a button in the card's header, reachable
+        // from every screen. The header is gone, so this row carries it —
+        // and it hangs on the room's state, not on whether the dropdown
+        // happens to be open, or a failed shutdown would have nowhere to
+        // be retried from.
+        helpers.canPowerOff(k)
+          ? `<div class="st-list" style="margin-top:10px">
+               <button class="st-row" data-act="ask-power-off">
+                 <span class="ic">${POWER_ICON}</span>
+                 <span>Ausschalten</span>
+               </button>
+             </div>`
+          : ""
+      }
     </div>`;
   }
 
@@ -3940,60 +4127,76 @@ class KinoCard extends CardBase {
     const on = lamps.filter(
       (l) => states[l.entity] && states[l.entity].state === "on"
     ).length;
+    // Nothing configured falls back to the icon Home Assistant already gives
+    // the entity — which is the whole point when the card was filled from an
+    // area and nobody typed anything at all.
+    const iconOf = (control) =>
+      control.icon ||
+      ((states[control.entity] || {}).attributes || {}).icon ||
+      null;
+    const anyIcon = scenes.some(iconOf);
 
     const tiles = scenes
       .map((control) => {
         const state = states[control.entity];
         const missing = !state || state.state === "unavailable";
         const pressed = !!active && active.entity === control.entity;
-        // Nothing configured falls back to the icon Home Assistant already
-        // gives the entity — which is the whole point when the card was
-        // filled from an area and nobody typed anything at all.
-        const icon =
-          control.icon || (state && state.attributes && state.attributes.icon);
-        return `<button class="scenetile" data-act="light"
+        const icon = iconOf(control);
+        const name = this._lightName(control, state);
+        return `<button class="st-tile" data-act="light"
           data-key="${this._esc(control.entity)}" aria-pressed="${pressed}"${
-            missing ? ' aria-disabled="true" title="Entity nicht verfügbar"' : ""
+            missing
+              ? ' aria-disabled="true" title="Entity nicht verfügbar"'
+              : ` title="${this._esc(name)}"`
           }>
-          <span class="ic">${
-            icon ? `<ha-icon icon="${this._esc(icon)}"></ha-icon>` : ""
-          }</span>
-          <span class="nm">${this._esc(this._lightName(control, state))}</span>
+          ${
+            anyIcon
+              ? `<span class="ic">${
+                  icon ? `<ha-icon icon="${this._esc(icon)}"></ha-icon>` : ""
+                }</span>`
+              : ""
+          }
+          <span class="nm">${this._esc(name)}</span>
         </button>`;
       })
       .join("");
 
-    return `<div class="maxcol" style="padding:0 20px 12px"><div class="lightcard">
-      <div class="lighthead">
-        <span class="cap">${this._esc(
+    return `<div class="maxcol" style="padding:0 20px"><div class="st-sec">
+      <div class="st-sechead">
+        <div class="st-h">${this._esc(
           panel.title == null ? "Licht" : panel.title
-        )}</span>
-        <span class="now">${this._esc(
+        )}</div>
+        <div class="sp"></div>
+        <div class="st-meta" style="font-weight:600;color:${
+          active ? "var(--kino-goldInk)" : "var(--kino-text2)"
+        }">${this._esc(
           active ? this._lightName(active, states[active.entity]) : "Manuell"
-        )}</span>
+        )}</div>
       </div>
-      ${tiles ? `<div class="scenegrid">${tiles}</div>` : ""}
+      ${tiles ? `<div class="st-grid">${tiles}</div>` : ""}
       ${
         lamps.length
-          ? `<div class="alloffwrap">
-               <button class="alloff" data-act="lights-all-off">
-                 ${POWER_ICON}<span>Alles aus</span>
+          ? `<div class="st-list">
+               <button class="st-row" data-act="lights-all-off">
+                 <span class="ic">${POWER_ICON}</span>
+                 <span>Alles aus</span>
                </button>
-             </div>
-             <div class="lightdiv"></div>
-             <button class="lightexp" data-act="lights-toggle-list"
-               aria-expanded="${!!this._view.lightsOpen}">
-               <span class="nm">Einzelne Lichter</span>
-               <span class="ct">${on ? `${on} an` : "alle aus"}</span>
-               <span class="chev">${CHEVRON_ICON}</span>
-             </button>
-             ${
-               this._view.lightsOpen
-                 ? `<div class="lightlist">${lamps
-                     .map((lamp) => this._renderLightRow(lamp))
-                     .join("")}</div>`
-                 : ""
-             }`
+               <div class="st-div"></div>
+               <button class="st-row" data-act="lights-toggle-list"
+                 aria-expanded="${!!this._view.lightsOpen}">
+                 <span>Einzelne Lichter</span>
+                 <span class="sp"></span>
+                 <span class="ct">${on ? `${on} an` : "alle aus"}</span>
+                 <span class="chev">${CHEVRON_ICON}</span>
+               </button>
+               ${
+                 this._view.lightsOpen
+                   ? `<div class="lightlist">${lamps
+                       .map((lamp) => this._renderLightRow(lamp))
+                       .join("")}</div>`
+                   : ""
+               }
+             </div>`
           : ""
       }
     </div></div>`;
@@ -4078,6 +4281,19 @@ class KinoCard extends CardBase {
     const keys = progressDevices || (current ? current.devices : []);
     if (!keys.length) return "";
     const byKey = Object.fromEntries(k.devices.map((d) => [d.key, d]));
+    // On the Start screen the chips are a report, not furniture: four green
+    // dots between two sections of the design said only "nothing to see",
+    // and cost a band of the phone to say it. So they appear when there is
+    // something to report — a transition, or a device that is not ready —
+    // and stay put on every other screen, where they are the only device
+    // status there is.
+    if (
+      this._view.main === "home" &&
+      !k.progress &&
+      keys.every((key) => (byKey[key] || {}).health === "ready")
+    ) {
+      return "";
+    }
     const chips = keys
       .map((key) => {
         const device = byKey[key] || { name: key, health: "unknown" };
@@ -4164,25 +4380,29 @@ class KinoCard extends CardBase {
     if (this._view.main === "library") return this._renderLibrary();
     const k = this._kino;
     const current = this._currentActivity;
-    if (k.progress) return "";
+    if (k.progress) {
+      // A transition used to blank the body. But the library needs no
+      // theater — it is right there with the room off (FR-41) — so it has
+      // no business disappearing for the two minutes the beamer warms up,
+      // which is exactly when somebody is looking for what to watch. What
+      // does have to wait is the *target's* body: a handoff card telling
+      // you to reach for the Shield's remote is a lie until the Shield is
+      // up, and a playback view has nothing to play yet.
+      this._ensureHomeRows();
+      return `<div class="maxcol">${this._renderLibraryHome()}</div>`;
+    }
 
     switch (helpers.bodyFor(current)) {
       case "aus":
         // FR-41: the library does not need the theater. Browsing, filtering
         // and even the play button (which powers everything on, FR-55) work
-        // from here.
+        // from here — which is why the off state gets the same body as the
+        // on one, and no banner explaining itself. "Kino ist ausgeschaltet"
+        // is already the line beside Aktivität, one section up, with every
+        // activity tile under it; a card repeating it took a fifth of the
+        // phone to say what the screen had said.
         this._ensureHomeRows();
-        return `<div class="maxcol">
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;
-                      background:var(--kino-surface);border:1px solid var(--kino-border);margin-bottom:16px">
-            <span style="color:var(--kino-text3);display:flex">${POWER_ICON}</span>
-            <div>
-              <div style="font-size:13px;font-weight:700">Kino ist ausgeschaltet</div>
-              <div style="font-size:11px;color:var(--kino-text3)">Aktivität oben wählen, um zu starten — die Bibliothek ist trotzdem verfügbar.</div>
-            </div>
-          </div>
-          ${this._renderLibraryHome()}
-        </div>`;
+        return `<div class="maxcol">${this._renderLibraryHome()}</div>`;
       case "library":
         this._ensureHomeRows();
         return `<div class="maxcol">${this._renderLibraryHome()}</div>`;
@@ -4203,17 +4423,54 @@ class KinoCard extends CardBase {
   }
 
   /** One home row, or nothing at all when the row would be empty. */
-  _homeRow(title, items, showResume, extra = "") {
+  _homeRow(title, items, showResume, extra = null) {
     if (!items || !items.length) return "";
-    return `<div class="section">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <h3 style="margin:0">${title}</h3>
-        ${extra}
+    return `<div class="st-sec">
+      <div class="st-sechead">
+        <div class="st-h">${title}</div>
+        <div class="sp"></div>
+        ${
+          // A heading's right-hand side either offers somewhere to go or
+          // says how much there is. Never nothing: the design gives every
+          // band that second line, and an empty one leaves the row looking
+          // unfinished next to the ones that have it.
+          extra == null
+            ? `<div class="st-meta">${helpers.titleCount(items.length)}</div>`
+            : extra
+        }
       </div>
       <div class="posterrow hscroll">${items
         .map((t) => this._poster(t, showResume))
         .join("")}</div>
     </div>`;
+  }
+
+  /**
+   * Open the library at one category, and remember it.
+   *
+   * Three controls lead here — a segment, "Erkunden", and the deep links
+   * elsewhere in the card — and the segment's highlight has to survive all
+   * three, so the remembering lives with the navigating rather than in one
+   * of the three call sites.
+   */
+  async _openLibrary(category) {
+    const view = this._view;
+    this._navPush();
+    view.main = "library";
+    view.category = category === "shows" ? "shows" : "movies";
+    view.startTab = view.category;
+    this._render();
+    await this._loadLibrary();
+  }
+
+  async _openDemos() {
+    const view = this._view;
+    this._navPush();
+    view.main = "demos";
+    view.demoTab = "clips";
+    view.startTab = "demos";
+    this._render();
+    await this._loadDemo(true);
   }
 
   _renderLibraryHome() {
@@ -4225,22 +4482,29 @@ class KinoCard extends CardBase {
       "Favoriten",
       this._favorites,
       true,
-      '<a class="link" data-act="open-favorites">Alle anzeigen</a>'
+      '<div class="st-link" data-act="open-favorites">Alle anzeigen</div>'
     );
+    // Three destinations on one track. The lit segment is where you were
+    // last, and "Erkunden" opens exactly that — so the highlight is a
+    // promise about the link beside it, not a tab that switches this screen.
+    const tab = this._view.startTab;
+    const seg = (label, value, act, key) =>
+      `<button class="st-segbtn" data-act="${act}"${
+        key ? ` data-key="${key}"` : ""
+      } aria-pressed="${tab === value}">${label}</button>`;
     return `
-      <div class="section">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <h3 style="margin:0">Filme &amp; Serien</h3>
-          <a class="link" data-act="open-library" data-key="movies">Erkunden</a>
+      <div class="st-sec">
+        <div class="st-sechead">
+          <div class="st-h">Filme &amp; Serien</div>
+          <div class="sp"></div>
+          <div class="st-link" data-act="open-start-tab">Erkunden</div>
         </div>
-        <p style="font-size:12px;color:var(--kino-text2);margin-bottom:12px">
-          Durchsuchen, filtern und sortieren.
-        </p>
-        <div class="row">
-          <button class="tile" style="text-align:center" data-act="open-library" data-key="movies">Filme</button>
-          <button class="tile" style="text-align:center" data-act="open-library" data-key="shows">Serien</button>
-          <button class="tile" style="text-align:center" data-act="open-demos">Demos</button>
+        <div class="st-seg">
+          ${seg("Filme", "movies", "open-library", "movies")}
+          ${seg("Serien", "shows", "open-library", "shows")}
+          ${seg("Demos", "demos", "open-demos")}
         </div>
+        <div class="st-hint">Durchsuchen, filtern und sortieren.</div>
       </div>
       ${resumeRow}
       ${favoriteRow}
@@ -6278,12 +6542,14 @@ class KinoCard extends CardBase {
         this._actionError = null;
         this._render();
         break;
+      // The Start screen's "Erkunden" opens whichever segment is lit, so
+      // the link and the highlight beside it never disagree.
+      case "open-start-tab":
+        if (view.startTab === "demos") await this._openDemos();
+        else await this._openLibrary(view.startTab);
+        break;
       case "open-library":
-        this._navPush();
-        view.main = "library";
-        view.category = key || "movies";
-        this._render();
-        await this._loadLibrary();
+        await this._openLibrary(key || "movies");
         break;
       case "open-favorites": {
         // The row shows twelve; the library shows all of them, filterable.
@@ -6313,11 +6579,7 @@ class KinoCard extends CardBase {
 
       /* -- demo mode --------------------------------------------------- */
       case "open-demos":
-        this._navPush();
-        view.main = "demos";
-        view.demoTab = "clips";
-        this._render();
-        await this._loadDemo(true);
+        await this._openDemos();
         break;
       case "demo-tab":
         view.demoTab = key;

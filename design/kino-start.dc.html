@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  body { margin:0; background:#0a0b0d; color:#e8eaee; font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#f2a93b; text-decoration:none; }
+  a:hover { color:#ffc46b; }
+  ::-webkit-scrollbar { width:0; height:0; }
+</style>
+</helmet>
+<section style="display:flex;flex-wrap:wrap;gap:56px;padding:56px 48px 80px;align-items:flex-start">
+  <div id="2a" style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;color:#0a0b0d;background:#f2a93b;padding:5px 7px;border-radius:5px">2a</span>
+      <span style="font-size:13px;font-weight:600;color:#e8eaee">Kino — Start</span>
+      <span style="font-size:12px;color:#9299a5">390 × 800 · Raster 20 / 10 · Blöcke 52 &amp; 48</span>
+    </div>
+
+    <div style="width:390px;height:800px;border-radius:30px;background:#0f1114;border:1px solid rgba(255,255,255,.08);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.5)">
+
+      <div style="display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.06);flex:none">
+        <div onClick="{{ noop }}" style="position:relative;display:flex;flex-direction:column;gap:4px;width:18px;cursor:pointer">
+          <div style="height:2px;background:#cfd3da;border-radius:2px"></div>
+          <div style="height:2px;background:#cfd3da;border-radius:2px"></div>
+          <div style="height:2px;background:#cfd3da;border-radius:2px"></div>
+          <div style="position:absolute;top:-6px;right:-5px;width:7px;height:7px;border-radius:50%;background:#f2a93b"></div>
+        </div>
+        <div style="font:800 13px/1 system-ui;letter-spacing:.18em;color:#f4f5f7">KINO</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;gap:7px">
+          <div style="width:6px;height:6px;border-radius:50%;background:{{ dot }}"></div>
+          <div style="font-size:12.5px;color:#9299a5">{{ statusLabel }}</div>
+        </div>
+        <div onClick="{{ togglePower }}" title="Ein/Aus" style="width:32px;height:32px;border-radius:10px;background:{{ powerBg }};display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .16s ease" style-hover="filter:brightness(1.25)" style-active="transform:scale(.94)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="{{ powerFg }}" stroke-width="2.3" stroke-linecap="round"><circle cx="12" cy="13" r="8"></circle><line x1="12" y1="2" x2="12" y2="9"></line></svg>
+        </div>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:20px 20px 28px;display:flex;flex-direction:column;gap:24px">
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:baseline;gap:12px;min-height:18px">
+            <div style="font-size:13px;font-weight:700;color:#f4f5f7">Aktivität</div>
+            <div style="flex:1"></div>
+            <div style="font-size:12px;color:#9299a5;white-space:nowrap">{{ statusTitle }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div onClick="{{ noop }}" style="height:52px;border-radius:12px;background:#171b21;display:flex;align-items:center;gap:10px;padding:0 14px;cursor:pointer;transition:background .16s ease" style-hover="background:#1e232b" style-active="transform:scale(.985)">
+              <div style="width:16px;height:12px;border-radius:2px;border:1.6px solid #a4aab4;flex:none"></div>
+              <div style="font-size:13px;font-weight:600;color:#e8eaee">Bibliothek</div>
+            </div>
+            <div onClick="{{ noop }}" style="height:52px;border-radius:12px;background:#171b21;display:flex;align-items:center;gap:10px;padding:0 14px;cursor:pointer;transition:background .16s ease" style-hover="background:#1e232b" style-active="transform:scale(.985)">
+              <div style="width:15px;height:13px;border-radius:2px;border:1.6px solid #a4aab4;flex:none"></div>
+              <div style="font-size:13px;font-weight:600;color:#e8eaee">Streaming</div>
+            </div>
+            <div onClick="{{ noop }}" style="height:52px;border-radius:12px;background:#171b21;display:flex;align-items:center;gap:10px;padding:0 14px;cursor:pointer;transition:background .16s ease" style-hover="background:#1e232b" style-active="transform:scale(.985)">
+              <div style="width:13px;height:13px;border-radius:50%;border:1.6px solid #a4aab4;flex:none"></div>
+              <div style="font-size:13px;font-weight:600;color:#e8eaee">Musik</div>
+            </div>
+            <div onClick="{{ noop }}" style="height:52px;border-radius:12px;background:#171b21;display:flex;align-items:center;gap:10px;padding:0 14px;cursor:pointer;transition:background .16s ease" style-hover="background:#1e232b" style-active="transform:scale(.985)">
+              <div style="width:16px;height:10px;border-radius:5px;border:1.6px solid #a4aab4;flex:none"></div>
+              <div style="font-size:13px;font-weight:600;color:#e8eaee">Steam</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:baseline;gap:12px;min-height:18px">
+            <div style="font-size:13px;font-weight:700;color:#f4f5f7">Licht</div>
+            <div style="flex:1"></div>
+            <div style="font-size:12px;font-weight:600;color:{{ sceneColor }};white-space:nowrap">{{ sceneLabel }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <sc-for list="{{ scenes }}" as="s" hint-placeholder-count="4">
+              <div onClick="{{ s.pick }}" style="height:52px;border-radius:12px;display:flex;align-items:center;padding:0 14px;font-size:13px;font-weight:600;cursor:pointer;transition:background .16s ease,color .16s ease;background:{{ s.bg }};color:{{ s.fg }}" style-hover="filter:brightness(1.18)" style-active="transform:scale(.985)">{{ s.name }}</div>
+            </sc-for>
+          </div>
+          <div style="border-radius:12px;background:#171b21;overflow:hidden">
+            <div onClick="{{ allOff }}" style="height:48px;display:flex;align-items:center;gap:10px;padding:0 14px;cursor:pointer;transition:background .16s ease" style-hover="background:#1e232b">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a4aab4" stroke-width="2.3" stroke-linecap="round" style="flex:none"><circle cx="12" cy="13" r="8"></circle><line x1="12" y1="2" x2="12" y2="9"></line></svg>
+              <div style="font-size:13px;font-weight:600;color:#e8eaee">Alles aus</div>
+            </div>
+            <div style="height:1px;background:rgba(255,255,255,.06);margin:0 14px"></div>
+            <div onClick="{{ noop }}" style="height:48px;display:flex;align-items:center;padding:0 14px;cursor:pointer;transition:background .16s ease" style-hover="background:#1e232b">
+              <div style="font-size:13px;font-weight:600;color:#e8eaee">Einzelne Lichter</div>
+              <div style="flex:1"></div>
+              <div style="font-size:12px;color:#9299a5">alle aus</div>
+              <div style="margin-left:10px;width:7px;height:7px;border-right:1.6px solid #9299a5;border-bottom:1.6px solid #9299a5;transform:rotate(-45deg)"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:baseline;gap:12px;min-height:18px">
+            <div style="font-size:13px;font-weight:700;color:#f4f5f7">Filme &amp; Serien</div>
+            <div style="flex:1"></div>
+            <div onClick="{{ noop }}" style="font-size:12.5px;font-weight:600;color:#f2a93b;cursor:pointer;white-space:nowrap">Erkunden</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;background:#171b21;border-radius:12px;padding:4px">
+            <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+              <div onClick="{{ t.pick }}" style="height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600;cursor:pointer;transition:background .16s ease,color .16s ease;background:{{ t.bg }};color:{{ t.fg }}">{{ t.name }}</div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:baseline;gap:12px;min-height:18px">
+            <div style="font-size:13px;font-weight:700;color:#f4f5f7">Weitersehen</div>
+            <div style="flex:1"></div>
+            <div style="font-size:12px;color:#9299a5;white-space:nowrap">3 Titel</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="aspect-ratio:2/3;border-radius:10px;background:repeating-linear-gradient(135deg,#1a1e24 0 6px,#15181d 6px 12px);display:flex;align-items:flex-end;padding:8px"><span style="font:10px/1.2 ui-monospace,Menlo,monospace;color:#8f959f">poster</span></div>
+              <div style="height:3px;border-radius:2px;background:#22262d;overflow:hidden"><div style="width:62%;height:3px;background:#f2a93b"></div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="aspect-ratio:2/3;border-radius:10px;background:repeating-linear-gradient(135deg,#1a1e24 0 6px,#15181d 6px 12px);display:flex;align-items:flex-end;padding:8px"><span style="font:10px/1.2 ui-monospace,Menlo,monospace;color:#8f959f">poster</span></div>
+              <div style="height:3px;border-radius:2px;background:#22262d;overflow:hidden"><div style="width:24%;height:3px;background:#f2a93b"></div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="aspect-ratio:2/3;border-radius:10px;background:repeating-linear-gradient(135deg,#1a1e24 0 6px,#15181d 6px 12px);display:flex;align-items:flex-end;padding:8px"><span style="font:10px/1.2 ui-monospace,Menlo,monospace;color:#8f959f">poster</span></div>
+              <div style="height:3px;border-radius:2px;background:#22262d;overflow:hidden"><div style="width:88%;height:3px;background:#f2a93b"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:11.5px;color:#8f959f">Durchsuchen, filtern und sortieren.</div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:486,&quot;height&quot;:912},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#f2a93b&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#f2a93b&quot;,&quot;#e0663c&quot;,&quot;#6ea8fe&quot;,&quot;#8fd3a3&quot;]}}">
+class Component extends DCLogic {
+  state = { scene: "Dark", on: false, tab: "Filme" };
+
+  renderVals() {
+    const accent = this.props.accent ?? "#f2a93b";
+    const scenes = ["Bright Ambience", "Dark", "Kino Gaming", "Low Ambience"].map((name) => {
+      const sel = this.state.scene === name;
+      return {
+        name,
+        bg: sel ? accent : "#171b21",
+        fg: sel ? "#17130a" : "#e8eaee",
+        pick: () => this.setState({ scene: name }),
+      };
+    });
+    const tabs = ["Filme", "Serien", "Demos"].map((name) => {
+      const sel = this.state.tab === name;
+      return {
+        name,
+        bg: sel ? "#262c36" : "transparent",
+        fg: sel ? "#f4f5f7" : "#9299a5",
+        pick: () => this.setState({ tab: name }),
+      };
+    });
+    const on = this.state.on;
+    const scene = this.state.scene;
+    return {
+      scenes,
+      tabs,
+      sceneLabel: scene || "alle aus",
+      sceneColor: scene ? accent : "#9299a5",
+      statusLabel: on ? "Eingeschaltet" : "Ausgeschaltet",
+      statusTitle: on ? "Kino ist eingeschaltet" : "Kino ist ausgeschaltet",
+      dot: on ? accent : "#5d636e",
+      powerBg: on ? accent : "#1a1e25",
+      powerFg: on ? "#17130a" : "#cfd3da",
+      togglePower: () => this.setState((s) => ({ on: !s.on })),
+      allOff: () => this.setState({ scene: "" }),
+      noop: () => {},
+    };
+  }
+}
+
+</script>
+</body>
+</html>

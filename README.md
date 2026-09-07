@@ -504,6 +504,19 @@ projector's cooldown behaviour, transcribed from ten days of recorded history.
 
 ## Status
 
+Release **0.9 "Start"**: the card's first screen redrawn to
+[`design/kino-start.dc.html`](design/kino-start.dc.html). It has no header of
+its own any more — Home Assistant's is directly above it — so the wordmark is
+gone and what the header carried moved into the body: the room's status is the
+line beside **Aktivität**, and **Ausschalten** is a row under the activity
+tiles, offered only when something is on. Every activity is a tile now, always
+visible, with the running one marked; three tiles for Filme, Serien and Demos
+became one segmented control, where the marked segment is what "Erkunden"
+opens. Licht (0.8) sits in the same furniture as the rest. Device chips appear
+when they have something to report rather than showing four green dots, and a
+transition no longer blanks the library — the two minutes the beamer warms up
+are exactly when somebody is choosing what to watch. On top of:
+
 Release **0.7 "Demo"**: reference clips, showcases and A/B calibration — capture
 from the player, trim on the phone, replay with lead-in padding and a scheduled
 cut, and keep all of it out of the watch history. On top of:
