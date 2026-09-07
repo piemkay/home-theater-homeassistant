@@ -10,6 +10,19 @@ import { test, describe } from "node:test";
 
 import { helpers, KinoCard } from "../../custom_components/kino/www/kino-card.js";
 
+// `sourceKey` has to ride in NAV_KEYS beside `main`; the list is module-private,
+// so this reads it back off a snapshot the way the card does.
+const NAV_KEYS_HAS_SOURCE = (() => {
+  const c = Object.create(KinoCard.prototype);
+  c._view = { sourceKey: "steam", filters: null, main: "source" };
+  c._nav = [];
+  c._library = {};
+  c._scrollTop = () => 0;
+  c._pushBrowserEntry = () => {};
+  c._navPush();
+  return "sourceKey" in c._nav[0].view;
+})();
+
 describe("formatTime", () => {
   test("renders minutes and seconds below an hour", () => {
     assert.equal(helpers.formatTime(0), "0:00");
@@ -703,7 +716,10 @@ describe("off-state body", () => {
 
   test("the library home is reachable while the theater is off (FR-41)", () => {
     const html = card()._renderBody();
-    assert.match(html, /data-act="open-library"/);
+    // Browsing is its own view now, so Home offers the way in rather than
+    // growing the library underneath itself (FR-79b).
+    assert.match(html, /data-act="open-start-tab"/);
+    assert.match(html, /Bibliothek öffnen/);
     assert.match(html, /Zuletzt hinzugefügt/);
     // The body no longer explains that the theater is off: that line is the
     // status beside "Aktivität" now, one section up, and a banner repeating
@@ -755,7 +771,8 @@ describe("the Start screen (FR-78)", () => {
   const ACTIVITIES = [
     { key: "aus", name: "Aus", controlClass: "off", icon: "mdi:power" },
     { key: "film", name: "Bibliothek", controlClass: "full", icon: "mdi:movie-open" },
-    { key: "netflix", name: "Streaming", controlClass: "handoff", icon: "mdi:television-play" },
+    { key: "netflix", name: "Streaming", controlClass: "handoff", icon: "mdi:television-play",
+      handoffText: "Weiter auf der Fernbedienung der Shield." },
     { key: "musik", name: "Musik", controlClass: "mixed", icon: "mdi:music" },
     { key: "steam", name: "Steam", controlClass: "room", icon: "mdi:controller" },
   ];
@@ -772,7 +789,7 @@ describe("the Start screen (FR-78)", () => {
       lights: null,
       ...kino,
     };
-    c._view = { main: "home", startTab: "movies", ...view };
+    c._view = { main: "home", startTab: "movies", sourceKey: null, filters: helpers.emptyFilters(), ...view };
     c._library = { items: [], total: 0 };
     c._resume = [];
     c._recent = [];
@@ -822,10 +839,20 @@ describe("the Start screen (FR-78)", () => {
     assert.match(html, /class="dot pulsing"/);
   });
 
-  test("every other screen keeps the compact chip", () => {
-    const html = card({ activity: "film" }, { main: "library" })._renderActivitySelector();
-    assert.match(html, /data-act="toggle-menu"/);
-    assert.doesNotMatch(html, /class="st-grid"/);
+  /**
+   * Room controls are the Start screen's. There is no longer a screen that
+   * is "Home with something grown underneath", so the compact chip that
+   * existed to make one navigable is gone with it (FR-79c).
+   */
+  test("a pushed view carries no room controls at all", () => {
+    for (const main of ["library", "demos", "musik", "source"]) {
+      assert.equal(
+        card({ activity: "film" }, { main })._renderActivitySelector(),
+        "",
+        `activity selector leaked onto ${main}`
+      );
+    }
+    assert.match(card({ activity: "film" })._renderActivitySelector(), /class="st-grid"/);
   });
 
   /**
@@ -833,9 +860,9 @@ describe("the Start screen (FR-78)", () => {
    * activity is exactly what you notice during them. The chip used to answer
    * the tap by flipping its chevron and opening nothing (FR-78a).
    */
-  test("the compact dropdown opens during a transition too", () => {
+  test("the tiles stay tappable during a transition, on Home", () => {
     const busy = { activity: "film", targetActivity: "netflix", progress: { percent: 30 } };
-    const html = card(busy, { main: "library", activityMenu: true })._renderActivitySelector();
+    const html = card(busy)._renderActivitySelector();
     assert.equal((html.match(/data-act="activate"/g) || []).length, 4);
     assert.match(html, /data-act="ask-power-off"/);
   });
@@ -846,14 +873,17 @@ describe("the Start screen (FR-78)", () => {
    * precisely when the retry has to be on screen — and with the card's
    * header gone, this row is the only place it can be.
    */
-  test("Ausschalten survives a failed shutdown", () => {
-    for (const main of ["home", "library"]) {
-      const html = card(
-        { state: "error", activity: "aus", statusText: "Trinnov antwortet nicht" },
-        { main }
-      )._renderActivitySelector();
-      assert.match(html, /data-act="ask-power-off"/, `missing on ${main}`);
-    }
+  test("Ausschalten survives a failed shutdown, wherever you are", () => {
+    const broken = { state: "error", activity: "aus", statusText: "Trinnov antwortet nicht" };
+    assert.match(card(broken)._renderActivitySelector(), /data-act="ask-power-off"/);
+    // On a pushed view the Aktivität section is gone, so the retry comes to
+    // you rather than hiding three back-steps away.
+    assert.match(
+      card(broken, { main: "library" })._renderErrorPowerOff(),
+      /data-act="ask-power-off"/
+    );
+    // ...and only then: a healthy room browsing its library gets no row.
+    assert.equal(card({ activity: "film" }, { main: "library" })._renderErrorPowerOff(), "");
   });
 
   test("a shutdown already running has nothing left to offer", () => {
@@ -870,28 +900,42 @@ describe("the Start screen (FR-78)", () => {
     assert.doesNotMatch(card()._renderActivitySelector(), /data-act="ask-power-off"/);
   });
 
-  test("three tiles become one segmented control", () => {
+  /**
+   * Home is the state of the room. The tab strip, the hint line and the
+   * search box moved into the library's own bar, where the tab set is fixed
+   * and the toolbar does not scroll away (FR-79b, FR-79c).
+   */
+  test("Home carries no tabs, no search and no hint line", () => {
     const html = card()._renderLibraryHome();
-    assert.match(html, /class="st-seg"/);
-    assert.equal((html.match(/class="st-segbtn"/g) || []).length, 3);
-    assert.match(html, /data-act="open-library" data-key="movies" aria-pressed="true"/);
-    assert.match(html, /data-act="open-library" data-key="shows" aria-pressed="false"/);
-    assert.match(html, /data-act="open-demos" aria-pressed="false"/);
+    assert.doesNotMatch(html, /class="st-seg"/);
+    assert.doesNotMatch(html, /data-field="query"/);
+    assert.doesNotMatch(html, /Durchsuchen, filtern und sortieren/);
+    assert.doesNotMatch(html, /Filme &amp; Serien/);
   });
 
-  /** The highlight is a promise about the link beside it, not a tab. */
-  test("Erkunden opens whichever segment is lit", () => {
-    const shows = card({}, { startTab: "shows" })._renderLibraryHome();
-    assert.match(shows, /data-act="open-start-tab">Erkunden</);
-    assert.match(shows, /data-key="shows" aria-pressed="true"/);
-    assert.match(card({}, { startTab: "demos" })._renderLibraryHome(), /data-act="open-demos" aria-pressed="true"/);
+  /**
+   * One door into the library, on the shelf you resume from — and it opens
+   * the tab you were last in, so "Bibliothek öffnen" and the bar agree.
+   */
+  test("the way into the library rides on the Weitersehen heading", () => {
+    const c = card();
+    c._resume = [{ id: "a", title: "Heat" }];
+    const html = c._renderLibraryHome();
+    assert.match(html, /class="st-h">Weitersehen<[\s\S]*?data-act="open-start-tab">Bibliothek öffnen/);
+  });
+
+  /** A library with nothing to resume must not be a library with no door. */
+  test("an empty Weitersehen shelf still leaves a way in", () => {
+    const html = card()._renderLibraryHome();
+    assert.doesNotMatch(html, /Weitersehen/);
+    assert.match(html, /class="st-h">Bibliothek<[\s\S]*?data-act="open-start-tab"/);
   });
 
   test("a poster row's heading counts its own titles", () => {
     const c = card();
-    c._resume = [{ id: "a", title: "Heat" }, { id: "b", title: "Dune" }];
+    c._recent = [{ id: "a", title: "Heat" }, { id: "b", title: "Dune" }];
     const html = c._renderLibraryHome();
-    assert.match(html, /class="st-h">Weitersehen<\/div>[\s\S]*?class="st-meta">2 Titel</);
+    assert.match(html, /class="st-h">Zuletzt hinzugefügt<\/div>[\s\S]*?class="st-meta">2 Titel</);
     // Favoriten keeps its way into the full list instead of a count.
     c._favorites = [{ id: "f", title: "Alien" }];
     assert.match(c._renderLibraryHome(), /data-act="open-favorites"/);
@@ -913,104 +957,63 @@ describe("the Start screen (FR-78)", () => {
    * The two minutes the beamer warms up are exactly when somebody is looking
    * for what to watch, and the library never needed the theater (FR-41).
    */
-  test("a transition no longer blanks the library", () => {
+  /**
+   * Home's body no longer follows the room at all: the activity's own screen
+   * is somewhere you go now, so a transition cannot blank what Home shows.
+   */
+  test("a transition leaves Home's shelves alone", () => {
     const c = card({
       activity: "aus",
       targetActivity: "film",
       progress: { percent: 40, bottleneck: "Beamer wärmt auf…" },
     });
     c._recent = [{ id: "n1", title: "The Order", year: 2024 }];
-    const html = c._renderBody();
-    assert.match(html, /Zuletzt hinzugefügt/);
-    assert.match(html, /class="st-seg"/);
+    assert.match(c._renderBody(), /Zuletzt hinzugefügt/);
   });
 
-  /** The target's own body still waits: it would be describing a lie. */
-  test("a handoff card waits until the handoff is real", () => {
-    const c = card({
-      activity: "aus",
-      targetActivity: "netflix",
-      progress: { percent: 40, bottleneck: null },
-    });
-    assert.doesNotMatch(c._renderBody(), /Fernbedienung der Shield/);
+  /** A handoff card is a place you are taken to, pinned to the tile you tapped. */
+  test("a source view is pinned to the tile that opened it, not to the room", () => {
+    const c = card({ activity: "musik" }, { main: "source", sourceKey: "netflix" });
+    const html = c._renderBody();
+    assert.match(html, /Fernbedienung der Shield/);
+    assert.match(html, /mdi:television-play/);
+  });
+
+  test("a source view whose activity was deleted says so instead of blanking", () => {
+    const c = card({}, { main: "source", sourceKey: "gone" });
+    assert.match(c._renderBody(), /Diese Aktivität gibt es nicht mehr/);
   });
 
   /**
    * The Start screen is the card's face now, and searching from it used to
    * mean opening the library first and finding the box there.
    */
-  test("the Start screen has a search box", () => {
-    const html = card()._renderLibraryHome();
-    assert.match(html, /class="st-search"/);
-    assert.match(html, /data-field="query"/);
-    assert.match(html, /placeholder="Titel suchen…"/);
+  test("the search box lives in the library's bar, and sticks there", () => {
+    const bar = card({}, { main: "library" })._renderViewBar();
+    assert.match(bar, /class="st-search"/);
+    assert.match(bar, /data-field="query"/);
+    assert.match(bar, /placeholder="Titel suchen…"/);
+    assert.doesNotMatch(card()._renderLibraryHome(), /data-field="query"/);
   });
 
   /**
-   * One field name across both screens: `_render` restores the caret by
-   * `data-field`, so the word and the caret follow the user into the
-   * library instead of being retyped there.
+   * The field lives in the library's bar now, so typing searches the grid
+   * that is already on screen — no navigation, and the caret never moves.
    */
-  test("the third letter opens the library, the first two do not", async () => {
-    const c = card();
-    c._container = { querySelector: () => null };
-    c._appliedQuery = "";
-    const opened = [];
-    c._openLibrary = async (cat) => opened.push(cat);
-    c._loadLibrary = async () => opened.push("load");
-    const type = (value) =>
-      c._onInput({ target: { dataset: { field: "query" }, value } });
-
-    type("Du");
-    await new Promise((r) => setTimeout(r, 400));
-    assert.deepEqual(opened, [], "two letters is not a search");
-
-    type("Dun");
-    await new Promise((r) => setTimeout(r, 400));
-    assert.deepEqual(opened, ["movies"]);
-    assert.equal(c._view.query, "Dun");
-  });
-
-  /**
-   * A back step out of the library restores the word that opened it, so the
-   * Start box comes back filled. Clearing it must not count as a search and
-   * open the library again on nothing.
-   */
-  test("emptying the box on Start opens nothing", async () => {
-    const c = card();
-    c._container = { querySelector: () => null };
-    c._appliedQuery = "Dun";
-    c._view.query = "Dun";
-    const opened = [];
-    c._openLibrary = async (cat) => opened.push(cat);
-    c._onInput({ target: { dataset: { field: "query" }, value: "" } });
-    await new Promise((r) => setTimeout(r, 400));
-    assert.deepEqual(opened, []);
-    assert.equal(c._view.query, "");
-  });
-
-  test("the search follows the lit segment into Serien", async () => {
-    const c = card({}, { startTab: "shows" });
-    c._container = { querySelector: () => null };
-    c._appliedQuery = "";
-    const opened = [];
-    c._openLibrary = async (cat) => opened.push(cat);
-    c._onInput({ target: { dataset: { field: "query" }, value: "Dun" } });
-    await new Promise((r) => setTimeout(r, 400));
-    assert.deepEqual(opened, ["shows"]);
-  });
-
-  /** Inside the library the same field searches in place, as it always did. */
-  test("in the library the field does not navigate", async () => {
+  test("typing in the bar searches in place", async () => {
     const c = card({}, { main: "library" });
     c._container = { querySelector: () => null };
     c._appliedQuery = "";
-    const opened = [];
-    c._openLibrary = async (cat) => opened.push(cat);
-    c._loadLibrary = async () => opened.push("load");
+    const calls = [];
+    c._openLibrary = async (cat) => calls.push(`open:${cat}`);
+    c._loadLibrary = async () => calls.push("load");
+    c._onInput({ target: { dataset: { field: "query" }, value: "Du" } });
+    await new Promise((r) => setTimeout(r, 400));
+    assert.deepEqual(calls, [], "two letters is not a search");
     c._onInput({ target: { dataset: { field: "query" }, value: "Dun" } });
     await new Promise((r) => setTimeout(r, 400));
-    assert.deepEqual(opened, ["load"]);
+    assert.deepEqual(calls, ["load"]);
+    assert.equal(c._view.query, "Dun");
   });
 
   test("a grid where no tile has an icon grows no icon gutter", () => {
@@ -1134,33 +1137,145 @@ describe("the screens under the segmented control speak one language", () => {
     return c;
   };
 
-  test("the library's category control is the same segmented control", () => {
-    const html = library()._renderLibrary();
-    assert.match(html, /class="st-seg"/);
-    assert.equal((html.match(/class="st-segbtn"/g) || []).length, 2);
-    assert.match(html, /data-act="category" data-key="movies"\n?\s*aria-pressed="true"/);
-    // Gold means "this is running" everywhere else on the card; a selected
-    // tab borrowing it was the loudest of the mismatches.
-    assert.doesNotMatch(html, /class="pill"[^>]*data-act="category"/);
+  /**
+   * The tab set is fixed at three and sits at the same y whichever is lit,
+   * so the segment you just tapped is still under your thumb (FR-79b).
+   */
+  test("the bar's tab set is always the same three", () => {
+    for (const patch of [
+      { main: "library", category: "movies" },
+      { main: "library", category: "shows" },
+      { main: "demos", demoTab: "clips" },
+    ]) {
+      const c = library();
+      Object.assign(c._view, patch);
+      const bar = c._renderViewBar();
+      const tabs = [...bar.matchAll(/data-key="(\w+)"[\s\S]{0,40}?aria-pressed="(\w+)"/g)]
+        .filter((m) => ["movies", "shows", "demos"].includes(m[1]));
+      assert.deepEqual(tabs.map((m) => m[1]), ["movies", "shows", "demos"],
+        `the tab set changed on ${patch.main}`);
+      assert.equal(tabs.filter((m) => m[2] === "true").length, 1);
+    }
   });
 
-  test("the library carries the same search box as the Start screen", () => {
-    const html = library()._renderLibrary();
-    assert.match(html, /class="st-search"/);
-    assert.match(html, /data-field="query"/);
-  });
-
-  test("both screens use the same header", () => {
+  test("the toolbar belongs to the films, not to the demos", () => {
+    const films = library()._renderViewBar();
+    assert.match(films, /class="st-search"/);
+    assert.match(films, /data-act="open-filters"/);
+    assert.match(films, /data-field="sort"/);
     const c = library();
-    assert.match(c._renderLibrary(), /class="st-screenhead"/);
-    assert.match(c._renderLibrary(), /class="st-back" data-act="back-home"/);
-    const demos = Object.create(KinoCard.prototype);
-    demos._view = { demoTab: "clips", demoTagFilter: [] };
-    demos._demo = { clips: [], showcases: [], vocabulary: [] };
-    const html = demos._renderDemos();
-    assert.match(html, /class="st-screenhead"/);
-    assert.match(html, /class="st-seg"/);
-    assert.doesNotMatch(html, /class="pill" data-act="demo-tab"/);
+    Object.assign(c._view, { main: "demos", demoTab: "clips" });
+    const demos = c._renderViewBar();
+    assert.doesNotMatch(demos, /class="st-search"/);
+    assert.doesNotMatch(demos, /data-act="open-filters"/);
+    assert.doesNotMatch(demos, /data-field="sort"/);
+    assert.match(demos, /data-act="demo-tab" data-key="clips"/);
+  });
+
+  test("every pushed view gets the same bar, and Home gets none", () => {
+    for (const patch of [
+      { main: "library" },
+      { main: "demos" },
+      { main: "musik", sourceKey: "musik" },
+      { main: "source", sourceKey: "netflix" },
+    ]) {
+      const c = library();
+      Object.assign(c._view, patch);
+      c._kino = { ...c._kino, activities: [{ key: "netflix", name: "Streaming" }, { key: "musik", name: "Musik" }] };
+      const bar = c._renderViewBar();
+      assert.match(bar, /class="viewbar"/, `no bar on ${patch.main}`);
+      assert.match(bar, /class="st-back" data-act="back-home"/);
+    }
+    const home = library();
+    home._view.main = "home";
+    assert.equal(home._renderViewBar(), "");
+  });
+
+  /** Only the grid scrolls, so the body below the bar is only the grid. */
+  test("the library body is the count and the grid, nothing else", () => {
+    const html = library()._renderLibrary();
+    assert.doesNotMatch(html, /class="st-screenhead"/);
+    assert.doesNotMatch(html, /class="st-search"/);
+    assert.doesNotMatch(html, /data-act="open-filters"/);
+    assert.match(html, /class="libcount" data-role="library-count"/);
+    assert.match(html, /data-role="library-grid"/);
+  });
+});
+
+/**
+ * The library stopped being a body grown under Home and became a place you
+ * go to (FR-79b). These cover the navigation that makes that true.
+ */
+describe("pushed views", () => {
+  const ACTS = [
+    { key: "aus", name: "Aus", controlClass: "off" },
+    { key: "film", name: "Bibliothek", controlClass: "full", media: "jellyfin" },
+    { key: "netflix", name: "Streaming", controlClass: "handoff", handoffText: "Shield." },
+    { key: "musik", name: "Musik", controlClass: "mixed" },
+    { key: "steam", name: "Steam", controlClass: "room" },
+  ];
+  const card = (view = {}) => {
+    const c = Object.create(KinoCard.prototype);
+    c._kino = { activities: ACTS, offActivity: "aus", activity: "aus", progress: null };
+    c._view = { main: "home", startTab: "movies", sourceKey: null, category: "movies", ...view };
+    c._nav = [];
+    c._browserTokens = [];
+    c._library = { items: [], total: 0, hasMore: false };
+    c._render = () => {};
+    c._loadLibrary = async () => {};
+    c._loadDemo = async () => {};
+    c._pushBrowserEntry = () => {};
+    c._scrollTop = () => 0;
+    return c;
+  };
+
+  test("a source tile opens the screen its activity lives on", async () => {
+    for (const [key, main] of [
+      ["film", "library"],
+      ["musik", "musik"],
+      ["netflix", "source"],
+      ["steam", "source"],
+    ]) {
+      const c = card();
+      await c._openActivity(key);
+      assert.equal(c._view.main, main, `${key} landed on the wrong screen`);
+      assert.equal(c._nav.length, 1, `${key} did not push a step to come back from`);
+    }
+  });
+
+  test("switching to Aus takes you nowhere: Home is already the room", async () => {
+    const c = card();
+    await c._openActivity("aus");
+    assert.equal(c._view.main, "home");
+    assert.equal(c._nav.length, 0);
+  });
+
+  test("a handoff view remembers which tile opened it", async () => {
+    const c = card();
+    await c._openActivity("steam");
+    assert.equal(c._view.sourceKey, "steam");
+    // ...and it travels with `main` through a snapshot, or a back step would
+    // land on a screen pinned to the wrong activity.
+    assert.ok(NAV_KEYS_HAS_SOURCE, "sourceKey must be in NAV_KEYS");
+  });
+
+  test("a push opens at the top, not at the offset you left behind", async () => {
+    const c = card();
+    await c._openActivity("film");
+    assert.equal(c._restoreScrollTo, 0);
+  });
+
+  /** A tab is a lateral move inside one view, not another step to walk back. */
+  test("switching tabs replaces the view instead of stacking it", async () => {
+    const c = card({ main: "library" });
+    const act = (key) =>
+      c._onClick({ target: { closest: () => ({ dataset: { act: "lib-tab", key } }) } });
+    await act("shows");
+    await act("demos");
+    await act("movies");
+    assert.equal(c._nav.length, 0, "tabs must not push");
+    assert.equal(c._view.main, "library");
+    assert.equal(c._view.category, "movies");
   });
 });
 
@@ -1409,10 +1524,10 @@ describe("shutdown honesty (F13)", () => {
     assert.doesNotMatch(html, /data-act="vol"/);
   });
 
-  test("the activity chip says 'Wird ausgeschaltet…', not 'Wechsel zu Aus…'", () => {
+  test("the status line says 'Wird ausgeschaltet…', not 'Wechsel zu Aus…'", () => {
     const card = Object.create(KinoCard.prototype);
     card._kino = kino;
-    card._view = { activityMenu: false };
+    card._view = { main: "home" };
     const html = card._renderActivitySelector();
     assert.match(html, /Wird ausgeschaltet…/);
     assert.doesNotMatch(html, /Wechsel zu Aus/);
@@ -2746,23 +2861,22 @@ describe("going back", () => {
     assert.deepEqual(c._view.filters.genres, ["Sci-Fi"]);
   });
 
-  test("a menu is dismissed before any step is spent on it", () => {
+  /**
+   * A transient overlay is dismissed before a navigation step is spent on
+   * it — otherwise a back gesture meant for the dialog walks off the screen
+   * behind it. (The activity menu used to be the second transient; the
+   * compact chip that opened it went with FR-79c.)
+   */
+  test("a transient is dismissed before any step is spent on it", () => {
     const c = navCard({ main: "library" });
     c._navPush();
     c._view.detailId = "m1";
-    c._view.activityMenu = true;
-    c._navBack();
-    assert.equal(c._view.activityMenu, false);
-    assert.equal(c._view.detailId, "m1", "the sheet stays; only the menu closed");
-    c._navBack();
-    assert.equal(c._view.detailId, null);
-  });
-
-  test("the power confirmation closes before the activity menu under it", () => {
-    const c = navCard({ activityMenu: true, powerConfirm: true });
+    c._view.powerConfirm = true;
     c._navBack();
     assert.equal(c._view.powerConfirm, false);
-    assert.equal(c._view.activityMenu, true);
+    assert.equal(c._view.detailId, "m1", "the sheet stays; only the dialog closed");
+    c._navBack();
+    assert.equal(c._view.detailId, null);
   });
 
   test("saving an editor removes the step back into it", () => {

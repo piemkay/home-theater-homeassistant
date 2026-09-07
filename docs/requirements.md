@@ -573,28 +573,45 @@ the same endpoints every real client uses (`POST /Sessions/Playing`, `/Sessions/
 - **FR-78** The card's **Start screen** SHALL be a stack of labelled sections, each with its
   own right-hand line — a status, a count or a link. In order: **Aktivität** (every activity
   as a tile, the running one marked, the room's status beside the heading), **Licht**
-  (FR-36a), **Filme & Serien** (one segmented control for Filme / Serien / Demos, where the
-  marked segment is what "Erkunden" opens), then the poster rows of FR-70 and FR-70a.
-  Reference design: `design/kino-start.dc.html`.
-- **FR-78b** The Start screen SHALL carry the search field of FR-70 directly, and it SHALL be
-  the same field the library uses — one `data-field`, so a search begun on the Start screen
-  opens the library carrying the word and the caret with it.
-- **FR-78c** Every screen reachable from the Start screen's segmented control — library,
-  Demos, and the filter sheet behind the library's toolbar — SHALL use the Start screen's own
-  furniture: its screen header, its segmented control, its search field, and controls on the
-  same 12 px / 10 px corner family. Gold stays reserved for "this is running": a selected
-  segment lifts on `--kino-surface3` instead.
-- **FR-78a** The activity tiles SHALL all be visible without opening anything, on the Start
-  screen and in the compact selector's dropdown alike, and SHALL stay tappable during a
-  transition. The library SHALL remain on screen during a transition (FR-41 does not pause
-  while the beamer warms up); only the *target* activity's own body waits.
+  (FR-36a), then the poster rows of FR-70 and FR-70a. Reference designs:
+  `design/kino-start.dc.html`, superseded for navigation by
+  `design/kino-library-flow.dc.html`.
+- **FR-78b** *(superseded by FR-79e.)* The Start screen carried the search field of FR-70
+  directly. Browsing is its own view now, and the field went with it.
+- **FR-78c** Every screen SHALL use one set of furniture: the same screen header, segmented
+  control, search field, and controls on the same 12 px / 10 px corner family. Gold stays
+  reserved for "this is running": a selected segment lifts on `--kino-surface3` instead.
+- **FR-78a** The activity tiles SHALL all be visible without opening anything and SHALL stay
+  tappable during a transition.
 - **FR-79** The card SHALL NOT draw a header of its own — Home Assistant's is directly above
   it. Everything the card's header used to carry SHALL live in the body: the status line in
   the **Aktivität** heading, and **Ausschalten** as a row below the activity tiles, offered
   only when something is on.
-- **FR-79a** Device chips SHALL appear on the Start screen only when they have something to
-  report — a transition in flight, or a device that is not ready. On every other screen they
-  are the only device status there is, and SHALL stay.
+- **FR-79a** Device chips SHALL appear only when they have something to report — a
+  transition in flight, or a device that is not ready — on every view alike.
+- **FR-79b** The library, Demos included, SHALL be a **pushed view**, not a body grown under
+  the Start screen. Directly beneath Home Assistant's own header it SHALL carry a bar with
+  ‹ Zurück, the view's title and its one action; that bar SHALL NOT scroll — only the grid
+  does. The tab set SHALL be **fixed at three** (Filme / Serien / Demos) at the same position
+  in all three states, and selecting a tab SHALL replace the view rather than push, so
+  ‹ Zurück always means the Start screen. Reference design:
+  `design/kino-library-flow.dc.html`.
+- **FR-79c** **Room controls belong to the Start screen.** The activity tiles, the light
+  section and the Ausschalten row SHALL render there and nowhere else: a five-second task
+  must not occupy the top of a sixty-second one. The room's *reports* — an action error, a
+  drift warning, transition progress, the queued title and the transport footer — SHALL
+  render on every view, each silent unless it has something to say. The single exception:
+  while the engine reports `error`, an Ausschalten row SHALL be offered wherever the user is,
+  because that is the state a failed shutdown leaves and the retry must not be three back
+  steps away.
+- **FR-79d** A source tile SHALL both switch the room to that activity and open the screen
+  that activity lives on — the library for a media source, its own view for a handoff. Such a
+  view SHALL be pinned to the activity it was opened for, never to the running one, so a
+  change in the room cannot repaint the screen the user is standing on. Browsing SHALL also
+  be reachable **without** touching the room, from the Start screen's "Bibliothek öffnen"
+  link; when the Weitersehen shelf is empty that link SHALL still be present.
+- **FR-79e** The library's bar SHALL carry the search field of FR-70, pinned above the grid
+  so it never scrolls away.
 
 ---
 

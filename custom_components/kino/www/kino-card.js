@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.9.2";
+const CARD_VERSION = "0.10.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -927,12 +927,11 @@ button { font-family: inherit; }
 /* .tile and .tilegrid are gone: the activity grid is .st-tile in .st-grid on
    every screen now, so the compact chip's dropdown and the Start screen no
    longer look like controls from two different apps. */
-.chipbtn, .pill, .primary, .ghost {
+.pill, .primary, .ghost {
   border: none; cursor: pointer; font-weight: 700;
   font-family: inherit; color: var(--kino-text2);
   background: var(--kino-surface2);
 }
-.chipbtn { padding: 10px 14px; border-radius: 12px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--kino-text); min-height: 40px; }
 .pill { height: 36px; padding: 0 13px; border-radius: 10px; font-size: 12px; flex-shrink: 0; }
 .pill[aria-pressed="true"] { background: var(--kino-gold); color: var(--kino-goldText); }
 .primary { padding: 15px; border-radius: 12px; background: var(--kino-gold); color: var(--kino-goldText); font-size: 14px; font-weight: 800; width: 100%; min-height: 48px; }
@@ -1066,7 +1065,10 @@ button { font-family: inherit; }
 }
 .st-tile:hover { background: var(--kino-hover); }
 .st-tile:active { transform: scale(.985); }
-.st-tile .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-tile .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A source takes you somewhere now, and says so. */
+.st-tile .chev { flex: none; color: var(--kino-text3); font-size: 15px; line-height: 1; }
+.st-tile[aria-pressed="true"] .chev { color: var(--kino-goldText); opacity: .65; }
 /* The slot is there for every tile in a grid where any tile has an icon, so
    a mixed row still starts all its labels at the same x. A grid where none
    of them does gets no slot at all rather than 30px of empty gutter. */
@@ -1111,6 +1113,40 @@ button { font-family: inherit; }
 }
 .st-segbtn[aria-pressed="true"] { background: var(--kino-surface3); color: var(--kino-text); }
 .st-hint { font-size: 12px; color: var(--kino-text2); }
+
+/* -- a pushed view's own bar (FR-79b) ---------------------------------
+   A sibling of .scroller, not a band inside it: .wrap is already a column
+   flexbox with the footer pinned, so a flex:0 0 auto child above the
+   scroller simply does not move. Back, the title, the three tabs and the
+   toolbar therefore sit still under Home Assistant's own header while the
+   grid alone scrolls — which is the whole reason 753 titles have a toolbar. */
+.viewbar {
+  flex: 0 0 auto; box-sizing: border-box;
+  padding: 12px 20px 12px;
+  background: var(--kino-bg);
+  border-bottom: 1px solid var(--kino-hairline);
+}
+.viewbar > .maxcol { display: flex; flex-direction: column; gap: 10px; }
+/* The gap owns the rhythm in here; .st-screenhead's own margin is for a
+   body that stacks sections, and every sheet still wants it. */
+.viewbar .st-screenhead { margin-bottom: 0; }
+/* The only title on the screen now, rather than one heading among a stack. */
+.viewbar .st-screenhead h2 { font-size: 17px; }
+.viewbar .st-back { font-size: 14px; }
+.viewbar .st-screenhead .st-meta { font-size: 13px; }
+/* The bar supplies the air .scroller's padding-top was there for; keeping
+   both opens a gutter between the rule and the first row of posters. */
+.wrap.pushed > .scroller { padding-top: 14px; }
+
+/* The count scrolls with the grid it counts: it is one of the two nodes
+   _paintLibrary rewrites in place, so keeping it out of the bar means that
+   hot path can never touch anything fixed. The right-hand slot is laid out
+   and deliberately empty — "A–Z springen" has no query behind it yet. */
+.libcount {
+  display: flex; align-items: baseline; gap: 12px;
+  font-size: 11px; color: var(--kino-text3); margin-bottom: 12px;
+}
+.libcount .sp { flex: 1; }
 
 /* A screen you reached from the Start screen: back, where you are, and the
    one action that belongs to it. Smaller than the 19px h2 it replaces —
@@ -1859,6 +1895,9 @@ function readStoredCollapse() {
  */
 const NAV_KEYS = [
   "main",
+  // Which activity a pushed source view is for. Paired with `main`, so it
+  // has to travel with it through a snapshot.
+  "sourceKey",
   "category",
   "query",
   "sort",
@@ -1884,7 +1923,7 @@ const NAV_KEYS = [
 ];
 
 /** Overlays that a back step dismisses rather than steps out of. */
-const TRANSIENT_KEYS = ["powerConfirm", "activityMenu"];
+const TRANSIENT_KEYS = ["powerConfirm"];
 
 /** How many steps back the card remembers. Far more than anyone walks. */
 const NAV_DEPTH = 50;
@@ -1943,7 +1982,9 @@ class KinoCard extends CardBase {
     this._view = {
       main: "home",
       category: "movies",
-      // Which segment of the Start screen's Filme / Serien / Demos control
+      // The activity a pushed source view was opened for — see _renderSourceView.
+      sourceKey: null,
+      // Which segment of the library bar's Filme / Serien / Demos control
       // is lit, and therefore where "Erkunden" goes. Deliberately outside
       // NAV_KEYS: it is where you last went, not a step you can walk back
       // out of, so a back gesture must not reset it.
@@ -1981,7 +2022,6 @@ class KinoCard extends CardBase {
       playingSimilar: null,
       playingOverviewOpen: false,
       powerConfirm: false,
-      activityMenu: false,
       musikSource: "spotify",
       refreshing: false,
       // -- demo mode ---------------------------------------------------
@@ -2547,7 +2587,12 @@ class KinoCard extends CardBase {
       // putting the snapshot back would undo the very thing it is for.
       onBack,
     });
-    if (this._nav.length > NAV_DEPTH) this._nav.shift();
+    if (this._nav.length > NAV_DEPTH) {
+      this._nav.shift();
+      // The two lists are parallel: dropping the oldest step without dropping
+      // its browser entry leaves every later back gesture off by one.
+      this._browserTokens.shift();
+    }
     this._pushBrowserEntry();
   }
 
@@ -2686,7 +2731,9 @@ class KinoCard extends CardBase {
       view.scEdit ||
       view.abSetup ||
       view.powerConfirm ||
-      view.activityMenu;
+      // The library and Demos are pushed views now, not a body grown under
+      // Home, so Escape leaves them the way it leaves a sheet.
+      view.main !== "home";
     if (!open) return;
     event.preventDefault();
     this._navBack();
@@ -3076,7 +3123,6 @@ class KinoCard extends CardBase {
   /* -- actions ------------------------------------------------------- */
 
   async _activate(key) {
-    this._view.activityMenu = false;
     this._view.powerConfirm = false;
     this._render();
     try {
@@ -3852,16 +3898,26 @@ class KinoCard extends CardBase {
       this._view.scEdit ||
       this._view.abSetup ||
       demoRun;
-    // The light row sits above or below the activities, as configured — and
-    // in both places it is rendered outside everything the activity state
-    // switches on, so it is there whether the theater is on, off or busy.
-    const lights = this._renderLights();
+    // Room controls belong to the Start screen. They are how you set the
+    // room, and the room is what Home is for; on a pushed view they were
+    // 450px of a five-second task sitting on top of a sixty-second one
+    // (FR-79c). The report bands below them stay on every view: each is
+    // silent unless it has news, and a transition's ETA or the receipt for
+    // the tap you just made must not depend on where you happen to be.
+    const home = this._view.main === "home";
+    const lights = home ? this._renderLights() : "";
     const lightsAbove = (this._kino.lights || {}).position === "above";
+    // The bar is a sibling of .scroller, not a band inside it: .wrap is
+    // already a column flexbox with the footer pinned, so a flex:0 0 auto
+    // child above the scroller simply does not move while the grid does.
+    const bar = this._renderViewBar();
     this._container.innerHTML = [
+      bar,
       '<div class="scroller">',
       lightsAbove ? lights : "",
       this._renderActivitySelector(),
       lightsAbove ? "" : lights,
+      home ? "" : this._renderErrorPowerOff(),
       this._renderDeviceChips(),
       this._renderActionError(),
       this._renderDriftBanner(),
@@ -3884,6 +3940,7 @@ class KinoCard extends CardBase {
       this._view.abSetup ? this._renderAbSetup() : "",
       this._view.powerConfirm ? this._renderPowerConfirm() : "",
     ].join("");
+    this._container.classList.toggle("pushed", !!bar);
     this._signature = this._renderSignature();
     // Every render rebuilds the bars from the last state payload, which is up
     // to two seconds old. Writing the live numbers back in the same frame is
@@ -3951,6 +4008,7 @@ class KinoCard extends CardBase {
               : ""
           }
           <span class="nm">${this._esc(a.name)}</span>
+          <span class="chev" aria-hidden="true">›</span>
         </button>`
       )
       .join("");
@@ -3998,50 +4056,29 @@ class KinoCard extends CardBase {
   }
 
   _renderActivitySelector() {
-    // The Start screen has its own shape for this; every other screen keeps
-    // the compact chip, which is what makes a deep library view navigable.
-    if (this._view.main === "home") return this._renderActivitySection();
-    const k = this._kino;
-    const current = this._currentActivity;
-    const isOff = k.activity === k.offActivity && !k.progress;
-    // Deliberately not gated on `!k.progress` any more. A switch takes up to
-    // two minutes in this room, and picking the wrong activity is exactly
-    // what you notice during them — a chip that answers the tap by flipping
-    // its chevron and opening nothing was the worst of both.
-    const showGrid = isOff || this._view.activityMenu;
-    const compact = !isOff
-      ? `<button class="chipbtn" data-act="toggle-menu">
-           <span>${this._esc(
-             k.progress && k.targetActivity === k.offActivity
-               ? "Wird ausgeschaltet…"
-               : k.progress && current
-                 ? `Wechsel zu ${current.name}…`
-                 : current
-                   ? current.name
-                   : "—"
-           )}</span>
-           <span style="font-size:10px;color:var(--kino-text3)">${this._view.activityMenu ? "▴" : "▾"}</span>
-         </button>`
-      : "";
-    return `<div class="maxcol" style="padding:0 20px 12px">
-      ${compact}
-      ${showGrid ? `<div class="st-grid" style="margin-top:${compact ? 10 : 0}px">${this._activityTiles()}</div>` : ""}
-      ${
-        // Ausschalten used to be a button in the card's header, reachable
-        // from every screen. The header is gone, so this row carries it —
-        // and it hangs on the room's state, not on whether the dropdown
-        // happens to be open, or a failed shutdown would have nowhere to
-        // be retried from.
-        helpers.canPowerOff(k)
-          ? `<div class="st-list" style="margin-top:10px">
-               <button class="st-row" data-act="ask-power-off">
-                 <span class="ic">${POWER_ICON}</span>
-                 <span>Ausschalten</span>
-               </button>
-             </div>`
-          : ""
-      }
-    </div>`;
+    // Room controls are the Start screen's (FR-79c). There is no longer a
+    // screen that is "Home with something grown underneath", so there is
+    // nothing left for the compact chip to make navigable.
+    if (this._view.main !== "home") return "";
+    return this._renderActivitySection();
+  }
+
+  /**
+   * Ausschalten, on a pushed view, only while the room is in trouble.
+   *
+   * A failed shutdown reports the off activity while the room is still in
+   * whatever half-state the failure left it, and the retry lives in the
+   * Aktivität section — which is on Home. Three back-steps away is the
+   * wrong distance for that one, so it comes to wherever you are.
+   */
+  _renderErrorPowerOff() {
+    if (!this._kino || this._kino.state !== "error") return "";
+    return `<div class="maxcol" style="padding:0 20px 12px"><div class="st-list">
+      <button class="st-row" data-act="ask-power-off">
+        <span class="ic">${POWER_ICON}</span>
+        <span>Ausschalten</span>
+      </button>
+    </div></div>`;
   }
 
   /**
@@ -4314,11 +4351,7 @@ class KinoCard extends CardBase {
     // something to report — a transition, or a device that is not ready —
     // and stay put on every other screen, where they are the only device
     // status there is.
-    if (
-      this._view.main === "home" &&
-      !k.progress &&
-      keys.every((key) => (byKey[key] || {}).health === "ready")
-    ) {
+    if (!k.progress && keys.every((key) => (byKey[key] || {}).health === "ready")) {
       return "";
     }
     const chips = keys
@@ -4403,50 +4436,40 @@ class KinoCard extends CardBase {
   }
 
   _renderBody() {
-    if (this._view.main === "demos") return this._renderDemos();
-    if (this._view.main === "library") return this._renderLibrary();
-    const k = this._kino;
-    const current = this._currentActivity;
-    if (k.progress) {
-      // A transition used to blank the body. But the library needs no
-      // theater — it is right there with the room off (FR-41) — so it has
-      // no business disappearing for the two minutes the beamer warms up,
-      // which is exactly when somebody is looking for what to watch. What
-      // does have to wait is the *target's* body: a handoff card telling
-      // you to reach for the Shield's remote is a lie until the Shield is
-      // up, and a playback view has nothing to play yet.
-      this._ensureHomeRows();
-      return `<div class="maxcol">${this._renderLibraryHome()}</div>`;
-    }
+    const view = this._view;
+    if (view.main === "demos") return this._renderDemos();
+    if (view.main === "library") return this._renderLibrary();
+    if (view.main === "musik") return `<div class="maxcol">${this._renderMusik()}</div>`;
+    if (view.main === "source") return this._renderSourceView();
+    // Home is the room's shelves, whatever the room happens to be doing.
+    // The activity's own body is a place you go to now (FR-79b), so it no
+    // longer decides what Home shows — which is why the transition branch
+    // and the four bodyFor cases that used to live here are gone.
+    this._ensureHomeRows();
+    return `<div class="maxcol">${this._renderLibraryHome()}</div>`;
+  }
 
-    switch (helpers.bodyFor(current)) {
-      case "aus":
-        // FR-41: the library does not need the theater. Browsing, filtering
-        // and even the play button (which powers everything on, FR-55) work
-        // from here — which is why the off state gets the same body as the
-        // on one, and no banner explaining itself. "Kino ist ausgeschaltet"
-        // is already the line beside Aktivität, one section up, with every
-        // activity tile under it; a card repeating it took a fifth of the
-        // phone to say what the screen had said.
-        this._ensureHomeRows();
-        return `<div class="maxcol">${this._renderLibraryHome()}</div>`;
-      case "library":
-        this._ensureHomeRows();
-        return `<div class="maxcol">${this._renderLibraryHome()}</div>`;
-      case "musik":
-        return `<div class="maxcol">${this._renderMusik()}</div>`;
-      default:
-        // A proper card with icon and text instead of one floating line in
-        // an otherwise empty viewport (F10).
-        return `<div class="maxcol" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:14px;
-                    background:var(--kino-surface);border:1px solid var(--kino-border);box-sizing:border-box">
-          <ha-icon icon="${this._esc(current.icon || "mdi:remote-tv")}"
-            style="color:var(--kino-gold);flex-shrink:0;--mdc-icon-size:26px"></ha-icon>
-          <p style="font-size:13px;color:var(--kino-text2)">${this._esc(
-            current.handoffText || "Weiter auf der Fernbedienung des Geräts."
-          )}</p>
-        </div>`;
+  /**
+   * A handoff activity's own screen: Streaming and Steam.
+   *
+   * Pinned to `view.sourceKey`, never to the running activity — the room can
+   * change under you (a wall switch, the other user, a failed transition)
+   * and the screen you navigated to must not silently become a different one.
+   */
+  _renderSourceView() {
+    const activity = this._activityByKey(this._view.sourceKey);
+    if (!activity) {
+      return `<div class="maxcol"><p style="font-size:13px;color:var(--kino-text2)">
+        Diese Aktivität gibt es nicht mehr.</p></div>`;
     }
+    return `<div class="maxcol" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:12px;
+                background:var(--kino-surface);border:1px solid var(--kino-border);box-sizing:border-box">
+      <ha-icon icon="${this._esc(activity.icon || "mdi:remote-tv")}"
+        style="color:var(--kino-gold);flex-shrink:0;--mdc-icon-size:26px"></ha-icon>
+      <p style="font-size:13px;color:var(--kino-text2)">${this._esc(
+        activity.handoffText || "Weiter auf der Fernbedienung des Geräts."
+      )}</p>
+    </div>`;
   }
 
   /** One home row, or nothing at all when the row would be empty. */
@@ -4486,8 +4509,36 @@ class KinoCard extends CardBase {
     view.main = "library";
     view.category = category === "shows" ? "shows" : "movies";
     view.startTab = view.category;
+    // A push is a new screen: it opens at the top, not at whatever offset
+    // the screen you left happened to be scrolled to.
+    this._restoreScrollTo = 0;
     this._render();
     await this._loadLibrary();
+  }
+
+  /**
+   * Open the screen a source tile leads to.
+   *
+   * The tile still means "switch the room to this" — that has not changed,
+   * and the chevron only promises that you also land where that activity
+   * lives instead of watching it grow underneath the light scenes (FR-79b).
+   * A failed switch is reported by the bands and does not cancel the trip:
+   * the library in particular works with the theater off (FR-41).
+   */
+  async _openActivity(key) {
+    const view = this._view;
+    const activity = this._activityByKey(key);
+    const body = helpers.bodyFor(activity);
+    if (body === "aus") return;
+    if (body === "library") {
+      await this._openLibrary(view.startTab === "shows" ? "shows" : "movies");
+      return;
+    }
+    this._navPush();
+    view.main = body === "musik" ? "musik" : "source";
+    view.sourceKey = key;
+    this._restoreScrollTo = 0;
+    this._render();
   }
 
   async _openDemos() {
@@ -4496,6 +4547,7 @@ class KinoCard extends CardBase {
     view.main = "demos";
     view.demoTab = "clips";
     view.startTab = "demos";
+    this._restoreScrollTo = 0;
     this._render();
     await this._loadDemo(true);
   }
@@ -4519,7 +4571,12 @@ class KinoCard extends CardBase {
   }
 
   _renderLibraryHome() {
-    const resumeRow = this._homeRow("Weitersehen", this._resume, true);
+    // The design's one link into the library, on the shelf you resume from.
+    // It is the browse path: unlike a source tile it touches nothing in the
+    // room, so looking for something to watch never starts the beamer.
+    const openLink =
+      '<div class="st-link" data-act="open-start-tab">Bibliothek öffnen ›</div>';
+    const resumeRow = this._homeRow("Weitersehen", this._resume, true, openLink);
     const recentRow = this._homeRow("Zuletzt hinzugefügt", this._recent, false);
     // Favourites are a filter, so this row can hand the whole list over to
     // the library rather than stopping at the twelve that fit.
@@ -4529,30 +4586,20 @@ class KinoCard extends CardBase {
       true,
       '<div class="st-link" data-act="open-favorites">Alle anzeigen</div>'
     );
-    // Three destinations on one track. The lit segment is where you were
-    // last, and "Erkunden" opens exactly that — so the highlight is a
-    // promise about the link beside it, not a tab that switches this screen.
-    const tab = this._view.startTab;
-    const seg = (label, value, act, key) =>
-      `<button class="st-segbtn" data-act="${act}"${
-        key ? ` data-key="${key}"` : ""
-      } aria-pressed="${tab === value}">${label}</button>`;
+    // No tab strip, no search, no hint line: browsing is its own view now,
+    // and the shelves are the only content Home carries (FR-79c). The way
+    // in rides on the Weitersehen heading — but a library with nothing to
+    // resume must not be a library with no door, so when that shelf is
+    // empty the heading stands on its own.
     return `
-      <div class="st-sec">
-        <div class="st-sechead">
-          <div class="st-h">Filme &amp; Serien</div>
-          <div class="sp"></div>
-          <div class="st-link" data-act="open-start-tab">Erkunden</div>
-        </div>
-        <div class="st-seg">
-          ${seg("Filme", "movies", "open-library", "movies")}
-          ${seg("Serien", "shows", "open-library", "shows")}
-          ${seg("Demos", "demos", "open-demos")}
-        </div>
-        ${this._searchField()}
-        <div class="st-hint">Durchsuchen, filtern und sortieren.</div>
-      </div>
-      ${resumeRow}
+      ${
+        resumeRow ||
+        `<div class="st-sec"><div class="st-sechead">
+           <div class="st-h">Bibliothek</div>
+           <div class="sp"></div>
+           ${openLink}
+         </div></div>`
+      }
       ${favoriteRow}
       ${recentRow}`;
   }
@@ -4560,19 +4607,10 @@ class KinoCard extends CardBase {
   /* -- demo mode: the Demos tab --------------------------------------- */
 
   _renderDemos() {
+    // The header and the Clips / Showcases switch live in the bar now, with
+    // the three tabs — this is only what scrolls.
     const tab = this._view.demoTab;
-    const seg = (key, label) =>
-      `<button class="st-segbtn" data-act="demo-tab" data-key="${key}"
-         aria-pressed="${tab === key}">${label}</button>`;
-    return `
-      <div class="st-screenhead">
-        <button class="st-back" data-act="back-home">‹ Zurück</button>
-        <h2>Demos</h2>
-      </div>
-      <div class="st-seg" style="margin-bottom:12px">
-        ${seg("clips", "Clips")}${seg("showcases", "Showcases")}
-      </div>
-      ${tab === "clips" ? this._renderClipList() : this._renderShowcaseList()}`;
+    return tab === "clips" ? this._renderClipList() : this._renderShowcaseList();
   }
 
   /**
@@ -4875,49 +4913,107 @@ class KinoCard extends CardBase {
 
     return `
       <div class="maxcol">
-        <div class="st-screenhead">
-          <button class="st-back" data-act="back-home">‹ Zurück</button>
-          <h2>Bibliothek</h2>
-          <span class="st-meta" data-act="force-refresh"
-            style="cursor:pointer">${
-              this._view.refreshing ? "Wird aktualisiert…" : "Aktualisieren"
-            }</span>
-        </div>
-        <div class="st-seg" style="margin-bottom:10px">
-          <button class="st-segbtn" data-act="category" data-key="movies"
-            aria-pressed="${this._view.category === "movies"}">Filme</button>
-          <button class="st-segbtn" data-act="category" data-key="shows"
-            aria-pressed="${this._view.category === "shows"}">Serien</button>
-        </div>
-        <div style="margin-bottom:10px">${this._searchField()}</div>
-        <div class="row" style="margin-bottom:10px">
-          <button class="pill" style="flex:0 0 auto;height:44px" data-act="open-filters" aria-pressed="${count > 0}">
-            ${count ? `Filter · ${count}` : "Filter"}
-          </button>
-          <select data-field="sort" class="sortsel">
-            ${SORT_OPTIONS.map(
-              ([value, label]) =>
-                `<option value="${value}"${this._view.sort === value ? " selected" : ""}>${label}</option>`
-            ).join("")}
-          </select>
-          <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="sort-dir"
-            aria-pressed="${!!this._view.sortDir}" title="Sortierrichtung umkehren">
-            ${(this._view.sortDir || helpers.defaultSortDir(this._view.sort)) === "asc" ? "↑" : "↓"}
-          </button>
-          <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="view-mode"
-            title="Ansicht: ${(VIEW_MODES.find(([k]) => k === this._view.viewMode) || VIEW_MODES[0])[1]}">
-            ${VIEW_ICON}
-          </button>
-          <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="grid-size"
-            title="Kachelgröße: ${(GRID_SIZES.find(([k]) => k === this._view.gridSize) || GRID_SIZES[2])[1]}">
-            ${SIZE_ICON}
-          </button>
-        </div>
         ${chips ? `<div class="posterrow hscroll" style="margin-bottom:10px">${chips}</div>` : ""}
-        <div data-role="library-count"
-          style="font-size:11px;color:var(--kino-text3);margin-bottom:12px">${this._renderLibraryCount()}</div>
+        <div class="libcount" data-role="library-count">${this._renderLibraryCount()}<span class="sp"></span></div>
+        <div data-role="library-grid">${this._renderLibraryGrid()}</div>
+      </div>`;
+  }
+
+  /**
+   * The library's own bar — the one thing on the screen that does not scroll.
+   *
+   * It is a sibling of `.scroller`, not a band inside it, so ‹ Zurück, the
+   * title, the three tabs and the toolbar stay under Home Assistant's header
+   * while 753 posters move past underneath. That is the whole reason a
+   * toolbar exists at this size: it was the first thing to scroll away.
+   *
+   * The tab set is fixed at three and sits at the same y on all three, so
+   * the segment you just tapped is still under your thumb (FR-79b). Tapping
+   * one REPLACES the view rather than pushing, so ‹ Zurück always means
+   * Home, however long you spend switching tabs.
+   */
+  _renderViewBar() {
+    const view = this._view;
+    if (view.main === "home") return "";
+    const demos = view.main === "demos";
+    const library = view.main === "library";
+    const count = helpers.activeFilterCount(view.filters);
+    // A source view is pinned to the activity it was opened for, not to the
+    // one the room is running. Otherwise the two-second poll repaints the
+    // screen you are standing on as a different room the moment somebody
+    // reaches for a wall switch.
+    const source = view.sourceKey ? this._activityByKey(view.sourceKey) : null;
+    const title = demos
+      ? "Demos"
+      : library
+        ? "Bibliothek"
+        : (source && source.name) || "Kino";
+    const tab = (label, key, pressed) =>
+      `<button class="st-segbtn" data-act="lib-tab" data-key="${key}"
+         aria-pressed="${pressed}">${label}</button>`;
+    return `<div class="viewbar"><div class="maxcol">
+      <div class="st-screenhead">
+        <button class="st-back" data-act="back-home">‹ Zurück</button>
+        <h2>${this._esc(title)}</h2>
+        ${
+          library
+            ? `<span class="st-meta" data-act="force-refresh" style="cursor:pointer">${
+                view.refreshing ? "Wird aktualisiert…" : "Aktualisieren"
+              }</span>`
+            : ""
+        }
       </div>
-      <div data-role="library-grid">${this._renderLibraryGrid()}</div>`;
+      ${
+        // The tab set is fixed at three and sits at the same y whichever is
+        // lit — that is what issue (3) asks for. Musik and the handoff views
+        // are not tabs of it; they get the bar's back arrow and nothing else.
+        library || demos
+          ? `<div class="st-seg">
+               ${tab("Filme", "movies", !demos && view.category === "movies")}
+               ${tab("Serien", "shows", !demos && view.category === "shows")}
+               ${tab("Demos", "demos", demos)}
+             </div>`
+          : ""
+      }
+      ${
+        // The film toolbar has nothing behind it on the Demos tab: the eight
+        // sort options are catalogue sorts the media source resolves, and a
+        // clip list is not a catalogue. It gets its own two-up instead.
+        !library
+          ? demos
+            ? `<div class="st-seg">
+               <button class="st-segbtn" data-act="demo-tab" data-key="clips"
+                 aria-pressed="${view.demoTab === "clips"}">Clips</button>
+               <button class="st-segbtn" data-act="demo-tab" data-key="showcases"
+                 aria-pressed="${view.demoTab === "showcases"}">Showcases</button>
+             </div>`
+            : ""
+          : `${this._searchField()}
+             <div class="row">
+               <button class="pill" style="flex:0 0 auto;height:44px" data-act="open-filters" aria-pressed="${count > 0}">
+                 ${count ? `Filter · ${count}` : "Filter"}
+               </button>
+               <select data-field="sort" class="sortsel">
+                 ${SORT_OPTIONS.map(
+                   ([value, label]) =>
+                     `<option value="${value}"${view.sort === value ? " selected" : ""}>${label}</option>`
+                 ).join("")}
+               </select>
+               <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="sort-dir"
+                 aria-pressed="${!!view.sortDir}" title="Sortierrichtung umkehren">
+                 ${(view.sortDir || helpers.defaultSortDir(view.sort)) === "asc" ? "↑" : "↓"}
+               </button>
+               <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="view-mode"
+                 title="Ansicht: ${(VIEW_MODES.find(([k]) => k === view.viewMode) || VIEW_MODES[0])[1]}">
+                 ${VIEW_ICON}
+               </button>
+               <button class="pill" style="flex:0 0 auto;width:44px;height:44px;padding:0" data-act="grid-size"
+                 title="Kachelgröße: ${(GRID_SIZES.find(([k]) => k === view.gridSize) || GRID_SIZES[2])[1]}">
+                 ${SIZE_ICON}
+               </button>
+             </div>`
+      }
+    </div></div>`;
   }
 
   /**
@@ -6550,10 +6646,7 @@ class KinoCard extends CardBase {
     switch (act) {
       case "activate":
         await this._activate(key);
-        break;
-      case "toggle-menu":
-        view.activityMenu = !view.activityMenu;
-        this._render();
+        await this._openActivity(key);
         break;
       case "ask-power-off":
         view.powerConfirm = true;
@@ -6603,6 +6696,7 @@ class KinoCard extends CardBase {
         const filters = helpers.emptyFilters();
         filters.tags = ["Favoriten"];
         this._navPush();
+        this._restoreScrollTo = 0;
         view.main = "library";
         view.category = "movies";
         view.query = "";
@@ -6618,9 +6712,38 @@ class KinoCard extends CardBase {
         this._render();
         await this._loadLibrary();
         break;
+      // The three tabs of the library bar. Deliberately NOT a push: a tab is
+      // a lateral move inside one view, and stacking them would make ‹ Zurück
+      // walk back through every tab you tried.
+      case "lib-tab": {
+        const wasDemos = view.main === "demos";
+        if (key === "demos") {
+          if (wasDemos) break;
+          view.main = "demos";
+          view.demoTab = "clips";
+          view.startTab = "demos";
+          this._restoreScrollTo = 0;
+          this._render();
+          await this._loadDemo(true);
+          break;
+        }
+        if (!wasDemos && view.category === key) break;
+        view.main = "library";
+        view.category = key === "shows" ? "shows" : "movies";
+        view.startTab = view.category;
+        this._restoreScrollTo = 0;
+        this._render();
+        await this._loadLibrary();
+        break;
+      }
       case "back-home":
         this._navClose(() => {
           view.main = "home";
+          // Only reached when there is no step to pop — a deep link straight
+          // into the library. Without this the next visit opens filtered by
+          // a search nobody can see the field for.
+          view.query = "";
+          view.filters = helpers.emptyFilters();
         });
         break;
 
@@ -7254,20 +7377,8 @@ class KinoCard extends CardBase {
     // Incremental results as the user types, without a request per keystroke.
     this._searchTimer = setTimeout(() => {
       this._searchTimer = null;
-      // Typed on the Start screen, where there is no grid to fill: the third
-      // letter opens the one that can show it. Nothing fires before that —
-      // the guard above returns early while `_searchQuery()` is still empty
-      // — so the screen changes when the search becomes a search, not on the
-      // first keystroke.
-      if (this._view.main === "home") {
-        // Emptying the box is not a search. A back step out of the library
-        // restores the word that opened it (the nav snapshot was taken with
-        // it typed), so without this, clearing the field on the way past
-        // would open the library again on an empty query.
-        if (!this._searchQuery()) return;
-        this._openLibrary(this._view.startTab === "shows" ? "shows" : "movies");
-        return;
-      }
+      // The only search field is the library bar's, and the library is where
+      // its results go — so there is nothing to navigate to any more.
       this._loadLibrary();
     }, SEARCH_DEBOUNCE_MS);
   }

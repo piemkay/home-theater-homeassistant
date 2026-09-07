@@ -165,9 +165,11 @@ one-handed single column on a phone, a denser grid on a tablet.
 type: custom:kino-card
 ```
 
-The card is a **fixed-height frame** — header and transport bar stay put while
-the library scrolls between them, which is what keeps volume and playback
-reachable in a 300-title grid. It fills the viewport by default; `height:`
+The card is a **fixed-height frame** — the transport bar stays put, and in the
+library a bar of its own holds the tabs, the search field and the toolbar while
+only the grid scrolls between them. That is what keeps volume, playback and the
+filters reachable in a 753-title grid. It draws no header of its own: Home
+Assistant's is directly above it. It fills the viewport by default; `height:`
 takes any CSS length if you want something else:
 
 ```yaml
@@ -177,8 +179,10 @@ height: 70vh
 
 ### Activities and status
 
-Activity tiles — with their configured `mdi:` icons — to start or switch; a
-compact chip once something runs. During a transition the card shows the
+Activity tiles — with their configured `mdi:` icons — to start or switch. A
+tile switches the room *and* opens that activity's own screen, which is what
+the chevron promises; the room's status is the line beside the heading. During
+a transition the card shows the
 progress bar, the learned ETA and the bottleneck device; the device chips list
 **every device the plan touches**, stops included, so `Film → Streaming` shows
 the Zidoo going down with the same gold pulse shutdown has. A device whose
@@ -190,9 +194,11 @@ instead of offering a dead volume stepper.
 
 ### Light
 
-A light card the room is actually run from — configured in `settings.lights`,
-and there whether the theater is on, off or mid-switch, because dimming the
-room is not a reason to start the projector.
+A light section the room is actually run from — configured in
+`settings.lights`, and there whether the theater is on, off or mid-switch,
+because dimming the room is not a reason to start the projector. It lives on
+the Start screen with the other room controls: a five-second task has no
+business sitting on top of the sixty-second one of choosing a film.
 
 * **Scenes are the top row**: one tap sets the whole room. The tile of the
   scene the room is currently in is marked, and the header names it. Home
@@ -503,6 +509,22 @@ projector's cooldown behaviour, transcribed from ten days of recorded history.
 * [`docs/acceptance.md`](docs/acceptance.md) — the acceptance scenarios and how to run them
 
 ## Status
+
+Release **0.10 "Ort"**: browsing became a **place instead of a panel**. Tapping
+Bibliothek used to grow a second screen underneath the one you were on — the
+light scenes stayed above it, so 753 titles were browsed in the last third of a
+long scroll, and every trip back meant scrolling up past the room controls. Now
+a source tile switches the room *and* takes you to that activity's own screen,
+which carries its own bar under Home Assistant's header: ‹ Zurück, the title,
+three tabs that never change or move, and a search-and-filter toolbar that does
+not scroll — only the grid does. Home went back to being the state of the room:
+the four sources (with a chevron, because they lead somewhere now), the light
+scenes, and the three shelves, with one "Bibliothek öffnen" link that browses
+without touching the projector. Room controls are Home's alone; the room's
+*reports* — a transition's ETA, a drift warning, a failed action, the transport
+— follow you everywhere and stay silent until they have something to say.
+Reference design: [`design/kino-library-flow.dc.html`](design/kino-library-flow.dc.html).
+On top of:
 
 Release **0.9 "Start"**: the card's first screen redrawn to
 [`design/kino-start.dc.html`](design/kino-start.dc.html). It has no header of

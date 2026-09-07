@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#101113; font-family:Roboto, Helvetica, Arial, sans-serif; }
+  ::-webkit-scrollbar { width:0; height:0; }
+</style>
+</helmet>
+
+<section style="padding:56px 64px 96px; display:flex; flex-direction:column; gap:40px">
+
+  <div id="1a" style="display:flex; flex-direction:column; gap:32px">
+    <div style="display:flex; align-items:baseline; gap:16px">
+      <span style="font:500 12px/1 'Roboto Mono', monospace; color:#0b0c0e; background:#e89a2b; padding:7px 10px; border-radius:6px">1a</span>
+      <h1 style="margin:0; font:700 28px/1.2 Roboto, sans-serif; color:#f2f3f5">Library as a place, not a panel</h1>
+    </div>
+
+    <div style="display:flex; gap:56px; align-items:flex-start; flex-wrap:wrap">
+
+      <!-- ANNOTATIONS -->
+      <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+      <div style="width:420px; display:flex; flex-direction:column; gap:28px; padding-top:8px">
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <div style="font:700 11px/1 'Roboto Mono', monospace; letter-spacing:0.12em; color:#e89a2b">WHAT BREAKS TODAY</div>
+          <div style="font:400 15px/1.6 Roboto, sans-serif; color:#b9bfc7; text-wrap:pretty">
+            Tapping <b style="color:#f2f3f5">Filme</b>, <b style="color:#f2f3f5">Serien</b> or <b style="color:#f2f3f5">Erkunden</b> does not navigate — it grows a second screen underneath the one you are on. The room controls stay above it, so browsing 753 titles happens in the last third of a long scroll, and every return trip means scrolling back up past the light scenes.
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:14px">
+          <div style="font:700 11px/1 'Roboto Mono', monospace; letter-spacing:0.12em; color:#7f8792">FOUR CONCRETE ISSUES</div>
+
+          <div style="display:flex; gap:14px">
+            <div style="flex:0 0 24px; height:24px; border-radius:12px; background:#1c2129; color:#e89a2b; font:700 12px/24px Roboto; text-align:center">1</div>
+            <div style="font:400 14px/1.6 Roboto; color:#b9bfc7">Two navigation models in one view. The four source cards behave like a menu, but the result is rendered inline, so there is no screen to go back from — hence a <i>‹ Zurück</i> link floating in the middle of the page instead of in a bar.</div>
+          </div>
+          <div style="display:flex; gap:14px">
+            <div style="flex:0 0 24px; height:24px; border-radius:12px; background:#1c2129; color:#e89a2b; font:700 12px/24px Roboto; text-align:center">2</div>
+            <div style="font:400 14px/1.6 Roboto; color:#b9bfc7">Controls compete with content. Light scenes are a 5-second task; picking a film is a 60-second task. The short task permanently occupies the top of the long one.</div>
+          </div>
+          <div style="display:flex; gap:14px">
+            <div style="flex:0 0 24px; height:24px; border-radius:12px; background:#1c2129; color:#e89a2b; font:700 12px/24px Roboto; text-align:center">3</div>
+            <div style="font:400 14px/1.6 Roboto; color:#b9bfc7">Tabs shift and change between states — <i>Filme / Serien</i> in one, <i>Filme / Serien / Demos</i> in the other, at different scroll offsets. The segment you just tapped moves under your thumb.</div>
+          </div>
+          <div style="display:flex; gap:14px">
+            <div style="flex:0 0 24px; height:24px; border-radius:12px; background:#1c2129; color:#e89a2b; font:700 12px/24px Roboto; text-align:center">4</div>
+            <div style="font:400 14px/1.6 Roboto; color:#b9bfc7">Search, filter, sort and the grid all scroll away. With 753 titles the toolbar is the one thing that must stay reachable.</div>
+          </div>
+        </div>
+
+        <div style="height:1px; background:#22262c"></div>
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <div style="font:700 11px/1 'Roboto Mono', monospace; letter-spacing:0.12em; color:#e89a2b">THE PROPOSAL</div>
+          <div style="font:400 15px/1.6 Roboto; color:#b9bfc7; text-wrap:pretty">
+            Home stays what it is good at: the state of the room. It keeps the four sources, the light scenes, and one <b style="color:#f2f3f5">Weitersehen</b> shelf — the only content you actually resume from home.
+          </div>
+          <div style="font:400 15px/1.6 Roboto; color:#b9bfc7; text-wrap:pretty">
+            Browsing becomes its own view. The Home Assistant header (hamburger, <i>Kino</i>, ⋮) stays untouched on every view; directly beneath it the library view gets a sub-bar with <i>‹ Zurück</i> and the view title. The tab set is fixed at three, and search + filter + sort stick under the tabs while only the grid scrolls. Same cards, same radii, same orange.
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:10px; background:#15181d; border:1px solid #22262c; border-radius:14px; padding:18px 20px">
+          <div style="font:700 11px/1 'Roboto Mono', monospace; letter-spacing:0.12em; color:#7f8792">SIDE EFFECTS</div>
+          <div style="font:400 14px/1.6 Roboto; color:#b9bfc7">Home shortens by roughly one screen height. <i>Streaming</i>, <i>Musik</i> and <i>Steam</i> get the same push pattern for free. The grid gains ~340px of vertical room, so the first row is visible without scrolling.</div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- SCREEN A: HOME -->
+      <div style="display:flex; flex-direction:column; gap:14px; flex:0 0 auto">
+        <div style="width:390px; height:844px; background:#0b0c0e; border:1px solid #24282e; border-radius:40px; overflow:hidden; display:flex; flex-direction:column; color:#fff">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px 6px; font:500 14px/1 Roboto; color:#f2f3f5">
+            <span>13:37</span>
+            <span style="font:400 12px/1 'Roboto Mono', monospace; color:#b9bfc7">86</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:14px; padding:10px 18px 14px; border-bottom:1px solid #1b1e23">
+            <div style="position:relative; width:26px; height:18px; display:flex; flex-direction:column; justify-content:space-between">
+              <div style="height:2px; background:#e6e8eb; border-radius:1px"></div>
+              <div style="height:2px; width:70%; background:#e6e8eb; border-radius:1px"></div>
+              <div style="height:2px; background:#e6e8eb; border-radius:1px"></div>
+              <div style="position:absolute; top:-4px; right:-2px; width:9px; height:9px; border-radius:5px; background:#e89a2b"></div>
+            </div>
+            <div style="font:500 21px/1 Roboto; flex:1">Kino</div>
+            <div style="display:flex; flex-direction:column; gap:3px; padding:4px">
+              <div style="width:3px; height:3px; border-radius:2px; background:#b9bfc7"></div>
+              <div style="width:3px; height:3px; border-radius:2px; background:#b9bfc7"></div>
+              <div style="width:3px; height:3px; border-radius:2px; background:#b9bfc7"></div>
+            </div>
+          </div>
+
+          <div style="flex:1; overflow:hidden; padding:18px 18px 0; display:flex; flex-direction:column; gap:22px">
+
+            <div style="display:flex; flex-direction:column; gap:10px">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <span style="font:700 15px/1 Roboto">Aktivität</span>
+                <span style="display:flex; align-items:center; gap:7px; font:400 13px/1 Roboto; color:#8a9099"><span style="width:7px; height:7px; border-radius:4px; background:#4d545c"></span>Kino ist ausgeschaltet</span>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+                <div style="background:#171b21; border-radius:14px; padding:14px 14px; display:flex; align-items:center; gap:11px">
+                  <div style="width:19px; height:14px; border:2px solid #cfd4da; border-radius:2px"></div>
+                  <span style="font:500 15px/1 Roboto; flex:1">Bibliothek</span>
+                  <span style="font:400 15px/1 Roboto; color:#6b7280">›</span>
+                </div>
+                <div style="background:#171b21; border-radius:14px; padding:14px 14px; display:flex; align-items:center; gap:11px">
+                  <div style="width:19px; height:14px; border:2px solid #cfd4da; border-radius:3px"></div>
+                  <span style="font:500 15px/1 Roboto; flex:1">Streaming</span>
+                  <span style="font:400 15px/1 Roboto; color:#6b7280">›</span>
+                </div>
+                <div style="background:#171b21; border-radius:14px; padding:14px 14px; display:flex; align-items:center; gap:11px">
+                  <div style="width:15px; height:15px; border:2px solid #cfd4da; border-radius:8px"></div>
+                  <span style="font:500 15px/1 Roboto; flex:1">Musik</span>
+                  <span style="font:400 15px/1 Roboto; color:#6b7280">›</span>
+                </div>
+                <div style="background:#171b21; border-radius:14px; padding:14px 14px; display:flex; align-items:center; gap:11px">
+                  <div style="width:19px; height:12px; border:2px solid #cfd4da; border-radius:6px"></div>
+                  <span style="font:500 15px/1 Roboto; flex:1">Steam</span>
+                  <span style="font:400 15px/1 Roboto; color:#6b7280">›</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:10px">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <span style="font:700 15px/1 Roboto">Licht</span>
+                <span style="font:400 13px/1 Roboto; color:#8a9099">Manuell</span>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+                <div style="background:#171b21; border-radius:14px; padding:15px 14px; font:500 14px/1 Roboto">Bright Ambience</div>
+                <div style="background:#171b21; border-radius:14px; padding:15px 14px; font:500 14px/1 Roboto">Dark</div>
+                <div style="background:#171b21; border-radius:14px; padding:15px 14px; font:500 14px/1 Roboto">Kino Gaming</div>
+                <div style="background:#171b21; border-radius:14px; padding:15px 14px; font:500 14px/1 Roboto">Low Ambience</div>
+              </div>
+              <div style="background:#171b21; border-radius:14px; padding:2px 14px">
+                <div style="display:flex; align-items:center; gap:11px; padding:13px 0">
+                  <div style="width:15px; height:15px; border:2px solid #cfd4da; border-radius:9px"></div>
+                  <span style="font:500 14px/1 Roboto">Alles aus</span>
+                </div>
+                <div style="height:1px; background:#22262c"></div>
+                <div style="display:flex; align-items:center; padding:13px 0">
+                  <span style="font:500 14px/1 Roboto; flex:1">Einzelne Lichter</span>
+                  <span style="display:flex; align-items:center; gap:9px; font:400 14px/1 Roboto; color:#8a9099">alle aus<span style="display:block; width:6px; height:6px; border-right:2px solid #8a9099; border-bottom:2px solid #8a9099; transform:rotate(45deg) translate(-1px,-1px)"></span></span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:11px">
+              <div style="display:flex; align-items:baseline; justify-content:space-between">
+                <span style="font:700 15px/1 Roboto">Weitersehen</span>
+                <span style="font:500 13px/1 Roboto; color:#e89a2b">Bibliothek öffnen ›</span>
+              </div>
+              <div style="display:flex; gap:10px">
+                <sc-for list="{{ shelf }}" as="p" hint-placeholder-count="4">
+                  <div style="flex:0 0 96px; height:144px; border-radius:10px; overflow:hidden; position:relative; background:repeating-linear-gradient(135deg,#1d222a 0 6px,#232932 6px 12px); display:flex; align-items:flex-end; padding:8px">
+                    <span style="font:400 8px/1.3 'Roboto Mono', monospace; color:#6d747d">{{ p.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex; gap:5px; align-items:center; justify-content:center; padding-top:2px">
+                <div style="width:5px; height:5px; border-radius:3px; background:#3a4048"></div>
+                <div style="width:5px; height:5px; border-radius:3px; background:#3a4048"></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:center; padding:12px 0 10px">
+            <div style="width:120px; height:4px; border-radius:3px; background:#3a4048"></div>
+          </div>
+        </div>
+        <div style="font:400 13px/1.5 'Roboto Mono', monospace; color:#7f8792; width:390px">Home — room state only. Sources push, they don’t expand. One shelf, no tabs, no grid.</div>
+      </div>
+
+      <!-- SCREEN B: LIBRARY -->
+      <div style="display:flex; flex-direction:column; gap:14px; flex:0 0 auto">
+        <div style="width:390px; height:844px; background:#0b0c0e; border:1px solid #24282e; border-radius:40px; overflow:hidden; display:flex; flex-direction:column; color:#fff">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 24px 6px; font:500 14px/1 Roboto; color:#f2f3f5">
+            <span>13:37</span>
+            <span style="font:400 12px/1 'Roboto Mono', monospace; color:#b9bfc7">86</span>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:14px; padding:10px 18px 14px; border-bottom:1px solid #1b1e23">
+            <div style="position:relative; width:26px; height:18px; display:flex; flex-direction:column; justify-content:space-between">
+              <div style="height:2px; background:#e6e8eb; border-radius:1px"></div>
+              <div style="height:2px; width:70%; background:#e6e8eb; border-radius:1px"></div>
+              <div style="height:2px; background:#e6e8eb; border-radius:1px"></div>
+              <div style="position:absolute; top:-4px; right:-2px; width:9px; height:9px; border-radius:5px; background:#e89a2b"></div>
+            </div>
+            <div style="font:500 21px/1 Roboto; flex:1">Kino</div>
+            <div style="display:flex; flex-direction:column; gap:3px; padding:4px">
+              <div style="width:3px; height:3px; border-radius:2px; background:#b9bfc7"></div>
+              <div style="width:3px; height:3px; border-radius:2px; background:#b9bfc7"></div>
+              <div style="width:3px; height:3px; border-radius:2px; background:#b9bfc7"></div>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; background:#0f1115; border-bottom:1px solid #1b1e23">
+            <div style="display:flex; align-items:center; gap:12px; padding:12px 18px 12px">
+              <span style="display:flex; align-items:center; gap:6px; font:500 15px/1 Roboto; color:#e89a2b">‹ Zurück</span>
+              <div style="font:700 17px/1 Roboto; flex:1">Bibliothek</div>
+              <span style="font:500 14px/1 Roboto; color:#8a9099">Aktualisieren</span>
+            </div>
+            <div style="display:flex; gap:4px; margin:0 18px; padding:4px; background:#15191e; border-radius:12px">
+              <div style="flex:1; text-align:center; padding:10px 0; border-radius:9px; background:#242b34; font:500 14px/1 Roboto">Filme</div>
+              <div style="flex:1; text-align:center; padding:10px 0; border-radius:9px; font:500 14px/1 Roboto; color:#8a9099">Serien</div>
+              <div style="flex:1; text-align:center; padding:10px 0; border-radius:9px; font:500 14px/1 Roboto; color:#8a9099">Demos</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:9px; margin:12px 18px 0; background:#171b21; border-radius:12px; padding:12px 14px">
+              <div style="width:13px; height:13px; border:2px solid #6b7280; border-radius:8px"></div>
+              <span style="font:400 15px/1 Roboto; color:#6b7280">Titel suchen…</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:12px 18px 12px; overflow:hidden">
+              <div style="background:#171b21; border-radius:20px; padding:9px 14px; font:500 13px/1 Roboto; color:#cfd4da; white-space:nowrap">Filter</div>
+              <div style="background:#171b21; border-radius:20px; padding:9px 14px; display:flex; align-items:center; gap:8px; font:500 13px/1 Roboto; color:#cfd4da; white-space:nowrap">Neu hinzugefügt<span style="display:block; width:5px; height:5px; border-right:2px solid #8a9099; border-bottom:2px solid #8a9099; transform:rotate(45deg) translate(-1px,-1px)"></span></div>
+              <div style="background:#171b21; border-radius:20px; padding:9px 12px; font:500 13px/1 Roboto; color:#cfd4da">↓</div>
+              <div style="flex:1"></div>
+              <div style="display:flex; background:#171b21; border-radius:10px; padding:3px">
+                <div style="padding:7px 9px; border-radius:8px; background:#242b34; font:500 12px/1 Roboto">▦</div>
+                <div style="padding:7px 9px; border-radius:8px; font:500 12px/1 Roboto; color:#8a9099">☰</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex:1; overflow:hidden; padding:14px 18px 0; display:flex; flex-direction:column; gap:12px">
+            <div style="display:flex; align-items:baseline; justify-content:space-between">
+              <span style="font:400 13px/1 Roboto; color:#8a9099">753 Titel</span>
+              <span style="font:400 13px/1 Roboto; color:#8a9099">A–Z springen</span>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px 10px">
+              <sc-for list="{{ grid }}" as="p" hint-placeholder-count="9">
+                <div style="border-radius:10px; overflow:hidden; position:relative; aspect-ratio:2/3; background:repeating-linear-gradient(135deg,#1d222a 0 6px,#232932 6px 12px); display:flex; align-items:flex-end; padding:8px">
+                  <span style="font:400 8px/1.3 'Roboto Mono', monospace; color:#6d747d">{{ p.label }}</span>
+                  <sc-if value="{{ p.uhd }}" hint-placeholder-val="{{ true }}">
+                    <span style="position:absolute; top:7px; left:7px; background:rgba(8,9,11,0.82); color:#e6e8eb; font:500 9px/1 Roboto; padding:4px 5px; border-radius:4px">4K</span>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:center; padding:12px 0 10px">
+            <div style="width:120px; height:4px; border-radius:3px; background:#3a4048"></div>
+          </div>
+        </div>
+        <div style="font:400 13px/1.5 'Roboto Mono', monospace; color:#7f8792; width:390px">Bibliothek — separate view. HASS header untouched; sub-bar below it carries Zurück + title. Fixed 3 tabs, sticky toolbar, grid owns the scroll.</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showAnnotations&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Presentation&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const cols = this.props.gridColumns ?? 3;
+    const mk = (label, uhd) => ({ label, uhd });
+    return {
+      showAnnotations: this.props.showAnnotations ?? true,
+      gridColumns: cols,
+      shelf: [mk("poster", true), mk("poster", true), mk("poster", true), mk("poster", false)],
+      grid: [
+        mk("poster", true), mk("poster", false), mk("poster", true),
+        mk("poster", false), mk("poster", true), mk("poster", false),
+        mk("poster", true), mk("poster", true), mk("poster", false)
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
