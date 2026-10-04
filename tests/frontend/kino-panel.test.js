@@ -137,6 +137,105 @@ describe("slugify / uniqueKey", () => {
   });
 });
 
+describe("adding and removing devices (FR-135)", () => {
+  // Two types that between them exercise the clean case and the ambiguous one.
+  const APPLETV = {
+    type: "appletv",
+    driver: "generic",
+    roles: [
+      { role: "media_player", domains: ["media_player"], required: true },
+      { role: "power", domains: ["switch", "remote", "media_player"], required: false },
+    ],
+  };
+  const TRINNOV = {
+    type: "trinnov",
+    driver: "trinnov",
+    roles: [
+      { role: "power", domains: ["remote", "switch"], required: true },
+      { role: "media_player", domains: ["media_player"], required: true },
+      { role: "source", domains: ["select"], required: false },
+      { role: "preset", domains: ["select"], required: false },
+      { role: "upmixer", domains: ["select"], required: false },
+    ],
+  };
+
+  test("a clean device wires each role to the one entity that fits", () => {
+    const device = {
+      id: "dev1",
+      name: "Apple TV",
+      entities: [
+        { id: "media_player.appletv", domain: "media_player", name: "appletv" },
+        { id: "remote.appletv", domain: "remote", name: "appletv" },
+        { id: "binary_sensor.appletv_keyboard_focus", domain: "binary_sensor", name: "x" },
+      ],
+    };
+    const wired = panelHelpers.wireDevice(APPLETV, device);
+    // power prefers the remote over the media_player, by domain order.
+    assert.deepEqual(wired, {
+      media_player: "media_player.appletv",
+      power: "remote.appletv",
+    });
+  });
+
+  test("the role name breaks ties when several entities share a domain", () => {
+    const device = {
+      id: "dev2",
+      name: "Trinnov",
+      entities: [
+        { id: "remote.trinnov", domain: "remote", name: "Trinnov" },
+        { id: "media_player.trinnov", domain: "media_player", name: "Trinnov" },
+        { id: "select.trinnov_source", domain: "select", name: "Source" },
+        { id: "select.trinnov_preset", domain: "select", name: "Preset" },
+        { id: "select.trinnov_upmixer", domain: "select", name: "Upmixer" },
+      ],
+    };
+    const wired = panelHelpers.wireDevice(TRINNOV, device);
+    assert.equal(wired.source, "select.trinnov_source");
+    assert.equal(wired.preset, "select.trinnov_preset");
+    assert.equal(wired.upmixer, "select.trinnov_upmixer");
+    assert.equal(wired.power, "remote.trinnov");
+  });
+
+  test("an ambiguous optional role is left blank, never guessed", () => {
+    const device = {
+      id: "dev3",
+      name: "Trinnov",
+      entities: [
+        { id: "remote.t", domain: "remote", name: "T" },
+        { id: "media_player.t", domain: "media_player", name: "T" },
+        // Two selects that name no role: source/preset/upmixer stay empty.
+        { id: "select.t_one", domain: "select", name: "One" },
+        { id: "select.t_two", domain: "select", name: "Two" },
+      ],
+    };
+    const wired = panelHelpers.wireDevice(TRINNOV, device);
+    assert.equal(wired.power, "remote.t");
+    assert.equal(wired.media_player, "media_player.t");
+    assert.ok(!("source" in wired));
+    assert.ok(!("preset" in wired));
+  });
+
+  test("a device key never collides with an existing one", () => {
+    const doc = DOC();
+    doc.devices.appletv = { driver: "generic" };
+    assert.equal(panelHelpers.uniqueDeviceKey(doc, "Apple TV"), "apple_tv");
+    assert.equal(panelHelpers.uniqueDeviceKey(doc, "appletv"), "appletv_2");
+  });
+
+  test("removing a device strips it from every activity too", () => {
+    const doc = DOC();
+    assert.ok(doc.devices.trinnov);
+    assert.ok(doc.activities.film.devices.trinnov);
+    assert.ok(doc.activities.netflix.devices.trinnov);
+    panelHelpers.removeDevice(doc, "trinnov");
+    assert.ok(!doc.devices.trinnov);
+    assert.ok(!doc.activities.film.devices.trinnov);
+    assert.ok(!doc.activities.netflix.devices.trinnov);
+    // Other devices are untouched.
+    assert.ok(doc.devices.barco);
+  });
+});
+
 describe("errorsByPath", () => {
   test("groups validation errors by the thing they belong to", () => {
     const grouped = panelHelpers.errorsByPath([

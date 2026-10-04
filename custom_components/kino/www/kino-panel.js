@@ -16,7 +16,7 @@
  * app renders as a centered column; the navigation model never changes.
  */
 
-const PANEL_VERSION = "0.7.1";
+const PANEL_VERSION = "0.8.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -172,6 +172,73 @@ export const panelHelpers = {
     let n = 2;
     while (existing.has(`${base}_${n}`)) n += 1;
     return `${base}_${n}`;
+  },
+
+  /** A device key that does not collide with an existing device (FR-135). */
+  uniqueDeviceKey(document, base) {
+    const existing = new Set(panelHelpers.deviceKeys(document));
+    const slug = panelHelpers.slugify(base);
+    if (!existing.has(slug)) return slug;
+    let n = 2;
+    while (existing.has(`${slug}_${n}`)) n += 1;
+    return `${slug}_${n}`;
+  },
+
+  /**
+   * Wire a Home Assistant device's entities onto a driver's roles (FR-135).
+   *
+   * Each role lists the domains it accepts, in order of preference, so the
+   * first matching entity wins — a `power` role takes the remote over the
+   * media_player. When several entities share the winning domain (a Trinnov
+   * has three selects), the role name is matched against the entity id and
+   * friendly name to tell source from preset from upmixer; anything still
+   * ambiguous is left blank for the device editor to finish, never guessed.
+   */
+  wireDevice(type, haDevice) {
+    const entities = {};
+    const used = new Set();
+    const available = (haDevice && haDevice.entities) || [];
+    for (const role of (type && type.roles) || []) {
+      const domains = role.domains && role.domains.length ? role.domains : [];
+      let pick = null;
+      for (const domain of domains) {
+        const inDomain = available.filter(
+          (e) => e.domain === domain && !used.has(e.id)
+        );
+        if (!inDomain.length) continue;
+        if (inDomain.length === 1) {
+          pick = inDomain[0];
+          break;
+        }
+        // Several of the right kind: let the role name break the tie.
+        const needle = role.role.toLowerCase();
+        pick =
+          inDomain.find(
+            (e) =>
+              e.id.toLowerCase().includes(needle) ||
+              String(e.name || "").toLowerCase().includes(needle)
+          ) || null;
+        // A required single-slot role still takes the first of its best
+        // domain rather than nothing; an ambiguous extra role waits for a
+        // human.
+        if (!pick && role.required && domains.length === 1) pick = inDomain[0];
+        if (pick) break;
+      }
+      if (pick) {
+        entities[role.role] = pick.id;
+        used.add(pick.id);
+      }
+    }
+    return entities;
+  },
+
+  /** Remove a device, and every activity's reference to it (FR-135). */
+  removeDevice(document, deviceKey) {
+    if (document.devices) delete document.devices[deviceKey];
+    for (const activity of Object.values(document.activities || {})) {
+      if (activity.devices) delete activity.devices[deviceKey];
+    }
+    return document;
   },
 
   /** Group validation errors by the activity or device they belong to. */
@@ -721,8 +788,10 @@ class KinoPanel extends PanelBase {
     this._narrow = false;
     this._tab = "activities";
     //: The pushed detail screen:
-    //: {screen: "activity"|"device"|"log"|"raw"|"demo", key?}.
+    //: {screen: "activity"|"device"|"add-device"|"log"|"raw"|"demo", key?}.
     this._push = null;
+    //: The device type chosen on the add-device screen, before a device is.
+    this._addType = null;
     this._document = null;
     this._original = null;
     this._meta = {
@@ -731,6 +800,8 @@ class KinoPanel extends PanelBase {
       areas: [],
       knownDrivers: [],
       controlClasses: [],
+      deviceTypes: [],
+      haDevices: [],
     };
     this._errors = [];
     this._notice = null;
@@ -904,6 +975,8 @@ class KinoPanel extends PanelBase {
         areas: result.areas || [],
         knownDrivers: result.knownDrivers || [],
         controlClasses: result.controlClasses || [],
+        deviceTypes: result.deviceTypes || [],
+        haDevices: result.haDevices || [],
       };
       this._errors = result.errors || [];
       this._path = result.path;
@@ -1114,6 +1187,8 @@ class KinoPanel extends PanelBase {
       title = "Datei";
     } else if (push?.screen === "demo") {
       title = "Demos";
+    } else if (push?.screen === "add-device") {
+      title = "Gerät hinzufügen";
     }
 
     const lead = push
@@ -1210,6 +1285,7 @@ class KinoPanel extends PanelBase {
     const push = this._push;
     if (push?.screen === "activity") return this._renderActivityEdit(push.key);
     if (push?.screen === "device") return this._renderDeviceEdit(push.key);
+    if (push?.screen === "add-device") return this._renderAddDevice();
     if (push?.screen === "lights") return this._renderLights();
     if (push?.screen === "log") return this._renderLog();
     if (push?.screen === "raw") return this._renderRaw();
@@ -1445,7 +1521,8 @@ class KinoPanel extends PanelBase {
         bedient. Mit <strong>*</strong> markierte Rollen braucht der Treiber
         zwingend.</p>
       ${this._renderErrors()}
-      <div class="list">${rows.join("")}</div>`;
+      <div class="list">${rows.join("")}</div>
+      <button class="dashed" data-act="add-device" style="margin-top:14px">+ Gerät</button>`;
   }
 
   _renderDeviceEdit(key) {
@@ -1493,7 +1570,90 @@ class KinoPanel extends PanelBase {
       </div>
 
       ${device.driver === "zidoo" ? this._renderPathMap(key) : ""}
+
+      <div class="hactions">
+        <button class="danger" data-act="delete-device" data-key="${this._esc(key)}">✕ Gerät löschen</button>
+      </div>
     </div>`;
+  }
+
+  /**
+   * Add a device (FR-135): pick a type, then a real Home Assistant device.
+   *
+   * The type narrows the list to the integrations that device kind comes
+   * from — picking "Apple TV" offers only Apple TV devices — and selecting
+   * one wires its entities onto the driver's roles. Whatever cannot be placed
+   * unambiguously is left for the device editor, which opens straight after.
+   */
+  _renderAddDevice() {
+    const types = this._meta.deviceTypes || [];
+    const chosen = types.find((t) => t.type === this._addType) || null;
+
+    if (!chosen) {
+      const cards = types
+        .map(
+          (t) => `<button class="rowbtn" data-act="pick-device-type" data-key="${this._esc(
+            t.type
+          )}">
+            <span class="ic" aria-hidden="true"><ha-icon icon="${this._esc(t.icon)}"></ha-icon></span>
+            <span class="rowbody">
+              <span class="rowname">${this._esc(t.label)}</span>
+              <span class="rowsub">Treiber: ${this._esc(t.driver)}</span>
+            </span>
+            ${CHEVRON}
+          </button>`
+        )
+        .join("");
+      return `
+        <p class="sub">Welche Art von Gerät soll dazukommen? Danach wählst du
+          das passende Gerät aus Home Assistant — die Entities werden
+          automatisch verdrahtet.</p>
+        <div class="list">${cards}</div>`;
+    }
+
+    const devices = (this._meta.haDevices || []).filter((d) =>
+      (d.integrations || []).some((i) => chosen.integrations.includes(i))
+    );
+    const requiredRoles = (chosen.roles || []).filter((r) => r.required);
+
+    const rows = devices.length
+      ? devices
+          .map((d) => {
+            const wired = panelHelpers.wireDevice(chosen, d);
+            const wiredRoles = Object.keys(wired);
+            const missing = requiredRoles
+              .filter((r) => !wired[r.role])
+              .map((r) => r.role);
+            const summary = missing.length
+              ? `Rolle offen: ${missing.join(", ")} — im Editor ergänzen`
+              : wiredRoles.length
+                ? `Verdrahtet: ${wiredRoles.join(", ")}`
+                : "Keine Rolle automatisch zuzuordnen";
+            return `<button class="rowbtn" data-act="add-ha-device" data-key="${this._esc(d.id)}">
+              <span class="rowbody">
+                <span class="rowtitle">
+                  <span class="rowname">${this._esc(d.name)}</span>
+                  ${d.area ? `<span class="rowkey">${this._esc(d.area)}</span>` : ""}
+                </span>
+                <span class="rowsub ${missing.length ? "bad" : ""}">${this._esc(summary)}</span>
+              </span>
+              <span class="drvbadge">${this._esc((d.integrations || []).join(", "))}</span>
+              ${CHEVRON}
+            </button>`;
+          })
+          .join("")
+      : `<p class="sub" style="margin:0">Kein passendes Gerät in Home Assistant
+          gefunden (Integration: ${this._esc(chosen.integrations.join(", "))}).</p>`;
+
+    return `
+      <div class="card formcard">
+        <div class="frow"><span>Art</span>
+          <button class="ghost small" data-act="pick-device-type" data-key="">
+            ${this._esc(chosen.label)} · ändern</button></div>
+      </div>
+      <p class="sub">Welches ${this._esc(chosen.label)}-Gerät? Die Auswahl legt
+        das Gerät an und verdrahtet, was sich eindeutig zuordnen lässt.</p>
+      <div class="list">${rows}</div>`;
   }
 
   /**
@@ -2161,6 +2321,14 @@ class KinoPanel extends PanelBase {
         "Die Aktivität und ihre Geräteeinstellungen werden entfernt. Wirksam wird das erst mit „Speichern“.";
       confirmLabel = "Löschen";
       danger = true;
+    } else if (d.kind === "delete-device") {
+      title = `Gerät „${this._esc(
+        panelHelpers.deviceName(this._document, d.key)
+      )}“ löschen?`;
+      body =
+        "Das Gerät und seine Verdrahtung werden entfernt, und aus jeder Aktivität, die es nutzt. Wirksam wird das erst mit „Speichern“.";
+      confirmLabel = "Löschen";
+      danger = true;
     } else if (d.kind === "demo-import") {
       title = "Demo-Daten einspielen?";
       body =
@@ -2221,6 +2389,13 @@ class KinoPanel extends PanelBase {
     } else if (dialog.kind === "delete-activity") {
       delete this._document.activities[dialog.key];
       if (this._push?.screen === "activity" && this._push.key === dialog.key) {
+        this._push = null;
+      }
+      this._scheduleValidate();
+      this._render();
+    } else if (dialog.kind === "delete-device") {
+      panelHelpers.removeDevice(this._document, dialog.key);
+      if (this._push?.screen === "device" && this._push.key === dialog.key) {
         this._push = null;
       }
       this._scheduleValidate();
@@ -2411,6 +2586,51 @@ class KinoPanel extends PanelBase {
       case "add-activity":
         this._navPush();
         this._dialog = { kind: "add-activity" };
+        this._render();
+        break;
+      case "add-device":
+        this._navPush();
+        this._addType = null;
+        this._push = { screen: "add-device" };
+        this._notice = null;
+        this._render();
+        break;
+      case "pick-device-type":
+        // An empty key is the "andere Art" reset back to the type chooser.
+        this._addType = key || null;
+        this._render();
+        break;
+      case "add-ha-device": {
+        const type = (this._meta.deviceTypes || []).find(
+          (t) => t.type === this._addType
+        );
+        const haDevice = (this._meta.haDevices || []).find((d) => d.id === key);
+        if (!type || !haDevice) {
+          this._notify("error", "Gerät nicht gefunden.");
+          break;
+        }
+        const newKey = panelHelpers.uniqueDeviceKey(
+          this._document,
+          haDevice.name || type.label || type.type
+        );
+        this._document.devices = this._document.devices || {};
+        this._document.devices[newKey] = {
+          driver: type.driver,
+          name: haDevice.name || type.label,
+          entities: panelHelpers.wireDevice(type, haDevice),
+        };
+        // Straight into the editor — a new device is created to be checked
+        // over and its open roles finished.
+        this._navPush();
+        this._push = { screen: "device", key: newKey };
+        this._scheduleValidate();
+        this._notify("ok", "Gerät angelegt — wirksam nach dem Speichern.");
+        this._render();
+        break;
+      }
+      case "delete-device":
+        this._navPush();
+        this._dialog = { kind: "delete-device", key };
         this._render();
         break;
       case "duplicate-activity": {
