@@ -10,19 +10,6 @@ import { test, describe } from "node:test";
 
 import { helpers, KinoCard } from "../../custom_components/kino/www/kino-card.js";
 
-// `sourceKey` has to ride in NAV_KEYS beside `main`; the list is module-private,
-// so this reads it back off a snapshot the way the card does.
-const NAV_KEYS_HAS_SOURCE = (() => {
-  const c = Object.create(KinoCard.prototype);
-  c._view = { sourceKey: "steam", filters: null, main: "source" };
-  c._nav = [];
-  c._library = {};
-  c._scrollTop = () => 0;
-  c._pushBrowserEntry = () => {};
-  c._navPush();
-  return "sourceKey" in c._nav[0].view;
-})();
-
 describe("formatTime", () => {
   test("renders minutes and seconds below an hour", () => {
     assert.equal(helpers.formatTime(0), "0:00");
@@ -971,17 +958,43 @@ describe("the Start screen (FR-78)", () => {
     assert.match(c._renderBody(), /Zuletzt hinzugefügt/);
   });
 
-  /** A handoff card is a place you are taken to, pinned to the tile you tapped. */
-  test("a source view is pinned to the tile that opened it, not to the room", () => {
-    const c = card({ activity: "musik" }, { main: "source", sourceKey: "netflix" });
-    const html = c._renderBody();
+  /**
+   * Streaming, Steam and Musik no longer open a screen; the handoff line
+   * rides on Home as a band while that activity is running or pending.
+   */
+  test("the handoff band shows the running activity's line on Home", () => {
+    const c = card({ activity: "netflix" });
+    const html = c._renderActivityHint();
+    assert.match(html, /class="st-hint"/);
     assert.match(html, /Fernbedienung der Shield/);
     assert.match(html, /mdi:television-play/);
   });
 
-  test("a source view whose activity was deleted says so instead of blanking", () => {
-    const c = card({}, { main: "source", sourceKey: "gone" });
-    assert.match(c._renderBody(), /Diese Aktivität gibt es nicht mehr/);
+  test("the handoff band follows the pending activity during a switch", () => {
+    const c = card({ activity: "aus", targetActivity: "netflix" });
+    assert.match(c._renderActivityHint(), /Fernbedienung der Shield/);
+  });
+
+  test("Musik without its own line still gets a sensible band", () => {
+    const c = card({ activity: "musik" });
+    const html = c._renderActivityHint();
+    assert.match(html, /class="st-hint"/);
+    assert.match(html, /Spotify|Tidal/);
+  });
+
+  test("the handoff band is silent when the room is off or in the library", () => {
+    assert.equal(card({ activity: "aus" })._renderActivityHint(), "");
+    // A media activity is the library — a place you go to, not a handoff.
+    const lib = card({
+      activity: "film",
+      activities: [{ key: "film", name: "Bibliothek", controlClass: "full", media: "jellyfin" }],
+    });
+    assert.equal(lib._renderActivityHint(), "");
+  });
+
+  test("the handoff band is Home's alone — never on a pushed view", () => {
+    const c = card({ activity: "netflix" }, { main: "library" });
+    assert.equal(c._renderActivityHint(), "");
   });
 
   /**
@@ -1173,15 +1186,10 @@ describe("the screens under the segmented control speak one language", () => {
   });
 
   test("every pushed view gets the same bar, and Home gets none", () => {
-    for (const patch of [
-      { main: "library" },
-      { main: "demos" },
-      { main: "musik", sourceKey: "musik" },
-      { main: "source", sourceKey: "netflix" },
-    ]) {
+    // The library and the Demos tab are the only pushed views left.
+    for (const patch of [{ main: "library" }, { main: "demos" }]) {
       const c = library();
       Object.assign(c._view, patch);
-      c._kino = { ...c._kino, activities: [{ key: "netflix", name: "Streaming" }, { key: "musik", name: "Musik" }] };
       const bar = c._renderViewBar();
       assert.match(bar, /class="viewbar"/, `no bar on ${patch.main}`);
       assert.match(bar, /class="st-back" data-act="back-home"/);
@@ -1229,17 +1237,20 @@ describe("pushed views", () => {
     return c;
   };
 
-  test("a source tile opens the screen its activity lives on", async () => {
-    for (const [key, main] of [
-      ["film", "library"],
-      ["musik", "musik"],
-      ["netflix", "source"],
-      ["steam", "source"],
-    ]) {
+  test("only the library tile opens a screen; the others switch and stay", async () => {
+    // The library is the one place you go to. Streaming, Steam and Musik are
+    // room states: their tile switches the room (handled by `activate`) and
+    // leaves you on Home, so `_openActivity` pushes nothing.
+    const lib = card();
+    await lib._openActivity("film");
+    assert.equal(lib._view.main, "library");
+    assert.equal(lib._nav.length, 1, "the library did not push a step to come back from");
+
+    for (const key of ["netflix", "steam", "musik"]) {
       const c = card();
       await c._openActivity(key);
-      assert.equal(c._view.main, main, `${key} landed on the wrong screen`);
-      assert.equal(c._nav.length, 1, `${key} did not push a step to come back from`);
+      assert.equal(c._view.main, "home", `${key} left Home`);
+      assert.equal(c._nav.length, 0, `${key} pushed an empty screen`);
     }
   });
 
@@ -1248,15 +1259,6 @@ describe("pushed views", () => {
     await c._openActivity("aus");
     assert.equal(c._view.main, "home");
     assert.equal(c._nav.length, 0);
-  });
-
-  test("a handoff view remembers which tile opened it", async () => {
-    const c = card();
-    await c._openActivity("steam");
-    assert.equal(c._view.sourceKey, "steam");
-    // ...and it travels with `main` through a snapshot, or a back step would
-    // land on a screen pinned to the wrong activity.
-    assert.ok(NAV_KEYS_HAS_SOURCE, "sourceKey must be in NAV_KEYS");
   });
 
   test("a push opens at the top, not at the offset you left behind", async () => {
@@ -1680,6 +1682,43 @@ describe("playing sheet", () => {
     assert.match(html, /data-act="seek-to"/);
     assert.doesNotMatch(html, /Handlung/);
     assert.doesNotMatch(html, /Besetzung/);
+  });
+
+  /**
+   * A series carries on from one episode to the next, so the ⏮/⏭ transport
+   * means "episode", resolved from the catalogue (FR-50b). A film has no such
+   * neighbour, so it shows no ⏮/⏭ at all.
+   */
+  test("a film shows no episode transport — the player has no next", () => {
+    const html = playingCard()._renderPlayingSheet();
+    assert.doesNotMatch(html, /play-episode-nav/);
+    assert.doesNotMatch(html, /Folge/);
+  });
+
+  test("an episode offers previous and next when the series has them", () => {
+    const card = playingCard({
+      item: { id: "e2", title: "Zwei", kind: "episode", seriesId: "s1" },
+      nowPlaying: { id: "e2" },
+    });
+    card._view.playingPrevEp = { id: "e1", episodeCode: "S01E01", title: "Eins" };
+    card._view.playingNextEp = { id: "e3", episodeCode: "S01E03", title: "Drei" };
+    const html = card._renderPlayingSheet();
+    assert.match(html, /data-act="play-episode-nav" data-key="e1"/);
+    assert.match(html, /data-act="play-episode-nav" data-key="e3"/);
+    assert.match(html, /Vorherige Folge — S01E01 · Eins/);
+    assert.match(html, /Nächste Folge — S01E03 · Drei/);
+  });
+
+  test("the ends of a series grey the button out instead of hiding it", () => {
+    const card = playingCard({
+      item: { id: "e1", title: "Eins", kind: "episode", seriesId: "s1" },
+      nowPlaying: { id: "e1" },
+    });
+    card._view.playingPrevEp = null; // the first episode
+    card._view.playingNextEp = { id: "e2", episodeCode: "S01E02", title: "Zwei" };
+    const html = card._renderPlayingSheet();
+    assert.match(html, /disabled aria-disabled="true" title="Keine vorherige Folge"/);
+    assert.match(html, /data-act="play-episode-nav" data-key="e2"/);
   });
 
   test("the scrubber shows the remaining time, not just the two ends", () => {

@@ -11,7 +11,7 @@
  * an Authorization header.
  */
 
-const CARD_VERSION = "0.10.0";
+const CARD_VERSION = "0.11.0";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — kept free of DOM so they can be unit-tested (NFR-6). *
@@ -1099,6 +1099,16 @@ button { font-family: inherit; }
 .st-row[aria-expanded="true"] .chev { transform: rotate(180deg); }
 .st-div { height: 1px; background: var(--kino-hairline); margin: 0 14px; }
 
+/* The handoff band: the line a Streaming / Steam / Musik tile used to open a
+   whole screen for, now a report under the activity tiles on Home. */
+.st-hint {
+  display: flex; align-items: center; gap: 12px; box-sizing: border-box;
+  margin-bottom: 24px; padding: 14px 16px; border-radius: 12px;
+  background: var(--kino-surface); border: 1px solid var(--kino-border);
+}
+.st-hint ha-icon { color: var(--kino-gold); flex-shrink: 0; --mdc-icon-size: 22px; }
+.st-hint span { font-size: 13px; color: var(--kino-text2); line-height: 1.5; }
+
 /* The segmented control. Three destinations on one track; the pressed one
    is the one Erkunden opens, so the highlight is a promise, not a tab. */
 .st-seg {
@@ -1895,9 +1905,6 @@ function readStoredCollapse() {
  */
 const NAV_KEYS = [
   "main",
-  // Which activity a pushed source view is for. Paired with `main`, so it
-  // has to travel with it through a snapshot.
-  "sourceKey",
   "category",
   "query",
   "sort",
@@ -1982,8 +1989,6 @@ class KinoCard extends CardBase {
     this._view = {
       main: "home",
       category: "movies",
-      // The activity a pushed source view was opened for — see _renderSourceView.
-      sourceKey: null,
       // Which segment of the library bar's Filme / Serien / Demos control
       // is lit, and therefore where "Erkunden" goes. Deliberately outside
       // NAV_KEYS: it is where you last went, not a step you can walk back
@@ -2020,9 +2025,12 @@ class KinoCard extends CardBase {
       playingItemId: null,
       playingItem: null,
       playingSimilar: null,
+      // The episode before and after the one playing, for the ⏮/⏭ transport
+      // on a series. Resolved from the catalogue, not the player (FR-50b).
+      playingPrevEp: null,
+      playingNextEp: null,
       playingOverviewOpen: false,
       powerConfirm: false,
-      musikSource: "spotify",
       refreshing: false,
       // -- demo mode ---------------------------------------------------
       demoTab: "clips",
@@ -2974,6 +2982,8 @@ class KinoCard extends CardBase {
     this._view.playingItemId = id;
     this._view.playingItem = null;
     this._view.playingSimilar = null;
+    this._view.playingPrevEp = null;
+    this._view.playingNextEp = null;
     this._view.playingOverviewOpen = false;
     if (!id) {
       this._renderPassive();
@@ -2985,11 +2995,38 @@ class KinoCard extends CardBase {
       // The film may already have ended while this was on the wire.
       if (this._view.playingItemId !== id) return;
       this._view.playingItem = item;
+      // A series carries on from here: resolve the neighbouring episodes so
+      // the transport can jump between them (FR-50b).
+      if (item && item.kind === "episode") this._loadAdjacentEpisodes(id);
     } catch (err) {
       // Not fatal: the transport is what this view is for, and it needs
       // nothing from the catalogue.
       this._view.playingItem = null;
     }
+    this._renderPassive();
+  }
+
+  /**
+   * The episode before and after the one playing, for the ⏮/⏭ transport.
+   *
+   * Resolved from the series' own order so a jump works across season
+   * boundaries and needs no playlist on the player, which has none.
+   */
+  async _loadAdjacentEpisodes(itemId) {
+    const pair = await Promise.all(
+      ["prev", "next"].map((direction) =>
+        this._ws({
+          type: "kino/library/adjacent_episode",
+          item_id: itemId,
+          direction,
+        })
+          .then((result) => result.item || null)
+          .catch(() => null)
+      )
+    );
+    // The film may have changed while these were on the wire.
+    if (this._view.playingItemId !== itemId) return;
+    [this._view.playingPrevEp, this._view.playingNextEp] = pair;
     this._renderPassive();
   }
 
@@ -3916,6 +3953,7 @@ class KinoCard extends CardBase {
       '<div class="scroller">',
       lightsAbove ? lights : "",
       this._renderActivitySelector(),
+      this._renderActivityHint(),
       lightsAbove ? "" : lights,
       home ? "" : this._renderErrorPowerOff(),
       this._renderDeviceChips(),
@@ -4439,8 +4477,6 @@ class KinoCard extends CardBase {
     const view = this._view;
     if (view.main === "demos") return this._renderDemos();
     if (view.main === "library") return this._renderLibrary();
-    if (view.main === "musik") return `<div class="maxcol">${this._renderMusik()}</div>`;
-    if (view.main === "source") return this._renderSourceView();
     // Home is the room's shelves, whatever the room happens to be doing.
     // The activity's own body is a place you go to now (FR-79b), so it no
     // longer decides what Home shows — which is why the transition branch
@@ -4450,26 +4486,34 @@ class KinoCard extends CardBase {
   }
 
   /**
-   * A handoff activity's own screen: Streaming and Steam.
+   * The handoff band on Home (FR-79b, revised).
    *
-   * Pinned to `view.sourceKey`, never to the running activity — the room can
-   * change under you (a wall switch, the other user, a failed transition)
-   * and the screen you navigated to must not silently become a different one.
+   * Streaming, Steam and Musik no longer open a screen of their own, so the
+   * line that told you to reach for the Shield's remote — or that the Zidoo
+   * is primed for Spotify — now rides on Home, under the activity tiles,
+   * while such an activity is the running or the pending one. It is a
+   * report, not a control: it says nothing when the room is off, in the
+   * library's own activity, or mid-nothing.
    */
-  _renderSourceView() {
-    const activity = this._activityByKey(this._view.sourceKey);
-    if (!activity) {
-      return `<div class="maxcol"><p style="font-size:13px;color:var(--kino-text2)">
-        Diese Aktivität gibt es nicht mehr.</p></div>`;
-    }
-    return `<div class="maxcol" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:12px;
-                background:var(--kino-surface);border:1px solid var(--kino-border);box-sizing:border-box">
-      <ha-icon icon="${this._esc(activity.icon || "mdi:remote-tv")}"
-        style="color:var(--kino-gold);flex-shrink:0;--mdc-icon-size:26px"></ha-icon>
-      <p style="font-size:13px;color:var(--kino-text2)">${this._esc(
-        activity.handoffText || "Weiter auf der Fernbedienung des Geräts."
-      )}</p>
-    </div>`;
+  _renderActivityHint() {
+    if (this._view.main !== "home") return "";
+    const k = this._kino;
+    // The pending activity wins while a switch is in flight — that is the
+    // room you are heading into, and its instruction is the one that matters.
+    const key = k.targetActivity || k.activity;
+    const activity = this._activityByKey(key);
+    if (!activity || key === k.offActivity) return "";
+    const body = helpers.bodyFor(activity);
+    if (body !== "handoff" && body !== "musik") return "";
+    const text =
+      activity.handoffText ||
+      (body === "musik"
+        ? "Weiter in der Spotify- oder Tidal-App — der Zidoo ist als Wiedergabeziel vorbereitet."
+        : "Weiter auf der Fernbedienung des Geräts.");
+    return `<div class="maxcol" style="padding:0 20px"><div class="st-hint">
+      <ha-icon icon="${this._esc(activity.icon || "mdi:remote-tv")}"></ha-icon>
+      <span>${this._esc(text)}</span>
+    </div></div>`;
   }
 
   /** One home row, or nothing at all when the row would be empty. */
@@ -4517,28 +4561,22 @@ class KinoCard extends CardBase {
   }
 
   /**
-   * Open the screen a source tile leads to.
+   * What a source tile opens, after it has switched the room.
    *
-   * The tile still means "switch the room to this" — that has not changed,
-   * and the chevron only promises that you also land where that activity
-   * lives instead of watching it grow underneath the light scenes (FR-79b).
-   * A failed switch is reported by the bands and does not cancel the trip:
-   * the library in particular works with the theater off (FR-41).
+   * Only the library is a place you go to. Streaming, Steam and Musik are
+   * room states, not screens: their tile switches the room and leaves you on
+   * Home, where a slim band carries the handoff line. The pushed screen they
+   * used to open held nothing but that one banner over a page of black — the
+   * empty view this release removes. A failed switch is reported by the bands
+   * and does not cancel the trip; the library in particular works with the
+   * theater off (FR-41).
    */
   async _openActivity(key) {
     const view = this._view;
     const activity = this._activityByKey(key);
-    const body = helpers.bodyFor(activity);
-    if (body === "aus") return;
-    if (body === "library") {
+    if (helpers.bodyFor(activity) === "library") {
       await this._openLibrary(view.startTab === "shows" ? "shows" : "movies");
-      return;
     }
-    this._navPush();
-    view.main = body === "musik" ? "musik" : "source";
-    view.sourceKey = key;
-    this._restoreScrollTo = 0;
-    this._render();
   }
 
   async _openDemos() {
@@ -4750,23 +4788,6 @@ class KinoCard extends CardBase {
     </div>`;
   }
 
-  _renderMusik() {
-    const src = this._view.musikSource;
-    return `
-      <div class="row" style="margin-bottom:14px">
-        <button class="pill" style="flex:1;height:40px" data-act="musik-source" data-key="spotify" aria-pressed="${src === "spotify"}">Spotify</button>
-        <button class="pill" style="flex:1;height:40px" data-act="musik-source" data-key="tidal" aria-pressed="${src === "tidal"}">Tidal</button>
-      </div>
-      <div style="padding:18px;border-radius:16px;background:var(--kino-surface);border:1px solid var(--kino-border)">
-        ${
-          src === "spotify"
-            ? `<div class="label">Spotify Connect · Zidoo</div>
-               <p style="font-size:13px;color:var(--kino-text2)">Der Zidoo ist als Wiedergabeziel vorbereitet. Titelwahl über die Spotify-Integration.</p>`
-            : `<p style="font-size:13px;color:var(--kino-text2);text-align:center">Weiter in der Tidal-App auf deinem Handy — der Zidoo ist als Wiedergabeziel vorbereitet.</p>`
-        }
-      </div>`;
-  }
-
   /**
    * The meta line under a tile: `2016 · 106 Min · ★7.2 · 🍅84 %`.
    *
@@ -4938,16 +4959,9 @@ class KinoCard extends CardBase {
     const demos = view.main === "demos";
     const library = view.main === "library";
     const count = helpers.activeFilterCount(view.filters);
-    // A source view is pinned to the activity it was opened for, not to the
-    // one the room is running. Otherwise the two-second poll repaints the
-    // screen you are standing on as a different room the moment somebody
-    // reaches for a wall switch.
-    const source = view.sourceKey ? this._activityByKey(view.sourceKey) : null;
-    const title = demos
-      ? "Demos"
-      : library
-        ? "Bibliothek"
-        : (source && source.name) || "Kino";
+    // The library and the Demos tab are the only pushed views left, so the
+    // bar's title is one of exactly two things.
+    const title = demos ? "Demos" : "Bibliothek";
     const tab = (label, key, pressed) =>
       `<button class="st-segbtn" data-act="lib-tab" data-key="${key}"
          aria-pressed="${pressed}">${label}</button>`;
@@ -5776,12 +5790,12 @@ class KinoCard extends CardBase {
           <span data-time="duration">${helpers.formatTime(duration)}</span>
         </div>
         <div class="transport">
-          <button class="round" data-act="transport" data-key="media_previous_track" title="Vorheriger Titel">⏮</button>
+          ${this._episodeNavButton("prev", item)}
           <button class="seek" data-act="seek" data-key="-${SEEK_STEP_SECONDS}" title="10 Sekunden zurück">⟲${SEEK_STEP_SECONDS}</button>
           <button class="play" data-act="transport" data-key="${playing ? "media_pause" : "media_play"}"
             title="${playing ? "Pause" : "Weiter"}">${playing ? "⏸" : "▶"}</button>
           <button class="seek" data-act="seek" data-key="${SEEK_STEP_SECONDS}" title="10 Sekunden vor">${SEEK_STEP_SECONDS}⟳</button>
-          <button class="round" data-act="transport" data-key="media_next_track" title="Nächster Titel">⏭</button>
+          ${this._episodeNavButton("next", item)}
         </div>
         <div class="audiopanel">${this._renderVolumeRow(true)}</div>
         ${this._renderPlayerSelects()}
@@ -5791,6 +5805,33 @@ class KinoCard extends CardBase {
         ${this._renderCaptureBlock()}
       </div>
     </div>`;
+  }
+
+  /**
+   * One ⏮/⏭ transport button, resolved to an episode (FR-50b).
+   *
+   * Only a series shows these — a film has no "next" the player could play,
+   * so for a film the slot is empty and the transport is just ⟲ ▶ ⟳. For an
+   * episode the button is live when a neighbour exists and greyed when the
+   * season (or the series) runs out, so the edges are visible, not missing.
+   */
+  _episodeNavButton(direction, item) {
+    if (!item || item.kind !== "episode") return "";
+    const ep =
+      direction === "prev" ? this._view.playingPrevEp : this._view.playingNextEp;
+    const glyph = direction === "prev" ? "⏮" : "⏭";
+    if (!ep) {
+      const title =
+        direction === "prev" ? "Keine vorherige Folge" : "Keine nächste Folge";
+      return `<button class="round" disabled aria-disabled="true" title="${title}">${glyph}</button>`;
+    }
+    const label = [ep.episodeCode, ep.title].filter(Boolean).join(" · ");
+    const title =
+      (direction === "prev" ? "Vorherige Folge" : "Nächste Folge") +
+      (label ? ` — ${label}` : "");
+    return `<button class="round" data-act="play-episode-nav" data-key="${this._esc(
+      ep.id
+    )}" title="${this._esc(title)}">${glyph}</button>`;
   }
 
   /** `2014 · 1 Std 53 Min · Sci-Fi, Action` under the title. */
@@ -7164,6 +7205,7 @@ class KinoCard extends CardBase {
         await this._loadEpisodes();
         break;
       case "play-episode":
+      case "play-episode-nav":
         await this._play(key, false);
         break;
       case "play":
@@ -7208,10 +7250,6 @@ class KinoCard extends CardBase {
         break;
       case "load-more":
         await this._loadLibrary(true);
-        break;
-      case "musik-source":
-        view.musikSource = key;
-        this._render();
         break;
       default:
         break;
