@@ -236,6 +236,51 @@ describe("adding and removing devices (FR-135)", () => {
   });
 });
 
+describe("renaming keys (FR-115)", () => {
+  test("renameObjectKey keeps every key's position", () => {
+    const out = panelHelpers.renameObjectKey({ a: 1, b: 2, c: 3 }, "b", "x");
+    assert.deepEqual(Object.keys(out), ["a", "x", "c"]);
+    assert.equal(out.x, 2);
+  });
+
+  test("renaming an activity key moves off_activity with it", () => {
+    const doc = DOC();
+    doc.settings.off_activity = "netflix";
+    panelHelpers.renameActivityKey(doc, "netflix", "shield");
+    assert.ok(doc.activities.shield);
+    assert.ok(!doc.activities.netflix);
+    assert.equal(doc.settings.off_activity, "shield");
+    // Order is preserved: aus, film, shield.
+    assert.deepEqual(Object.keys(doc.activities), ["aus", "film", "shield"]);
+  });
+
+  test("renaming a device key rewrites it in every activity", () => {
+    const doc = DOC();
+    assert.ok(doc.activities.film.devices.trinnov);
+    assert.ok(doc.activities.netflix.devices.trinnov);
+    panelHelpers.renameDeviceKey(doc, "trinnov", "processor");
+    assert.ok(doc.devices.processor);
+    assert.ok(!doc.devices.trinnov);
+    assert.ok(doc.activities.film.devices.processor);
+    assert.ok(!doc.activities.film.devices.trinnov);
+    // The whole requirement survives the move, nested settings and all.
+    assert.deepEqual(doc.activities.netflix.devices.processor, {
+      power: true,
+      settings: { source: "shield" },
+    });
+    // An activity that never used it is untouched.
+    assert.deepEqual(doc.activities.aus.devices, {});
+  });
+
+  test("renaming to the same key is a no-op", () => {
+    const doc = DOC();
+    const before = JSON.stringify(doc);
+    panelHelpers.renameActivityKey(doc, "film", "film");
+    panelHelpers.renameDeviceKey(doc, "barco", "barco");
+    assert.equal(JSON.stringify(doc), before);
+  });
+});
+
 describe("errorsByPath", () => {
   test("groups validation errors by the thing they belong to", () => {
     const grouped = panelHelpers.errorsByPath([

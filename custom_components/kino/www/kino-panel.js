@@ -16,7 +16,7 @@
  * app renders as a centered column; the navigation model never changes.
  */
 
-const PANEL_VERSION = "0.8.0";
+const PANEL_VERSION = "0.8.1";
 
 /* ------------------------------------------------------------------ *
  * Pure helpers — no DOM, so they can be unit-tested.                  *
@@ -237,6 +237,55 @@ export const panelHelpers = {
     if (document.devices) delete document.devices[deviceKey];
     for (const activity of Object.values(document.activities || {})) {
       if (activity.devices) delete activity.devices[deviceKey];
+    }
+    return document;
+  },
+
+  /** Rebuild an object with one key renamed, keeping every key's position. */
+  renameObjectKey(object, oldKey, newKey) {
+    const out = {};
+    for (const key of Object.keys(object || {})) {
+      out[key === oldKey ? newKey : key] = object[key];
+    }
+    return out;
+  },
+
+  /**
+   * Rename an activity's config key, keeping its place and its references.
+   *
+   * The key is the id a hand-written file and the card's activity select use;
+   * `off_activity` points at one by key, so it moves with the rename. The
+   * display name is a separate field and is left alone.
+   */
+  renameActivityKey(document, oldKey, newKey) {
+    if (!document.activities || oldKey === newKey) return document;
+    document.activities = panelHelpers.renameObjectKey(
+      document.activities,
+      oldKey,
+      newKey
+    );
+    if (document.settings && document.settings.off_activity === oldKey) {
+      document.settings.off_activity = newKey;
+    }
+    return document;
+  },
+
+  /** Rename a device's config key, in the device list and in every activity. */
+  renameDeviceKey(document, oldKey, newKey) {
+    if (!document.devices || oldKey === newKey) return document;
+    document.devices = panelHelpers.renameObjectKey(
+      document.devices,
+      oldKey,
+      newKey
+    );
+    for (const activity of Object.values(document.activities || {})) {
+      if (activity.devices && oldKey in activity.devices) {
+        activity.devices = panelHelpers.renameObjectKey(
+          activity.devices,
+          oldKey,
+          newKey
+        );
+      }
     }
     return document;
   },
@@ -490,6 +539,15 @@ header { flex-shrink: 0; }
 .errors .escope { margin-top: 8px; font-size: 12px; font-weight: 700; }
 .errors .eline { font-size: 11.5px; color: var(--kino-text2); margin-top: 3px; line-height: 1.5; }
 
+/* The warning card: amber, never blocking — a valid config with a note. */
+.warnings {
+  border: 1px solid var(--kino-gold); background: oklch(0.78 0.15 75 / 0.12);
+  border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+}
+.warnings strong { font-size: 12.5px; color: var(--kino-gold); }
+.warnings .escope { margin-top: 8px; font-size: 12px; font-weight: 700; }
+.warnings .eline { font-size: 11.5px; color: var(--kino-text2); margin-top: 3px; line-height: 1.5; }
+
 /* -- shared bits ------------------------------------------------------ */
 .sub { font-size: 12px; color: var(--kino-text2); margin: 0 0 14px; line-height: 1.5; }
 .mono { font-family: ui-monospace, monospace; }
@@ -720,6 +778,10 @@ textarea { min-height: 420px; line-height: 1.55; resize: vertical; border-radius
   display: flex; gap: 10px; padding: 10px 20px;
 }
 .savebar .grow { flex: 1; }
+.savebar .savenote {
+  max-width: 720px; margin: 0 auto; box-sizing: border-box;
+  padding: 8px 20px 0; font-size: 11.5px; color: var(--kino-gold); font-weight: 700;
+}
 
 nav { flex-shrink: 0; border-top: 1px solid var(--kino-border); background: var(--kino-surface); }
 .tabs {
@@ -804,6 +866,9 @@ class KinoPanel extends PanelBase {
       haDevices: [],
     };
     this._errors = [];
+    //: Non-blocking advisories (e.g. a device no activity uses yet). Shown in
+    //: amber; they never stop a save.
+    this._warnings = [];
     this._notice = null;
     this._board = null;
     this._log = null;
@@ -979,6 +1044,7 @@ class KinoPanel extends PanelBase {
         haDevices: result.haDevices || [],
       };
       this._errors = result.errors || [];
+      this._warnings = result.warnings || [];
       this._path = result.path;
       this._rawText = JSON.stringify(this._document, null, 2);
     } catch (err) {
@@ -1000,6 +1066,7 @@ class KinoPanel extends PanelBase {
           document: this._document,
         });
         this._errors = result.errors || [];
+        this._warnings = result.warnings || [];
         this._render();
       } catch (err) {
         // Keep the last known errors; a broken connection is not "valid".
@@ -1016,6 +1083,7 @@ class KinoPanel extends PanelBase {
         document: this._document,
       });
       this._errors = result.errors;
+      this._warnings = result.warnings || [];
       if (result.saved) {
         this._original = panelHelpers.clone(this._document);
         this._notify("ok", "Gespeichert und übernommen — kein Neustart nötig.");
@@ -1223,14 +1291,34 @@ class KinoPanel extends PanelBase {
    * about the thing being edited.
    */
   _renderErrors(scope = null) {
-    let errors = this._errors;
+    return this._renderAdvisories(this._errors, scope, {
+      cls: "errors",
+      heading: (n) => `${n} Fehler in der Konfiguration`,
+    });
+  }
+
+  /**
+   * The amber counterpart of the error card: valid, saved all the same, but
+   * worth noticing — a device no activity uses yet, for instance. It never
+   * blocks a save (the save bar stays enabled).
+   */
+  _renderWarnings(scope = null) {
+    return this._renderAdvisories(this._warnings, scope, {
+      cls: "warnings",
+      heading: (n) => (n === 1 ? "1 Hinweis" : `${n} Hinweise`),
+    });
+  }
+
+  /** Shared layout for the error and the warning card. */
+  _renderAdvisories(all, scope, { cls, heading }) {
+    let items = all || [];
     if (scope) {
-      errors = errors.filter(
+      items = items.filter(
         (e) => e.path === scope || e.path.startsWith(`${scope}.`)
       );
     }
-    if (!errors.length) return "";
-    const grouped = panelHelpers.errorsByPath(errors);
+    if (!items.length) return "";
+    const grouped = panelHelpers.errorsByPath(items);
     const scopeLabel = (group) => {
       const [head, key] = group.split(".");
       if (head === "activities" && key) {
@@ -1241,8 +1329,8 @@ class KinoPanel extends PanelBase {
       }
       return `<span class="mono">${this._esc(group)}</span>`;
     };
-    return `<div class="errors">
-      <strong>${errors.length} Fehler in der Konfiguration</strong>
+    return `<div class="${cls}">
+      <strong>${heading(items.length)}</strong>
       ${Object.entries(grouped)
         .map(
           ([group, list]) => `
@@ -1260,12 +1348,18 @@ class KinoPanel extends PanelBase {
 
   _renderSaveBar() {
     if (!this._dirty) return "";
-    return `<div class="savebar"><div class="inner">
-      <button class="ghost" data-act="revert">Verwerfen</button>
-      <button class="primary grow" data-act="save" ${this._saving ? "disabled" : ""}>
-        ${this._saving ? "Speichert…" : "Speichern"}
-      </button>
-    </div></div>`;
+    // One document, one save: the bar acts on the whole configuration, not
+    // the form on screen. Saying so stops "Speichern" being misread as
+    // "save this device/activity".
+    return `<div class="savebar">
+      <div class="savenote">Noch nicht gespeichert — betrifft die ganze Konfiguration</div>
+      <div class="inner">
+        <button class="ghost" data-act="revert">Verwerfen</button>
+        <button class="primary grow" data-act="save" ${this._saving ? "disabled" : ""}>
+          ${this._saving ? "Speichert…" : "Alle Änderungen speichern"}
+        </button>
+      </div>
+    </div>`;
   }
 
   _renderTabBar() {
@@ -1348,10 +1442,15 @@ class KinoPanel extends PanelBase {
 
     return `<div class="stack">
       ${this._renderErrors(`activities.${key}`)}
+      ${this._renderWarnings(`activities.${key}`)}
       <div class="card formcard">
         <div class="frow"><span>Name</span>
           <input data-field="activity-name" data-activity="${this._esc(key)}"
             value="${this._esc(activity.name || "")}"></div>
+        <div class="frow"><span>Schlüssel</span>
+          <input class="mono" data-field="activity-key" data-activity="${this._esc(key)}"
+            value="${this._esc(key)}" ${key === offActivity ? "disabled title=\"Der Schlüssel der Aus-Aktivität ist fest\"" : ""}
+            aria-label="Schlüssel der Aktivität"></div>
         <div class="frow"><span>Steuerungsklasse</span>
           <select data-field="control-class" data-activity="${this._esc(key)}">
             ${this._meta.controlClasses
@@ -1521,6 +1620,7 @@ class KinoPanel extends PanelBase {
         bedient. Mit <strong>*</strong> markierte Rollen braucht der Treiber
         zwingend.</p>
       ${this._renderErrors()}
+      ${this._renderWarnings()}
       <div class="list">${rows.join("")}</div>
       <button class="dashed" data-act="add-device" style="margin-top:14px">+ Gerät</button>`;
   }
@@ -1540,6 +1640,7 @@ class KinoPanel extends PanelBase {
 
     return `<div class="stack">
       ${this._renderErrors(`devices.${key}`)}
+      ${this._renderWarnings(`devices.${key}`)}
       <div class="card formcard">
         <div class="frow"><span>Treiber</span>
           <select data-field="device-driver" data-device="${this._esc(key)}">
@@ -1553,6 +1654,9 @@ class KinoPanel extends PanelBase {
         <div class="frow"><span>Name</span>
           <input data-field="device-name" data-device="${this._esc(key)}"
             value="${this._esc(device.name || "")}"></div>
+        <div class="frow"><span>Schlüssel</span>
+          <input class="mono" data-field="device-key" data-device="${this._esc(key)}"
+            value="${this._esc(key)}" aria-label="Schlüssel des Geräts"></div>
       </div>
 
       <div class="seclabel">ENTITIES</div>
@@ -2849,6 +2953,34 @@ class KinoPanel extends PanelBase {
       case "device-number":
         doc.devices[device][key] = Number(el.value);
         break;
+      case "activity-key": {
+        // The key is the id, not the name: slugify it, keep it unique, and
+        // carry its references (off_activity, the open screen) along.
+        const next = panelHelpers.slugify(el.value);
+        if (!next || next === activity) {
+          this._render();
+          return;
+        }
+        const unique = panelHelpers.uniqueKey(doc, next);
+        panelHelpers.renameActivityKey(doc, activity, unique);
+        if (this._push?.screen === "activity" && this._push.key === activity) {
+          this._push.key = unique;
+        }
+        break;
+      }
+      case "device-key": {
+        const next = panelHelpers.slugify(el.value);
+        if (!next || next === device) {
+          this._render();
+          return;
+        }
+        const unique = panelHelpers.uniqueDeviceKey(doc, next);
+        panelHelpers.renameDeviceKey(doc, device, unique);
+        if (this._push?.screen === "device" && this._push.key === device) {
+          this._push.key = unique;
+        }
+        break;
+      }
       default:
         return;
     }
