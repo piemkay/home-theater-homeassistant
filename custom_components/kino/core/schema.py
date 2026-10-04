@@ -646,16 +646,20 @@ def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
 
     lights = _parse_lights(settings.get("lights"), errors)
 
-    # A device no activity ever mentions is dead weight and almost certainly a
-    # typo; flag it rather than let it sit there doing nothing (FR-115).
-    mentioned = {d for a in activities.values() for d in a.devices}
-    errors.extend(
-        ConfigError(f"devices.{key}", "wird von keiner Aktivität verwendet")
-        for key in sorted(set(devices) - mentioned)
-    )
-
     if errors:
         raise ConfigErrors(errors)
+
+    # A device no activity mentions is usually a half-finished addition — you
+    # add a device in order to use it — so it is a non-blocking warning, not a
+    # save-blocking error: the panel's "+ Gerät" flow adds a device as its own
+    # step, and forcing it into an activity before it could be saved was the
+    # wrong coupling (FR-115). It is still worth noticing (a stray device in a
+    # hand-edited file is likely a typo), so it is surfaced in amber.
+    mentioned = {d for a in activities.values() for d in a.devices}
+    warnings = tuple(
+        (f"devices.{key}", "wird von keiner Aktivität verwendet")
+        for key in sorted(set(devices) - mentioned)
+    )
 
     return KinoConfig(
         devices=devices,
@@ -670,6 +674,7 @@ def validate(document: Any) -> KinoConfig:  # noqa: C901, PLR0912, PLR0915
         drift_debounce_seconds=20.0 if debounce is None else debounce,
         preferred_audio_language=settings.get("preferred_audio_language"),
         preferred_subtitle_language=settings.get("preferred_subtitle_language"),
+        warnings=warnings,
     )
 
 

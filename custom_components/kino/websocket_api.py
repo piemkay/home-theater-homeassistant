@@ -821,6 +821,13 @@ def _errors_payload(err: ConfigErrors) -> list[dict[str, str]]:
     return [{"path": e.path, "message": e.message} for e in err.errors]
 
 
+def _warnings_payload(config: Any) -> list[dict[str, str]]:
+    """Turn a valid config's non-blocking advisories into editor anchors."""
+    if config is None:
+        return []
+    return [{"path": path, "message": message} for path, message in config.warnings]
+
+
 def _driver_catalogue(coordinator: Any) -> dict[str, Any]:
     """Per configured device: which settings it accepts, and their values.
 
@@ -1083,9 +1090,10 @@ async def ws_config_get(hass, connection, msg) -> None:
         return
 
     errors: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
     if document is not None:
         try:
-            validate(document)
+            warnings = _warnings_payload(validate(document))
         except ConfigErrors as err:
             errors = _errors_payload(err)
 
@@ -1096,6 +1104,7 @@ async def ws_config_get(hass, connection, msg) -> None:
             "document": document,
             "path": str(store.path),
             "errors": errors,
+            "warnings": warnings,
             "drivers": _driver_catalogue(coordinator),
             "entities": _entity_catalogue(hass),
             "knownDrivers": sorted(KNOWN_DRIVERS),
@@ -1117,13 +1126,16 @@ async def ws_config_get(hass, connection, msg) -> None:
 async def ws_config_validate(hass, connection, msg) -> None:
     """Validate without saving, so the editor can flag errors before you commit."""
     try:
-        validate(msg["document"])
+        config = validate(msg["document"])
     except ConfigErrors as err:
         connection.send_result(
-            msg["id"], {"valid": False, "errors": _errors_payload(err)}
+            msg["id"], {"valid": False, "errors": _errors_payload(err), "warnings": []}
         )
         return
-    connection.send_result(msg["id"], {"valid": True, "errors": []})
+    connection.send_result(
+        msg["id"],
+        {"valid": True, "errors": [], "warnings": _warnings_payload(config)},
+    )
 
 
 @websocket_api.websocket_command(
@@ -1135,11 +1147,11 @@ async def ws_config_save(hass, connection, msg) -> None:
     """Validate, write and apply — without a Home Assistant restart (FR-115)."""
     store = ConfigStore(hass)
     try:
-        await store.async_save(msg["document"])
+        config = await store.async_save(msg["document"])
     except ConfigErrors as err:
         # Nothing was written, so the running configuration is untouched.
         connection.send_result(
-            msg["id"], {"saved": False, "errors": _errors_payload(err)}
+            msg["id"], {"saved": False, "errors": _errors_payload(err), "warnings": []}
         )
         return
     except OSError as err:
@@ -1153,7 +1165,9 @@ async def ws_config_save(hass, connection, msg) -> None:
     for entry_id in list(hass.data.get(DOMAIN, {})):
         await hass.config_entries.async_reload(entry_id)
 
-    connection.send_result(msg["id"], {"saved": True, "errors": []})
+    connection.send_result(
+        msg["id"], {"saved": True, "errors": [], "warnings": _warnings_payload(config)}
+    )
 
 
 @websocket_api.websocket_command({vol.Required("type"): "kino/device_board"})

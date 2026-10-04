@@ -84,20 +84,27 @@ def test_off_activity_may_not_power_anything_on(config_doc):
     assert any("Aus-Aktivität" in e.message for e in excinfo.value.errors)
 
 
-def test_device_used_by_no_activity_is_flagged(config_doc):
+def test_device_used_by_no_activity_is_a_warning_not_an_error(config_doc):
+    # A device added but not yet wired into an activity is the normal state
+    # right after "+ Gerät"; it must not block saving (FR-115). It is still
+    # surfaced, as a non-blocking warning.
     config_doc["devices"]["appletv"] = {
         "driver": "generic",
         "name": "Apple TV",
         "entities": {"media_player": "media_player.appletv"},
     }
 
-    with pytest.raises(ConfigErrors) as excinfo:
-        validate(config_doc)
+    config = validate(config_doc)
 
     assert any(
-        e.path == "devices.appletv" and "keiner Aktivität" in e.message
-        for e in excinfo.value.errors
+        path == "devices.appletv" and "keiner Aktivität" in message
+        for path, message in config.warnings
     )
+
+
+def test_a_used_device_raises_no_warning(config_doc):
+    config = validate(config_doc)
+    assert all("keiner Aktivität" not in message for _, message in config.warnings)
 
 
 def test_dependency_cycles_are_rejected(config_doc):

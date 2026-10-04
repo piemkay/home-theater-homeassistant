@@ -252,6 +252,11 @@ class KinoConfig:
     drift_debounce_seconds: float = 20.0
     preferred_audio_language: str | None = None
     preferred_subtitle_language: str | None = None
+    #: Non-blocking advisories from validation, each a (path, message) pair.
+    #: The config is still valid and is saved and loaded all the same; the
+    #: panel surfaces these in amber rather than as a save-blocking error
+    #: (FR-115) — e.g. a device added but not yet used by any activity.
+    warnings: tuple[tuple[str, str], ...] = ()
 
     @property
     def off(self) -> ActivityDef:
