@@ -119,6 +119,9 @@ class MediaItem:
     kind: str = "movie"
     #: Series context, set on seasons and episodes (FR-50a / F2).
     series_name: str | None = None
+    #: The series an episode or season belongs to, for episode-to-episode
+    #: navigation from the playback view (FR-50b).
+    series_id: str | None = None
     #: Episode number within its season, or a season's own number.
     index_number: int | None = None
     #: The season an episode belongs to.
@@ -202,6 +205,7 @@ class MediaItem:
             "title": self.title,
             "kind": self.kind,
             "seriesName": self.series_name,
+            "seriesId": self.series_id,
             "indexNumber": self.index_number,
             "parentIndex": self.parent_index,
             "unplayedCount": self.unplayed_count,

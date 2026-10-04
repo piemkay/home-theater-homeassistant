@@ -557,6 +557,7 @@ EPISODE = {
     "IndexNumber": 8,
     "ParentIndexNumber": 3,
     "SeriesName": "House of the Dragon",
+    "SeriesId": "series1",
     "RunTimeTicks": 33_600_000_000,  # 56 minutes
     "Overview": "Ein Bote überbringt eine Nachricht.",
     "Path": "/mnt/nfs/series/HotD/S03E08.mkv",
@@ -604,8 +605,12 @@ class TestSeries:
         episode = (await _client(session).episodes("series1"))[0]
 
         assert episode.display_title == "House of the Dragon · S03E08"
+        # The series id travels with the episode so the playback view can ask
+        # for the next and previous one (FR-50b).
+        assert episode.series_id == "series1"
         payload = episode.as_dict()
         assert payload["seriesName"] == "House of the Dragon"
+        assert payload["seriesId"] == "series1"
         assert payload["episodeCode"] == "S03E08"
 
     async def test_a_series_entry_stays_a_show(self):

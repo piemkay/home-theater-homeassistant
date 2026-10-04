@@ -27,6 +27,7 @@ from .const import DOMAIN
 from .core.model import ControlClass
 from .core.schema import KNOWN_DRIVERS, ConfigErrors, validate
 from .demo.websocket import register_demo_commands
+from .devices import DRIVERS
 from .devices.zidoo import ZidooDriver
 from .http import async_get_signer
 from .media.base import (
@@ -66,6 +67,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_similar)
     websocket_api.async_register_command(hass, ws_seasons)
     websocket_api.async_register_command(hass, ws_episodes)
+    websocket_api.async_register_command(hass, ws_adjacent_episode)
     websocket_api.async_register_command(hass, ws_resume)
     websocket_api.async_register_command(hass, ws_facets)
     websocket_api.async_register_command(hass, ws_facet_counts)
@@ -290,6 +292,44 @@ async def ws_episodes(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "library_error", str(err))
         return
     connection.send_result(msg["id"], {"items": [item.as_dict() for item in items]})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kino/library/adjacent_episode",
+        vol.Required("item_id"): str,
+        vol.Required("direction"): vol.In(["next", "prev"]),
+    }
+)
+@websocket_api.async_response
+async def ws_adjacent_episode(hass, connection, msg) -> None:
+    """Return the episode before or after this one, across seasons (FR-50b).
+
+    The playback view's ⏮/⏭ for a series: resolve the neighbour from the
+    series' own episode order rather than the player, which has no playlist.
+    """
+    media = _first_media(hass)
+    if media is None:
+        connection.send_error(msg["id"], "no_media", "Keine Bibliothek verbunden.")
+        return
+    try:
+        current = await media.item(msg["item_id"])
+        if current is None or current.kind != "episode" or not current.series_id:
+            connection.send_result(msg["id"], {"item": None})
+            return
+        episodes = await media.episodes(current.series_id)
+    except MediaBackendError as err:
+        connection.send_error(msg["id"], "library_error", str(err))
+        return
+    ids = [episode.id for episode in episodes]
+    try:
+        index = ids.index(current.id)
+    except ValueError:
+        connection.send_result(msg["id"], {"item": None})
+        return
+    neighbour = index + (1 if msg["direction"] == "next" else -1)
+    item = episodes[neighbour] if 0 <= neighbour < len(episodes) else None
+    connection.send_result(msg["id"], {"item": item.as_dict() if item else None})
 
 
 @websocket_api.websocket_command(
@@ -823,6 +863,148 @@ _EDITABLE_DOMAINS = (
 )
 
 
+#: The devices this theater is built from, offered when adding one (FR-135).
+#: A *type* is more specific than a driver — the Shield and the Apple TV are
+#: both the generic media_player driver — so each carries its own label, icon
+#: and the Home Assistant integrations whose devices are candidates for it.
+#: The roles (which entity fills which slot) come from the driver class, so a
+#: newly added device is wired up the same way an existing one is edited.
+DEVICE_TYPES: tuple[dict[str, Any], ...] = (
+    {
+        "type": "beamer",
+        "label": "Beamer (Barco)",
+        "driver": "barco",
+        "icon": "mdi:projector",
+        "integrations": ("barco_pulse",),
+    },
+    {
+        "type": "trinnov",
+        "label": "Trinnov Altitude",
+        "driver": "trinnov",
+        "icon": "mdi:speaker-multiple",
+        "integrations": ("trinnov_altitude",),
+    },
+    {
+        "type": "madvr",
+        "label": "madVR Envy",
+        "driver": "madvr",
+        "icon": "mdi:video-high-definition",
+        "integrations": ("madvr",),
+    },
+    {
+        "type": "zidoo",
+        "label": "Zidoo Player",
+        "driver": "zidoo",
+        "icon": "mdi:disc-player",
+        "integrations": ("zidoo",),
+    },
+    {
+        "type": "shield",
+        "label": "Nvidia Shield",
+        "driver": "generic",
+        "icon": "mdi:television-classic",
+        "integrations": ("androidtv", "androidtv_remote"),
+    },
+    {
+        "type": "appletv",
+        "label": "Apple TV",
+        "driver": "generic",
+        "icon": "mdi:apple",
+        "integrations": ("apple_tv",),
+    },
+)
+
+
+def _device_types() -> list[dict[str, Any]]:
+    """Build the add-a-device catalogue, each type carrying its driver's roles.
+
+    The roles are read off the driver class so the panel can auto-wire a
+    freshly added device's entities exactly the way the device editor would
+    — and leave anything it cannot place for the editor to finish (FR-135).
+    """
+    out: list[dict[str, Any]] = []
+    for entry in DEVICE_TYPES:
+        cls = DRIVERS.get(entry["driver"])
+        roles: list[dict[str, Any]] = []
+        if cls is not None:
+            required = set(cls.required_entities)
+            for role, domains in cls.entity_roles.items():
+                roles.append(
+                    {
+                        "role": role,
+                        "domains": list(domains),
+                        "required": role in required,
+                    }
+                )
+        out.append(
+            {
+                "type": entry["type"],
+                "label": entry["label"],
+                "driver": entry["driver"],
+                "icon": entry["icon"],
+                "integrations": list(entry["integrations"]),
+                "roles": roles,
+            }
+        )
+    return out
+
+
+def _ha_devices(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Home Assistant devices with their wireable entities (FR-135).
+
+    The add-a-device picker needs the real devices to choose from and, for
+    each, the entities that could fill a role — so picking "Apple TV" then a
+    device wires media_player and power without a word typed. Devices with no
+    wireable entity are left out; there is nothing to connect them with.
+    """
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+    entry_domain = {
+        entry.entry_id: entry.domain for entry in hass.config_entries.async_entries()
+    }
+
+    by_device: dict[str, list[dict[str, str]]] = {}
+    for entry in entities.entities.values():
+        if entry.device_id is None:
+            continue
+        domain = entry.entity_id.split(".", 1)[0]
+        if domain not in _EDITABLE_DOMAINS:
+            continue
+        state = hass.states.get(entry.entity_id)
+        name = (
+            (state.attributes.get("friendly_name") if state else None)
+            or entry.name
+            or entry.original_name
+            or entry.entity_id
+        )
+        by_device.setdefault(entry.device_id, []).append(
+            {"id": entry.entity_id, "domain": domain, "name": str(name)}
+        )
+
+    out: list[dict[str, Any]] = []
+    for device in devices.devices.values():
+        device_entities = by_device.get(device.id)
+        if not device_entities:
+            continue
+        integrations = sorted(
+            {
+                entry_domain[entry_id]
+                for entry_id in device.config_entries
+                if entry_id in entry_domain
+            }
+        )
+        out.append(
+            {
+                "id": device.id,
+                "name": device.name_by_user or device.name or device.id,
+                "integrations": integrations,
+                "area": device.area_id,
+                "entities": sorted(device_entities, key=lambda e: e["id"]),
+            }
+        )
+    return sorted(out, key=lambda d: str(d["name"]).lower())
+
+
 def _areas(hass: HomeAssistant) -> list[dict[str, str | None]]:
     """List the areas the light card may be pointed at (FR-36d)."""
     floors = ar.async_get(hass)
@@ -919,6 +1101,10 @@ async def ws_config_get(hass, connection, msg) -> None:
             "knownDrivers": sorted(KNOWN_DRIVERS),
             "controlClasses": [c.value for c in ControlClass],
             "areas": _areas(hass),
+            # Adding a device: the supported types and the real HA devices to
+            # pick one from, auto-wired on selection (FR-135).
+            "deviceTypes": _device_types(),
+            "haDevices": _ha_devices(hass),
         },
     )
 

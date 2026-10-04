@@ -980,6 +980,7 @@ def _to_item(raw: Mapping[str, Any]) -> MediaItem:
         title=str(raw.get("Name") or "Ohne Titel"),
         kind=kind,
         series_name=raw.get("SeriesName"),
+        series_id=raw.get("SeriesId"),
         index_number=raw.get("IndexNumber"),
         parent_index=raw.get("ParentIndexNumber"),
         unplayed_count=int(unplayed) if isinstance(unplayed, int) else None,
